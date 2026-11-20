@@ -46,8 +46,9 @@ try {
     $baseline = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll).FileVersion
     Run-App -AppArguments @('--smoke-test')
     $baseVersion = [version]$Version.Split('-')[0]
-    $next = "$($baseVersion.Major).$($baseVersion.Minor).$($baseVersion.Build + 1)-preview.1"
-    & ./build/Pack.ps1 -Version $next -Channel preview -PublishDirectory artifacts/upgrade-publish -OutputDirectory artifacts/upgrade-feed
+    $next = "$($baseVersion.Major).$($baseVersion.Minor).$($baseVersion.Build + 1)"
+    Write-Output 'Building an unsigned stable-channel package only for local upgrade verification; it must not be published.'
+    & ./build/Pack.ps1 -Version $next -Channel win -PublishDirectory artifacts/upgrade-publish -OutputDirectory artifacts/upgrade-feed
     $feed = (Resolve-Path artifacts/upgrade-feed).Path
     Run-App -AppArguments @('--download-update-smoke-test', $feed)
     Run-App -AppArguments @('--smoke-test')

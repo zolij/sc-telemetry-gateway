@@ -35,3 +35,6 @@ dotnet vpk pack --packId Zolij.StarCitizenTelemetryGateway --packVersion $Versio
     --mainExe StarCitizenTelemetryGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
     --instLicense LICENSE --instReadme docs/INSTALLATION.md --noPortable --delta None --skip-updates
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }
+if ($Channel -eq 'win') {
+    Copy-Item (Join-Path $OutputDirectory 'releases.win.json') (Join-Path $OutputDirectory 'releases.preview.json') -Force
+}

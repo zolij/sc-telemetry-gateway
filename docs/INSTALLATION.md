@@ -35,7 +35,9 @@ stay in `%LOCALAPPDATA%\StarCitizenTelemetryGateway`, outside versioned app file
 
 Stable is the default update channel. **Include unsigned preview updates** is
 an explicit opt-in; previews are not stable and may have no trusted signature.
-Stable clients never automatically switch to previews. The old portable ZIP
+Stable clients never automatically switch to previews.
+Stable releases are also advertised to preview clients so that opting into
+previews does not hide a newer stable release. The old portable ZIP
 does not support managed updates: install Setup to enable them.
 
 ## Uninstall
