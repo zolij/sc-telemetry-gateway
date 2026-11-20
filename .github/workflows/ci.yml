@@ -44,6 +44,25 @@ jobs:
           Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/star-citizen-telemetry-gateway-win-x64.zip
           (Get-FileHash artifacts/star-citizen-telemetry-gateway-win-x64.zip -Algorithm SHA256).Hash |
             Set-Content artifacts/star-citizen-telemetry-gateway-win-x64.zip.sha256
+      - name: Build unsigned preview installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          ./build/Pack.ps1 -Version $version -PublishDirectory artifacts/win-x64 -SkipPublish
+      - name: Verify install, approved upgrade and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = @(Get-ChildItem artifacts/installer/*Setup.exe)
+          if ($installer.Count -ne 1) { throw 'Expected exactly one installer.' }
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          ./build/Test-Installer.ps1 -Installer $installer[0].FullName -Version $version
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: unsigned-preview-installer
+          path: artifacts/installer/
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:

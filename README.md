@@ -23,13 +23,17 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
 - Provider-neutral endpoint: direct TLS, reverse proxy, or Cloudflare Tunnel.
 - Bounded in-memory buffering; no raw gameplay logs or disk telemetry queue.
 - API key protected with Windows DPAPI for the current user.
+- Per-user Windows installer and approval-gated built-in updates.
 
 ## Windows quick start
 
-1. Download the Windows ZIP from a successful [Actions run](https://github.com/zolij/sc-telemetry-gateway/actions),
-   extract **all** files, and run `StarCitizenTelemetryGateway.exe`.
+1. Download `Setup.exe` from [Releases](https://github.com/zolij/sc-telemetry-gateway/releases),
+   install it for your Windows user, then launch it from the Start menu/tray.
    Supported target: Windows 11 x64. No separate .NET runtime is required.
-   The build is unsigned; Windows may show a publisher/SmartScreen warning.
+   Current previews are explicitly **unsigned**; Windows may show a
+   publisher/SmartScreen warning. Trusted signing requires external approval.
+   The ZIP from a successful [Actions run](https://github.com/zolij/sc-telemetry-gateway/actions)
+   remains available for portable use; extract all files before running the EXE.
 2. In the game's console, configure and enable the local service:
 
    ```text
@@ -54,6 +58,12 @@ the separately DPAPI-encrypted key is `api-key.bin`. Do not share either file.
 Loss of the Windows user profile/key material may make the key unrecoverable;
 enter it again instead of disabling protection. Corrupt settings are reported,
 not silently replaced. No telemetry values are written to disk.
+
+Installed copies check GitHub for updates automatically (configurable).
+Downloading and installation each require confirmation; downloaded updates
+never auto-install on startup. Unsigned preview updates require an explicit
+Settings opt-in. See [installation and update privacy](docs/INSTALLATION.md)
+and the [code signing policy and setup](docs/SIGNING.md).
 
 ## Receiver
 
@@ -92,7 +102,9 @@ The Windows application requires Windows to run. Linux builds can validate the
 core and cross-compile the Windows target, but cannot prove Windows runtime
 behavior or live game compatibility. CI runs core/integration tests on Linux and
 Windows, the Docker proxy test on Linux, and DPAPI tests and a self-contained
-application startup smoke test on Windows.
+application startup smoke test on Windows. Windows CI also installs Setup,
+verifies an actual approved upgrade, confirms downloaded updates do not apply
+without approval, preserves settings/the DPAPI key, and uninstalls the app.
 
 Live Star Citizen and an actual Cloudflare Tunnel require the deployment
 checklist; passing synthetic tests is not a claim that those live tests ran.

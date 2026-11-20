@@ -1,0 +1,199 @@
+name: Release installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'X.Y.Z-preview.N (unsigned) or X.Y.Z (signed stable)'
+        default: '0.2.0-preview.1'
+        required: true
+        type: string
+      signed:
+        description: 'Publish signed stable release (requires approved SignPath configuration)'
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-installer
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 150
+    permissions:
+      contents: write
+      actions: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      RELEASE_VERSION: ${{ inputs.version }}
+      SIGNED_RELEASE: ${{ inputs.signed }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Validate release policy before building
+        id: policy
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY }}
+          SIGNPATH_APP_CONFIG: ${{ vars.SIGNPATH_APP_CONFIG }}
+          SIGNPATH_SETUP_CONFIG: ${{ vars.SIGNPATH_SETUP_CONFIG }}
+          SIGNPATH_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
+        run: |
+          if ($env:SIGNED_RELEASE -eq 'true') {
+            if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Signed releases must be stable X.Y.Z versions.' }
+            foreach ($name in @('SIGNPATH_API_TOKEN', 'SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG',
+                'SIGNPATH_SIGNING_POLICY', 'SIGNPATH_APP_CONFIG', 'SIGNPATH_SETUP_CONFIG', 'SIGNPATH_CERTIFICATE_THUMBPRINT')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name; refusing unsigned stable release." }
+            }
+            'channel=win' >> $env:GITHUB_OUTPUT
+          } else {
+            if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+-preview\.\d+$') { throw 'Unsigned releases must be explicitly versioned previews.' }
+            'channel=preview' >> $env:GITHUB_OUTPUT
+          }
+          $tags = @(gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not check existing releases.' }
+          if ($tags -contains "v$env:RELEASE_VERSION") { throw 'Release already exists; use a new immutable version.' }
+      - run: dotnet restore tests/ScTelemetryGateway.Tests --locked-mode
+      - run: dotnet test tests/ScTelemetryGateway.Tests --no-restore -c Release
+      - name: Publish project
+        shell: pwsh
+        run: |
+          dotnet publish src/ScTelemetryGateway.Windows -c Release -r win-x64 --self-contained true `
+            -o artifacts/publish "-p:Version=$env:RELEASE_VERSION" -p:RestoreLockedMode=true
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed
+        id: app
+        with:
+          name: project-binaries-for-signing
+          path: |
+            artifacts/publish/StarCitizenTelemetryGateway.exe
+            artifacts/publish/StarCitizenTelemetryGateway.dll
+            artifacts/publish/ScTelemetryGateway.Core.dll
+          if-no-files-found: error
+      - name: Request project binary signatures
+        if: inputs.signed
+        uses: signpath/github-action-submit-signing-request@a2c5b60d9c75f073142b653c354b632eedce097b
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_CONFIG }}
+          github-artifact-id: ${{ steps.app.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: artifacts/signed-app
+      - name: Verify and adopt signed project files
+        if: inputs.signed
+        shell: pwsh
+        env:
+          SIGNPATH_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $names = @('StarCitizenTelemetryGateway.exe', 'StarCitizenTelemetryGateway.dll', 'ScTelemetryGateway.Core.dll')
+          $paths = $names | ForEach-Object { "artifacts/signed-app/$_" }
+          ./build/Assert-Signatures.ps1 -Paths $paths -Thumbprint $env:SIGNPATH_CERTIFICATE_THUMBPRINT -Version $env:RELEASE_VERSION
+          foreach ($name in $names) { Copy-Item "artifacts/signed-app/$name" "artifacts/publish/$name" -Force }
+      - name: Package installer and complete update feed
+        shell: pwsh
+        run: |
+          ./build/Pack.ps1 -Version $env:RELEASE_VERSION -Channel '${{ steps.policy.outputs.channel }}' -SkipPublish
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed
+        id: setup
+        with:
+          name: installer-for-signing
+          path: artifacts/installer/*Setup.exe
+          if-no-files-found: error
+      - name: Request installer signature
+        if: inputs.signed
+        uses: signpath/github-action-submit-signing-request@a2c5b60d9c75f073142b653c354b632eedce097b
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_SETUP_CONFIG }}
+          github-artifact-id: ${{ steps.setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: artifacts/signed-setup
+      - name: Verify signed installer and embedded project binaries
+        if: inputs.signed
+        shell: pwsh
+        env:
+          SIGNPATH_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $setups = @(Get-ChildItem artifacts/signed-setup/*Setup.exe)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one signed installer.' }
+          ./build/Assert-Signatures.ps1 -Paths $setups[0].FullName -Thumbprint $env:SIGNPATH_CERTIFICATE_THUMBPRINT -Version $env:RELEASE_VERSION
+          Copy-Item $setups[0].FullName artifacts/installer/ -Force
+          $packages = @(Get-ChildItem artifacts/installer/*-full.nupkg)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one full update package.' }
+          [IO.Compression.ZipFile]::ExtractToDirectory($packages[0].FullName, "$PWD/artifacts/package-verification")
+          foreach ($name in @('StarCitizenTelemetryGateway.exe', 'StarCitizenTelemetryGateway.dll', 'ScTelemetryGateway.Core.dll')) {
+            $files = @(Get-ChildItem artifacts/package-verification -Recurse -Filter $name)
+            if ($files.Count -ne 1) { throw "Expected exactly one packaged $name." }
+            ./build/Assert-Signatures.ps1 -Paths $files[0].FullName -Thumbprint $env:SIGNPATH_CERTIFICATE_THUMBPRINT -Version $env:RELEASE_VERSION
+            if ((Get-FileHash $files[0].FullName).Hash -ne (Get-FileHash "artifacts/publish/$name").Hash) {
+              throw "Packaging changed a signed project binary: $name"
+            }
+          }
+      - name: Verify install, approved update and uninstall
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem artifacts/installer/*Setup.exe)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer.' }
+          ./build/Test-Installer.ps1 -Installer $installers[0].FullName -Version $env:RELEASE_VERSION
+      - name: Create checksums and release notes
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts/installer -File | Sort-Object Name | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          } | Set-Content artifacts/installer/SHA256SUMS
+          $status = if ($env:SIGNED_RELEASE -eq 'true') { 'Signed stable release.' } else {
+            'UNSIGNED PREVIEW. No trusted publisher signature. This is not a stable release.'
+          }
+          @"
+          $status
+
+          Windows 11 x64, self-contained, per-user installation without administrator privileges.
+          Download the Setup.exe asset. The other assets are the complete managed-update feed.
+          Automatic checks only notify; downloading and installation each require approval.
+          Collection is paused after installation and restart. Bring your own WSS receiver.
+          Independent community project, not affiliated with Cloud Imperium Games.
+
+          Installation and privacy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/INSTALLATION.md
+          Signing status: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
+          "@ | Set-Content artifacts/release-notes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-installer
+          path: artifacts/installer/
+          if-no-files-found: error
+      - name: Publish verified release
+        shell: pwsh
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          $title = "Star Citizen Telemetry Gateway $env:RELEASE_VERSION"
+          $flags = @('--latest=true')
+          if ($env:SIGNED_RELEASE -ne 'true') {
+            $title += ' - UNSIGNED PREVIEW'
+            $flags = @('--prerelease', '--latest=false')
+          }
+          $assets = @(Get-ChildItem artifacts/installer -File | ForEach-Object FullName)
+          gh release create $tag @assets --target $env:GITHUB_SHA --title $title `
+            --notes-file artifacts/release-notes.txt @flags
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

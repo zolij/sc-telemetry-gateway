@@ -1,6 +1,6 @@
 # Third-party components
 
-The portable Windows distribution includes these runtime components. Dependency
+The Windows distributions include these runtime components. Dependency
 versions and hashes are recorded in the projects' NuGet lock files.
 
 | Component | Version | License / notices |
@@ -11,6 +11,7 @@ versions and hashes are recorded in the projects' NuGet lock files.
 | System.Security.Cryptography.ProtectedData | 11.0.0 | [MIT](licenses/ProtectedData.txt), [notices](licenses/ProtectedData.NOTICES.txt) |
 | .NET runtime | 10.0.15 | [MIT](licenses/DotnetRuntime.txt), [notices](licenses/DotnetRuntime.NOTICES.txt) |
 | Windows Desktop runtime | 10.0.15 | [MIT](licenses/WindowsDesktop.txt), applicable .NET component notices above |
+| Velopack library, installer and updater | 1.2.161 | [MIT](licenses/Velopack.txt) |
 
 Build/test tools (including Grpc.Tools, xUnit, ASP.NET Core test hosting and
 JsonSchema.Net) are not shipped as application dependencies. Their NuGet
@@ -18,4 +19,4 @@ metadata contains their respective licenses. Protocol interoperability
 provenance and the project's independence are documented in [NOTICE](../NOTICE).
 
 When updating dependencies or the self-contained runtime, review the resolved
-versions and refresh their license/notice texts before distributing a new ZIP.
+versions and refresh their license/notice texts before distributing a new build.
