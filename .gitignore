@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/*.user
+.vs/
+.idea/
+artifacts/
+TestResults/
+*.log
+*.key
+*.secret
+settings.json
+api-key.bin
+.env
+.env.*
+!.env.example
