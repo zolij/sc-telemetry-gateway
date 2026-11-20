@@ -18,6 +18,17 @@ $oldTestMode = $env:SCTG_INSTALLER_TEST
 $env:SCTG_INSTALLER_TEST = '1'
 $verified = $false
 function Run-App([string[]]$AppArguments) {
+    $updaterPath = Join-Path $root 'Update.exe'
+    for ($i = 0; $i -lt 300; $i++) {
+        $active = @(Get-Process -Name StarCitizenTelemetryGateway, Update -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -eq $exe -or $_.Path -eq $updaterPath })
+        if ($active.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 200
+    }
+    if ($active.Count -ne 0) {
+        $active | Select-Object Id, Path, MainWindowTitle | Out-String | Write-Output
+        throw 'Previous installer operation or application smoke test did not exit.'
+    }
     $argumentLine = ($AppArguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
     Write-Output "Running installed app: $argumentLine"
     $stdout = Join-Path $env:TEMP 'sctg-installer-test.stdout'
@@ -34,12 +45,6 @@ function Run-App([string[]]$AppArguments) {
     if ($process.ExitCode -ne 0) { throw "Installed application exited with $($process.ExitCode)." }
 }
 try {
-    if (-not $verified -and (Test-Path $root)) {
-        Get-ChildItem $root -Filter '*.log' -Recurse | Select-Object -First 5 | ForEach-Object {
-            Write-Output "Installer diagnostic log: $($_.FullName)"
-            Get-Content $_.FullName -Tail 40
-        }
-    }
     $process = Start-Process (Resolve-Path $Installer).Path -ArgumentList '--silent' -PassThru
     if (-not $process.WaitForExit(60000)) {
         Stop-Process -Id $process.Id
@@ -84,6 +89,12 @@ try {
     $verified = $true
 } finally {
     try {
+        if (-not $verified -and (Test-Path $root)) {
+            Get-ChildItem $root -Filter '*.log' -Recurse | Select-Object -First 5 | ForEach-Object {
+                Write-Output "Installer diagnostic log: $($_.FullName)"
+                Get-Content $_.FullName -Tail 40
+            }
+        }
         Get-Process -Name StarCitizenTelemetryGateway -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -eq $exe } |
             ForEach-Object { Stop-Process -Id $_.Id }
