@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/telemetry.schema.json",
+  "title": "Star Citizen Telemetry Gateway protocol v1",
+  "oneOf": [
+    { "$ref": "#/$defs/batch" },
+    { "$ref": "#/$defs/ack" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "value": {
+      "anyOf": [
+        { "type": ["string", "number", "boolean", "null"] },
+        { "type": "array", "items": { "type": ["string", "number", "boolean", "null"] } }
+      ]
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "updated_at", "last_known"],
+      "properties": {
+        "value": { "$ref": "#/$defs/value" },
+        "updated_at": { "$ref": "#/$defs/timestamp" },
+        "last_known": { "type": "boolean" }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "min", "max", "mean", "last", "invalid_count"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "mean": { "type": ["number", "null"] },
+        "last": { "type": ["number", "null"] },
+        "invalid_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "schema_version", "app_version", "session_id", "stream_id", "batch_id", "sequence", "window_started_at", "window_ended_at", "frames_received", "snapshot", "statistics", "events", "loss"],
+      "properties": {
+        "type": { "const": "telemetry.batch" },
+        "schema_version": { "const": 1 },
+        "app_version": { "type": "string" },
+        "session_id": { "$ref": "#/$defs/uuid" },
+        "stream_id": { "$ref": "#/$defs/uuid" },
+        "batch_id": { "$ref": "#/$defs/uuid" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "window_started_at": { "$ref": "#/$defs/timestamp" },
+        "window_ended_at": { "$ref": "#/$defs/timestamp" },
+        "frames_received": { "type": "integer", "minimum": 1 },
+        "snapshot": {
+          "type": "object",
+          "propertyNames": { "pattern": "^(actor|vehicle|weapons|force_feedback|turret)\\.[a-z_]+(\\.[a-z_]+)*$" },
+          "additionalProperties": { "$ref": "#/$defs/snapshot" }
+        },
+        "statistics": {
+          "type": "object",
+          "propertyNames": { "pattern": "^(actor|vehicle|weapons|force_feedback|turret)\\.[a-z_]+(\\.[a-z_]+)*$" },
+          "additionalProperties": { "$ref": "#/$defs/statistics" }
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sequence", "received_at", "type"],
+            "properties": {
+              "sequence": { "type": "integer", "minimum": 1 },
+              "received_at": { "$ref": "#/$defs/timestamp" },
+              "type": { "type": "string" }
+            }
+          }
+        },
+        "loss": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["batches_dropped", "events_dropped"],
+          "properties": {
+            "batches_dropped": { "type": "integer", "minimum": 0 },
+            "events_dropped": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "schema_version", "batch_id"],
+      "properties": {
+        "type": { "const": "telemetry.ack" },
+        "schema_version": { "const": 1 },
+        "batch_id": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "schema_version", "code"],
+      "properties": {
+        "type": { "const": "telemetry.error" },
+        "schema_version": { "const": 1 },
+        "code": { "type": "string", "minLength": 1 },
+        "retry_after_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    }
+  }
+}

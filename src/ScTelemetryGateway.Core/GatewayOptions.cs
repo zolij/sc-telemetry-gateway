@@ -9,6 +9,8 @@ public sealed record GatewayOptions
 
     public void Validate(bool requireEndpoint = true)
     {
+        if (Endpoint is null || Fields is null)
+            throw new ArgumentException("Endpoint and selected fields cannot be null.");
         if (GamePort is < 1024 or > 65535)
             throw new ArgumentException("Game port must be between 1024 and 65535.");
         if (IntervalSeconds is < 1 or > 300)
