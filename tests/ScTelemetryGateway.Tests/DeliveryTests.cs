@@ -147,6 +147,154 @@ public sealed class DeliveryTests
         await app.StopAsync(CancellationToken.None);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RespectsHandshakeAndApplicationBackoff(bool applicationError)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var attempts = new List<DateTimeOffset>();
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        await using var app = builder.Build();
+        app.UseWebSockets();
+        app.Map("/", async context =>
+        {
+            int attempt;
+            lock (attempts) { attempts.Add(DateTimeOffset.UtcNow); attempt = attempts.Count; }
+            if (attempt == 1 && !applicationError)
+            {
+                context.Response.StatusCode = 429;
+                context.Response.Headers.RetryAfter = "2";
+                return;
+            }
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var body = await Read(socket, timeout.Token);
+            using var doc = JsonDocument.Parse(body);
+            var id = doc.RootElement.GetProperty("batch_id").GetGuid();
+            var reply = attempt == 1
+                ? """{"type":"telemetry.error","schema_version":1,"code":"rate_limited","retry_after_seconds":2}"""
+                : $$"""{"type":"telemetry.ack","schema_version":1,"batch_id":"{{id}}"}""";
+            await socket.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, timeout.Token);
+            try { await Read(socket, timeout.Token); }
+            catch (WebSocketException) { }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+        });
+        await app.StartAsync(timeout.Token);
+        var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var store = new TelemetryAggregator(["turret.light_amplification"], Guid.NewGuid());
+        store.Ingest(new() { Turret = new() });
+        var queue = new BatchQueue();
+        queue.Enqueue(store.CloseWindow(0)!);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var task = new WebSocketDelivery(new Uri(address.Replace("http:", "ws:")), "synthetic", queue,
+            TimeSpan.FromMilliseconds(20), _ => { }, () => accepted.TrySetResult()).RunAsync(stop.Token);
+        await accepted.Task.WaitAsync(timeout.Token);
+        lock (attempts)
+        {
+            Assert.Equal(2, attempts.Count);
+            Assert.True(attempts[1] - attempts[0] >= TimeSpan.FromSeconds(2),
+                $"Observed retry interval: {(attempts[1] - attempts[0]).TotalMilliseconds} ms.");
+        }
+        await stop.CancelAsync();
+        await Stop(task, stop.Token);
+        Assert.Equal(0, queue.Count);
+        await app.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task DoesNotBurstQueuedBatchesOrSendAfterCancellation()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var received = 0;
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        await using var app = builder.Build();
+        app.UseWebSockets();
+        app.Map("/", async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            try
+            {
+                while (!timeout.IsCancellationRequested)
+                {
+                    var body = await Read(socket, timeout.Token);
+                    if (body.Length == 0) break;
+                    Interlocked.Increment(ref received);
+                    using var doc = JsonDocument.Parse(body);
+                    var id = doc.RootElement.GetProperty("batch_id").GetGuid();
+                    var ack = Encoding.UTF8.GetBytes($$"""{"type":"telemetry.ack","schema_version":1,"batch_id":"{{id}}"}""");
+                    await socket.SendAsync(ack, WebSocketMessageType.Text, true, timeout.Token);
+                }
+            }
+            catch (WebSocketException) { }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+        });
+        await app.StartAsync(timeout.Token);
+        var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var store = new TelemetryAggregator(["turret.light_amplification"], Guid.NewGuid());
+        var queue = new BatchQueue();
+        for (var i = 0; i < 3; i++)
+        {
+            store.Ingest(new() { Turret = new() });
+            queue.Enqueue(store.CloseWindow(0)!);
+        }
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var task = new WebSocketDelivery(new Uri(address.Replace("http:", "ws:")), "synthetic", queue,
+            TimeSpan.FromSeconds(2), _ => { }, () => accepted.TrySetResult()).RunAsync(stop.Token);
+        await accepted.Task.WaitAsync(timeout.Token);
+        await Task.Delay(250, timeout.Token);
+        Assert.Equal(1, Volatile.Read(ref received));
+        await stop.CancelAsync();
+        await Stop(task, stop.Token);
+        await Task.Delay(250, timeout.Token);
+        Assert.Equal(1, Volatile.Read(ref received));
+        Assert.Equal(2, queue.Count);
+        await app.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task KeepsBatchQueuedWhenAcknowledgementTimesOut()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+        var timedOut = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        await using var app = builder.Build();
+        app.UseWebSockets();
+        app.Map("/", async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            try
+            {
+                await Read(socket, timeout.Token);
+                await Read(socket, timeout.Token);
+            }
+            catch (WebSocketException) { }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+        });
+        await app.StartAsync(timeout.Token);
+        var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var queue = new BatchQueue();
+        queue.Enqueue(new PendingBatch(Guid.NewGuid(), "{}"u8.ToArray()));
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var sender = new WebSocketDelivery(new Uri(address.Replace("http:", "ws:")), "synthetic", queue,
+            TimeSpan.FromSeconds(1),
+            value => { if (value == "Receiver connect/send/ACK timeout; reconnecting") timedOut.TrySetResult(); },
+            () => Assert.Fail("Unacknowledged data must not be accepted"));
+        var task = sender.RunAsync(stop.Token);
+        await timedOut.Task.WaitAsync(timeout.Token);
+        Assert.Equal(1, queue.Count);
+        await stop.CancelAsync();
+        await Stop(task, stop.Token);
+        await app.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public async Task ReadsSyntheticGrpcStreamIntoSelectedAggregates()
     {

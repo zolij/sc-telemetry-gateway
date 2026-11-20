@@ -13,7 +13,7 @@ public sealed class TelemetryAggregator
     private Guid streamId = Guid.NewGuid();
     private readonly Dictionary<string, SnapshotValue> snapshot = [];
     private readonly Dictionary<string, Accumulator> statistics = [];
-    private readonly List<TelemetryEvent> events = [];
+    private readonly Queue<TelemetryEvent> events = new();
     private DateTimeOffset windowStarted;
     private long frames, sequence, eventSequence, eventsDropped;
 
@@ -63,7 +63,7 @@ public sealed class TelemetryAggregator
                     var (value, invalid) = FieldCatalog.Read(frame, field);
                     if (value is not null || invalid > 0)
                         snapshot[field.Path] = new(value, now, false);
-                    if (field.SupportsStatistics)
+                    if (field.SupportsStatistics && (value is not null || invalid > 0))
                     {
                         if (!statistics.TryGetValue(field.Path, out var accumulator))
                             statistics[field.Path] = accumulator = new();
@@ -80,10 +80,10 @@ public sealed class TelemetryAggregator
                 {
                     if (events.Count == MaxEvents)
                     {
-                        events.RemoveAt(0);
+                        events.Dequeue();
                         eventsDropped++;
                     }
-                    events.Add(new(++eventSequence, now,
+                    events.Enqueue(new(++eventSequence, now,
                         GameEvent.Descriptor.FindFieldByNumber(1).EnumType.FindValueByNumber((int)item.Type)?.Name ??
                         ((int)item.Type).ToString(System.Globalization.CultureInfo.InvariantCulture)));
                 }

@@ -58,7 +58,7 @@ public sealed class WebSocketDelivery(Uri endpoint, string apiKey, BatchQueue qu
                     if (lastSent is { } previous)
                     {
                         var pace = interval - clock.GetElapsedTime(previous);
-                        if (pace > TimeSpan.Zero) await Task.Delay(pace, clock, cancellationToken);
+                        if (pace > TimeSpan.Zero) await DelayAtLeast(pace, cancellationToken);
                     }
                     var sentAt = clock.GetTimestamp();
                     lastSent = sentAt;
@@ -72,7 +72,7 @@ public sealed class WebSocketDelivery(Uri endpoint, string apiKey, BatchQueue qu
                     status("Receiver connected; batch acknowledged");
                     var remaining = interval - clock.GetElapsedTime(sentAt);
                     if (remaining > TimeSpan.Zero)
-                        await Task.Delay(remaining, clock, cancellationToken);
+                        await DelayAtLeast(remaining, cancellationToken);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
@@ -100,9 +100,16 @@ public sealed class WebSocketDelivery(Uri endpoint, string apiKey, BatchQueue qu
                 status("Receiver connect/send/ACK timeout; reconnecting");
             }
             socket.Abort();
-            await Task.Delay(wait, clock, cancellationToken);
+            await DelayAtLeast(wait, cancellationToken);
             retry = Math.Min(retry * 2, 60);
         }
+    }
+
+    private async Task DelayAtLeast(TimeSpan delay, CancellationToken token)
+    {
+        var started = clock.GetTimestamp();
+        while (delay - clock.GetElapsedTime(started) is var remaining && remaining > TimeSpan.Zero)
+            await Task.Delay(remaining < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : remaining, clock, token);
     }
 
     private static TimeSpan RetryAfter(IReadOnlyDictionary<string, IEnumerable<string>>? headers,

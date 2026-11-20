@@ -44,6 +44,9 @@ public sealed class WindowTests
         var selective = new TelemetryAggregator(["turret.light_amplification"], Guid.NewGuid());
         selective.Ingest(new() { Actor = new() });
         Assert.Null(selective.CloseWindow(0));
+        var absentGauge = new TelemetryAggregator(["vehicle.state.flight.instruments.g_meter.current"], Guid.NewGuid());
+        absentGauge.Ingest(new() { Vehicle = new() { State = new() { Flight = new() { Instruments = new() } } } });
+        Assert.Null(absentGauge.CloseWindow(0));
     }
 
     private sealed class ManualClock : TimeProvider
