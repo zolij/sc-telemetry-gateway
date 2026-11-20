@@ -19,14 +19,27 @@ $env:SCTG_INSTALLER_TEST = '1'
 $verified = $false
 function Run-App([string[]]$AppArguments) {
     $argumentLine = ($AppArguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
-    $process = Start-Process $exe -ArgumentList $argumentLine -PassThru
+    Write-Output "Running installed app: $argumentLine"
+    $stdout = Join-Path $env:TEMP 'sctg-installer-test.stdout'
+    $stderr = Join-Path $env:TEMP 'sctg-installer-test.stderr'
+    $process = Start-Process $exe -ArgumentList $argumentLine -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if (-not $process.WaitForExit(60000)) {
+        $process.Refresh()
+        Write-Output "Timed out with window title: $($process.MainWindowTitle)"
+        Get-Content $stdout, $stderr
         Stop-Process -Id $process.Id
         throw 'Installed application test timed out.'
     }
+    Get-Content $stdout, $stderr
     if ($process.ExitCode -ne 0) { throw "Installed application exited with $($process.ExitCode)." }
 }
 try {
+    if (-not $verified -and (Test-Path $root)) {
+        Get-ChildItem $root -Filter '*.log' -Recurse | Select-Object -First 5 | ForEach-Object {
+            Write-Output "Installer diagnostic log: $($_.FullName)"
+            Get-Content $_.FullName -Tail 40
+        }
+    }
     $process = Start-Process (Resolve-Path $Installer).Path -ArgumentList '--silent' -PassThru
     if (-not $process.WaitForExit(60000)) {
         Stop-Process -Id $process.Id
