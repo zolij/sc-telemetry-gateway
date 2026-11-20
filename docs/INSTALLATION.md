@@ -7,13 +7,21 @@ release is explicitly labelled **UNSIGNED PREVIEW** until trusted code signing
 has been approved. Do not treat a checksum as a publisher signature.
 
 Close any running portable copy first. Setup installs for the current Windows
-user under `%LOCALAPPDATA%\Zolij.StarCitizenTelemetryGateway`, creates a Start
+user under `%LOCALAPPDATA%\Spaceling.StarCitizenTelemetryGateway`, creates a Start
 menu shortcut and an uninstall entry, and does not require elevation. There is
 no system service or automatic startup with Windows.
 
 The app stays in the notification area. Telemetry collection is always paused
 on launch, including after an update. Configure a WSS receiver, API key and
 allowed fields, then choose Start explicitly.
+
+### Upgrading from 0.2.0-preview.1
+
+The first preview used a different package identity. Exit and uninstall that
+version before manually installing `0.2.0-preview.2` or later; do not use its
+built-in updater for this identity change. Keep the settings directory when
+uninstalling: the new installer uses the same settings and DPAPI-protected key.
+Subsequent updates retain the `Spaceling.StarCitizenTelemetryGateway` identity.
 
 ## Update checks and consent
 
@@ -53,7 +61,7 @@ after exiting the app. No telemetry archive needs to be removed.
 On Windows, with the pinned .NET SDK:
 
 ```powershell
-./build/Pack.ps1 -Version 0.2.0-preview.1
+./build/Pack.ps1 -Version 0.2.0-preview.2
 ```
 
 The script restores the repository-pinned Velopack tool, publishes a

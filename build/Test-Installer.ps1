@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'Installer verification requires Windows.' }
-$root = Join-Path $env:LOCALAPPDATA 'Zolij.StarCitizenTelemetryGateway'
+$root = Join-Path $env:LOCALAPPDATA 'Spaceling.StarCitizenTelemetryGateway'
 $settingsRoot = Join-Path $env:LOCALAPPDATA 'StarCitizenTelemetryGateway'
 if ((Test-Path $root) -or (Test-Path $settingsRoot)) {
     throw 'Installer smoke test requires a clean CI profile; it will not overwrite an existing installation or settings.'

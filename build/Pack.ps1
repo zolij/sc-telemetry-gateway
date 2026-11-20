@@ -29,7 +29,7 @@ if ($Channel -eq 'preview') {
 } elseif (Test-Path $marker) {
     Remove-Item -LiteralPath $marker
 }
-dotnet vpk pack --packId Zolij.StarCitizenTelemetryGateway --packVersion $Version `
+dotnet vpk pack --packId Spaceling.StarCitizenTelemetryGateway --packVersion $Version `
     --packDir $PublishDirectory --outputDir $OutputDirectory --channel $Channel --runtime win-x64 `
     --packTitle 'Star Citizen Telemetry Gateway' --packAuthors 'Star Citizen Telemetry Gateway contributors' `
     --mainExe StarCitizenTelemetryGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
