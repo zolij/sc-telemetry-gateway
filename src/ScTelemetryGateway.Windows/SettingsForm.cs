@@ -9,6 +9,8 @@ internal sealed class SettingsForm : Form
     private readonly TextBox endpoint = new() { Dock = DockStyle.Fill, PlaceholderText = "wss://telemetry.example.org/v1/telemetry/stream" };
     private readonly TextBox apiKey = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
     private readonly TreeView fields = new() { Dock = DockStyle.Fill, CheckBoxes = true, HideSelection = false };
+    private readonly CheckBox automaticUpdates = new() { Text = "Check for updates automatically (GitHub)", AutoSize = true };
+    private readonly CheckBox previewUpdates = new() { Text = "Include unsigned preview updates (not recommended)", AutoSize = true };
     private bool checking;
     public GatewayOptions Options { get; private set; }
     public string ApiKey => apiKey.Text;
@@ -24,12 +26,15 @@ internal sealed class SettingsForm : Form
         interval.Value = options.IntervalSeconds;
         endpoint.Text = options.Endpoint;
         apiKey.Text = key;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 7 };
+        automaticUpdates.Checked = options.AutomaticUpdateChecks;
+        previewUpdates.Checked = options.IncludePreviewUpdates;
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 8 };
         layout.ColumnStyles.Add(new(SizeType.Absolute, 150));
         layout.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (var i = 0; i < 4; i++) layout.RowStyles.Add(new(SizeType.Absolute, 36));
         layout.RowStyles.Add(new(SizeType.Absolute, 65));
         layout.RowStyles.Add(new(SizeType.Percent, 100));
+        layout.RowStyles.Add(new(SizeType.Absolute, 55));
         layout.RowStyles.Add(new(SizeType.Absolute, 44));
         void Row(string caption, Control control, int row)
         {
@@ -72,6 +77,11 @@ internal sealed class SettingsForm : Form
         };
         layout.Controls.Add(fields, 0, 5);
         layout.SetColumnSpan(fields, 2);
+        var updateOptions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        updateOptions.Controls.Add(automaticUpdates);
+        updateOptions.Controls.Add(previewUpdates);
+        layout.Controls.Add(updateOptions, 0, 6);
+        layout.SetColumnSpan(updateOptions, 2);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         var save = new Button { Text = "Apply", AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
@@ -82,7 +92,8 @@ internal sealed class SettingsForm : Form
                 var next = new GatewayOptions
                 {
                     GamePort = (int)port.Value, IntervalSeconds = (int)interval.Value,
-                    Endpoint = endpoint.Text.Trim(),
+                    Endpoint = endpoint.Text.Trim(), AutomaticUpdateChecks = automaticUpdates.Checked,
+                    IncludePreviewUpdates = previewUpdates.Checked,
                     Fields = fields.Nodes.Cast<TreeNode>().SelectMany(n => n.Nodes.Cast<TreeNode>())
                         .Where(n => n.Checked).Select(n => (string)n.Tag!).ToHashSet(StringComparer.Ordinal)
                 };
@@ -95,7 +106,7 @@ internal sealed class SettingsForm : Form
         };
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
-        layout.Controls.Add(buttons, 0, 6);
+        layout.Controls.Add(buttons, 0, 7);
         layout.SetColumnSpan(buttons, 2);
         Controls.Add(layout);
         AcceptButton = save;

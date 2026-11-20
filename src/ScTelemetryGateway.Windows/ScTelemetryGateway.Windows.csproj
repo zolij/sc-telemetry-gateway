@@ -10,6 +10,7 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="../ScTelemetryGateway.Core/ScTelemetryGateway.Core.csproj" />
     <Content Include="../../LICENSE;../../NOTICE;../../README.md" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../docs/**" Link="docs/%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />

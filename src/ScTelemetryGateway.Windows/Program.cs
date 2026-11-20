@@ -1,3 +1,5 @@
+using Velopack;
+
 namespace ScTelemetryGateway.Windows;
 
 internal static class Program
@@ -5,6 +7,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        if (Environment.GetEnvironmentVariable("SCTG_INSTALLER_TEST") == "1" &&
+            InstallerSmoke.TryRun(args, out var result))
+            return result;
         ApplicationConfiguration.Initialize();
         using var mutex = new Mutex(true, @"Local\StarCitizenTelemetryGateway", out var first);
         if (!first)
@@ -15,7 +21,8 @@ internal static class Program
         }
         try
         {
-            using var context = new TrayContext(args.Contains("--smoke-test", StringComparer.Ordinal));
+            using var context = new TrayContext(args.Contains("--smoke-test", StringComparer.Ordinal) ||
+                Environment.GetEnvironmentVariable("SCTG_INSTALLER_TEST") == "1");
             Application.Run(context);
             return 0;
         }

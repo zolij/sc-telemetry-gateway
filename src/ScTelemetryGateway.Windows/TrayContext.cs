@@ -8,6 +8,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon icon;
     private readonly SettingsStore store = new();
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60000 };
+    private readonly CancellationTokenSource lifetime = new();
     private readonly ToolStripMenuItem start;
     private readonly ToolStripMenuItem pause;
     private readonly Form statusWindow = new() { Text = ProductName, Size = new Size(640, 300), StartPosition = FormStartPosition.CenterScreen };
@@ -19,6 +21,9 @@ internal sealed class TrayContext : ApplicationContext
     private Task? running;
     private string? error;
     private bool busy;
+    private bool updateBusy;
+    private string updateStatus = "Not checked";
+    private readonly ToolStripMenuItem checkUpdates;
 
     public TrayContext(bool smokeTest = false)
     {
@@ -31,8 +36,10 @@ internal sealed class TrayContext : ApplicationContext
         pause = new("Pause and clear buffer", null, async (_, _) => await Stop());
         menu.Items.Add(start);
         menu.Items.Add(pause);
+        checkUpdates = new("Check for updates...", null, async (_, _) => await CheckUpdates(true));
+        menu.Items.Add(checkUpdates);
         menu.Items.Add("About", null, (_, _) => MessageBox.Show(
-            ProductName + " 0.1.0\n\nIndependent community project.\n" +
+            ProductName + " " + BuildInfo.Version + "\n\nIndependent community project.\n" +
             "Not affiliated with, endorsed by, sponsored by, or supported by\n" +
             "Cloud Imperium Games.\n" +
             "Star Citizen and related marks belong to their respective owners.\n\n" +
@@ -42,6 +49,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             if (busy) return;
             busy = true;
+            await lifetime.CancelAsync();
             await Stop();
             ExitThread();
         });
@@ -54,6 +62,12 @@ internal sealed class TrayContext : ApplicationContext
         };
         timer.Tick += (_, _) => RefreshStatus();
         timer.Start();
+        updateTimer.Tick += async (_, _) =>
+        {
+            updateTimer.Interval = 24 * 60 * 60 * 1000;
+            if (options.AutomaticUpdateChecks) await CheckUpdates(false);
+        };
+        if (!smokeTest) updateTimer.Start();
         RefreshStatus();
         if (smokeTest)
         {
@@ -109,7 +123,7 @@ internal sealed class TrayContext : ApplicationContext
 
     private async Task EditSettings()
     {
-        if (busy) return;
+        if (busy || updateBusy) return;
         busy = true;
         try
         {
@@ -122,6 +136,7 @@ internal sealed class TrayContext : ApplicationContext
                 options = form.Options;
                 key = form.ApiKey;
                 error = null;
+                updateStatus = "Not checked";
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                 System.Security.Cryptography.CryptographicException or ArgumentException)
@@ -143,13 +158,88 @@ internal sealed class TrayContext : ApplicationContext
         }
         start.Enabled = running is null && !busy;
         pause.Enabled = running is not null && !busy;
+        checkUpdates.Enabled = !busy && !updateBusy;
         var status = runtime?.Status;
         statusLabel.Text = (running is null ? "Collection paused. No data is being uploaded." : "Collection running.") +
             $"\n\nGame: {status?.Game ?? "Stopped"}\nReceiver: {status?.Delivery ?? "Stopped"}" +
             $"\nQueued: {status?.Queued ?? 0} batches / {status?.QueueBytes ?? 0} bytes" +
             $"\nDropped: {status?.BatchesDropped ?? 0} batches, {status?.EventsDropped ?? 0} events" +
             $"\nLast ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}" +
-            $"\nSelected fields: {options.Fields.Count}" + (error is null ? "" : "\n\nError: " + error);
+            $"\nSelected fields: {options.Fields.Count}\nUpdates: {updateStatus}" + (error is null ? "" : "\n\nError: " + error);
+    }
+
+    private async Task CheckUpdates(bool interactive)
+    {
+        if (busy || updateBusy || lifetime.IsCancellationRequested) return;
+        updateBusy = true;
+        try
+        {
+            var updater = ApplicationUpdater.Create(options.IncludePreviewUpdates);
+            if (!updater.IsInstalled)
+            {
+                updateStatus = "Use Setup to enable built-in updates";
+                if (interactive) MessageBox.Show(updateStatus, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            updateStatus = "Checking GitHub releases...";
+            RefreshStatus();
+            var version = await updater.CheckAsync();
+            lifetime.Token.ThrowIfCancellationRequested();
+            if (version is null)
+            {
+                updateStatus = "No compatible newer release found";
+                if (interactive) MessageBox.Show(updateStatus, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            updateStatus = "Version " + version + " is available";
+            if (!interactive)
+            {
+                icon.ShowBalloonTip(8000, ProductName, updateStatus + ". Use Check for updates to download.", ToolTipIcon.Info);
+                return;
+            }
+            var previewWarning = options.IncludePreviewUpdates ? "\n\nPreview releases may be unsigned and are not stable." : "";
+            if (MessageBox.Show("Download version " + version + " from GitHub?" + previewWarning,
+                    ProductName, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            IProgress<int> progress = new Progress<int>(value =>
+            {
+                if (lifetime.IsCancellationRequested) return;
+                updateStatus = "Downloading update: " + value + "%";
+                RefreshStatus();
+            });
+            await updater.DownloadAsync(progress.Report, lifetime.Token);
+            lifetime.Token.ThrowIfCancellationRequested();
+            updateStatus = "Downloaded " + version + "; awaiting installation approval";
+            if (MessageBox.Show("Install version " + version + " and restart now?\n\n" +
+                    "Telemetry collection will stop and unsent data will be cleared. " +
+                    "Collection stays paused after restart.", ProductName,
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            busy = true;
+            try
+            {
+                await Stop();
+                updater.ScheduleInstall();
+                await lifetime.CancelAsync();
+                ExitThread();
+            }
+            finally { busy = false; }
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            updateStatus = "Update failed (" + ex.GetType().Name + "). Try again later.";
+            if (!lifetime.IsCancellationRequested)
+            {
+                if (interactive) MessageBox.Show(updateStatus, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                else icon.ShowBalloonTip(8000, ProductName, updateStatus, ToolTipIcon.Warning);
+            }
+        }
+        finally
+        {
+            updateBusy = false;
+            if (!lifetime.IsCancellationRequested) RefreshStatus();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -157,6 +247,8 @@ internal sealed class TrayContext : ApplicationContext
         if (disposing)
         {
             timer.Dispose();
+            updateTimer.Dispose();
+            lifetime.Cancel();
             icon.Visible = false;
             icon.ContextMenuStrip?.Dispose();
             icon.Dispose();

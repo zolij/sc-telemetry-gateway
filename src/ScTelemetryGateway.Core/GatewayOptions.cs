@@ -6,6 +6,8 @@ public sealed record GatewayOptions
     public string Endpoint { get; init; } = "";
     public int IntervalSeconds { get; init; } = 5;
     public HashSet<string> Fields { get; init; } = [];
+    public bool AutomaticUpdateChecks { get; init; } = true;
+    public bool IncludePreviewUpdates { get; init; }
 
     public void Validate(bool requireEndpoint = true)
     {

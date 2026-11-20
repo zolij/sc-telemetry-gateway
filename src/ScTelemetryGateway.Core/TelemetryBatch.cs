@@ -19,7 +19,7 @@ public sealed record TelemetryBatch(
 {
     public string Type => "telemetry.batch";
     public int SchemaVersion => 1;
-    public string AppVersion => "0.1.0";
+    public string AppVersion => BuildInfo.Version;
 }
 
 public static class WireJson

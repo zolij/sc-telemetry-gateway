@@ -13,12 +13,14 @@
     <PackageReference Include="JsonSchema.Net" Version="9.7.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="../../src/ScTelemetryGateway.Windows/SettingsStore.cs" Link="SettingsStore.cs" />
+    <Compile Include="../../src/ScTelemetryGateway.Windows/ApplicationUpdater.cs" Link="ApplicationUpdater.cs" />
     <Content Include="../../docs/telemetry.schema.json" Link="telemetry.schema.json" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
   </ItemGroup>

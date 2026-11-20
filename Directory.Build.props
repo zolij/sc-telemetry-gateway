@@ -4,6 +4,6 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Deterministic>true</Deterministic>
     <Product>Star Citizen Telemetry Gateway</Product>
-    <Version>0.1.0</Version>
+    <Version>0.2.0-preview.1</Version>
   </PropertyGroup>
 </Project>
