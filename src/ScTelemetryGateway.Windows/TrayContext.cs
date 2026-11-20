@@ -34,7 +34,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("About", null, (_, _) => MessageBox.Show(
             ProductName + " 0.1.0\n\nIndependent community project.\n" +
             "Not affiliated with, endorsed by, sponsored by, or supported by\n" +
-            "Cloud Imperium Games or Roberts Space Industries.\n" +
+            "Cloud Imperium Games.\n" +
             "Star Citizen and related marks belong to their respective owners.\n\n" +
             "Apache-2.0. Protocol observed in PTU 5.0.202.205.\n" +
             "See LICENSE, NOTICE and docs in the application folder.", ProductName));

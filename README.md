@@ -4,7 +4,7 @@ A read-only Windows tray application that forwards selected, aggregated local
 Star Citizen telemetry to a configurable WebSocket receiver.
 
 **Independent community project.** Not affiliated with, endorsed by, sponsored
-by, or supported by Cloud Imperium Games or Roberts Space Industries.
+by, or supported by Cloud Imperium Games.
 Star Citizen and related marks belong to their respective owners.
 
 ## Compatibility
