@@ -11,3 +11,15 @@ changelist 13238477, through the author's sctelemetrypoc research project.
 They are not an official SDK or a representation of permission from the game
 publisher. This project's license does not grant rights to third-party game
 assets or trademarks. No game binaries or live gameplay logs are distributed.
+
+gRPC .NET (Grpc.Net.Client, Grpc.Net.Common, Grpc.Core.Api):
+Copyright 2019 The gRPC Authors. Licensed under Apache-2.0; see LICENSE.
+
+Google.Protobuf:
+Copyright 2015, Google Inc. Licensed under BSD-3-Clause; see
+docs/licenses/Google.Protobuf.txt for the upstream license and notices.
+
+Microsoft .NET runtime, Windows Desktop runtime, Microsoft.Extensions
+abstractions, and System.Security.Cryptography.ProtectedData:
+Licensed under MIT, with component-specific third-party notices.
+See docs/licenses/ and docs/THIRD-PARTY.md.

@@ -68,8 +68,14 @@ public sealed class DeliveryTests
                 container = await ProxyContainer.Start(origin.Port, timeout.Token);
                 endpoint = new Uri($"ws://127.0.0.1:{container.Port}/custom/ingest");
             }
-            var store = new TelemetryAggregator(["actor.state.uec_balance"], Guid.NewGuid());
-            store.Ingest(new() { Actor = new() { State = new() { UecBalance = 42 } } });
+            await using var game = await StartGame(timeout.Token);
+            var gameAddress = new Uri(game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+            var store = new TelemetryAggregator(["actor.vitals.heart_rate"], Guid.NewGuid());
+            using var readerStop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+            var frameReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var readerTask = new GameTelemetryReader(gameAddress.Port).RunAsync(store,
+                value => { if (value == "Game connected") frameReceived.TrySetResult(); }, readerStop.Token);
+            await frameReceived.Task.WaitAsync(timeout.Token);
             var queue = new BatchQueue();
             queue.Enqueue(store.CloseWindow(0)!);
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
@@ -85,6 +91,9 @@ public sealed class DeliveryTests
             }
             await stop.CancelAsync();
             await Stop(task, stop.Token);
+            await readerStop.CancelAsync();
+            await Stop(readerTask, readerStop.Token);
+            await game.StopAsync(CancellationToken.None);
         }
         finally
         {
@@ -142,13 +151,7 @@ public sealed class DeliveryTests
     public async Task ReadsSyntheticGrpcStreamIntoSelectedAggregates()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0, l => l.Protocols = HttpProtocols.Http2));
-        builder.Services.AddGrpc();
-        await using var app = builder.Build();
-        app.MapGrpcService<SyntheticGame>();
-        await app.StartAsync(timeout.Token);
+        await using var app = await StartGame(timeout.Token);
         var address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
         var store = new TelemetryAggregator(["actor.vitals.heart_rate"], Guid.NewGuid());
         var reader = new GameTelemetryReader(address.Port);
@@ -164,6 +167,18 @@ public sealed class DeliveryTests
         await stop.CancelAsync();
         await Stop(task, stop.Token);
         await app.StopAsync(CancellationToken.None);
+    }
+
+    private static async Task<WebApplication> StartGame(CancellationToken token)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0, l => l.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var app = builder.Build();
+        app.MapGrpcService<SyntheticGame>();
+        await app.StartAsync(token);
+        return app;
     }
 
     public sealed class SyntheticGame : GameTelemetryService.GameTelemetryServiceBase

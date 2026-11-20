@@ -1,0 +1,53 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      RUN_PROXY_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore tests/ScTelemetryGateway.Tests --locked-mode
+      - run: dotnet test tests/ScTelemetryGateway.Tests --no-restore --configuration Release
+      - if: runner.os == 'Windows'
+        run: dotnet publish src/ScTelemetryGateway.Windows --configuration Release --runtime win-x64 --self-contained true --output artifacts/win-x64 -p:RestoreLockedMode=true
+      - name: Smoke test self-contained Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/win-x64/StarCitizenTelemetryGateway.exe -ArgumentList '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(20000)) {
+            Stop-Process -Id $process.Id
+            throw 'Windows application smoke test timed out.'
+          }
+          if ($process.ExitCode -ne 0) { throw "Windows application exited with $($process.ExitCode)." }
+      - name: Package portable Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts/win-x64/* -DestinationPath artifacts/star-citizen-telemetry-gateway-win-x64.zip
+          (Get-FileHash artifacts/star-citizen-telemetry-gateway-win-x64.zip -Algorithm SHA256).Hash |
+            Set-Content artifacts/star-citizen-telemetry-gateway-win-x64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: star-citizen-telemetry-gateway-win-x64
+          path: |
+            artifacts/star-citizen-telemetry-gateway-win-x64.zip
+            artifacts/star-citizen-telemetry-gateway-win-x64.zip.sha256

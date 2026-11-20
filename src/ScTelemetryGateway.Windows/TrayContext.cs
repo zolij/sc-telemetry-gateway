@@ -59,7 +59,9 @@ internal sealed class TrayContext : ApplicationContext
         {
             statusWindow.Show();
             using var settings = new SettingsForm(options, key);
-            settings.CreateControl();
+            settings.Show();
+            settings.Refresh();
+            settings.Close();
             var smokeTimer = new System.Windows.Forms.Timer { Interval = 1500 };
             smokeTimer.Tick += (_, _) => { smokeTimer.Dispose(); ExitThread(); };
             smokeTimer.Start();
