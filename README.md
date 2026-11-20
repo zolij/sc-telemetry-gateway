@@ -1,4 +1,4 @@
-# SC Telemetry Gateway
+# Star Citizen Telemetry Gateway
 
 A read-only Windows tray application that forwards selected, aggregated local
 Star Citizen telemetry to a configurable WebSocket receiver.

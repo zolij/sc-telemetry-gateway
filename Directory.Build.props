@@ -3,5 +3,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Deterministic>true</Deterministic>
+    <Product>Star Citizen Telemetry Gateway</Product>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>
