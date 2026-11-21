@@ -8,6 +8,16 @@ public sealed class GameTelemetryReader(int port)
 {
     public async Task RunAsync(TelemetryAggregator aggregator, Action<string> status,
         CancellationToken cancellationToken, Action? flushDisconnected = null)
+        => await RunAsync([frame => aggregator.Ingest(frame)],
+            status, cancellationToken, () =>
+            {
+                aggregator.Disconnected();
+                flushDisconnected?.Invoke();
+            });
+
+    public async Task RunAsync(IReadOnlyList<Action<Sc.Game.Telemetry.V1.TelemetryStreamResponse>> sinks,
+        Action<string> status, CancellationToken cancellationToken, Action? disconnected = null,
+        Action? streamStarted = null)
     {
         if (port is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
         var delay = 1;
@@ -19,11 +29,13 @@ public sealed class GameTelemetryReader(int port)
                     new GrpcChannelOptions { MaxReceiveMessageSize = 1024 * 1024 });
                 var client = new GameTelemetryService.GameTelemetryServiceClient(channel);
                 using var call = client.TelemetryStream(new(), cancellationToken: cancellationToken);
-                aggregator.StartStream();
+                streamStarted?.Invoke();
+                foreach (var sink in sinks)
+                    if (sink.Target is TelemetryAggregator target) target.StartStream();
                 status("Waiting for game telemetry");
                 await foreach (var frame in call.ResponseStream.ReadAllAsync(cancellationToken))
                 {
-                    aggregator.Ingest(frame);
+                    foreach (var sink in sinks) sink(frame);
                     status("Game connected");
                     delay = 1;
                 }
@@ -35,8 +47,7 @@ public sealed class GameTelemetryReader(int port)
             {
                 status($"Game unavailable ({ex.StatusCode}); reconnecting");
             }
-            aggregator.Disconnected();
-            flushDisconnected?.Invoke();
+            disconnected?.Invoke();
             await Task.Delay(TimeSpan.FromSeconds(delay + Random.Shared.NextDouble()), cancellationToken);
             delay = Math.Min(delay * 2, 30);
         }

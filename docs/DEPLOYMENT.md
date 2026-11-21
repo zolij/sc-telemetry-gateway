@@ -1,5 +1,19 @@
 # Receiver deployment
 
+## Local MFD network binding
+
+The MFD is an opt-in LAN HTTP and WebSocket listener. It is not an HTTPS or
+remote cloud service. The Windows application binds only to the single eligible
+IPv4 address and port selected in Settings. It does not change Windows Firewall
+rules or open router ports. If the browser cannot connect, allow the
+application through the firewall for the appropriate private network profile,
+and verify the subnet/VLAN permits the PC and phone/tablet to communicate.
+
+Treat HTTP traffic as observable and modifiable. Pairing codes and session
+credentials do not provide transport confidentiality or gateway authentication.
+Use only on a trusted Wi-Fi or wired LAN. Close the service or pause collection
+when local access is not needed.
+
 Implement the [v1 protocol](PROTOCOL.md) in your own server. This project ships
 the Windows client, not a production receiver. The same client works with a
 direct WSS endpoint, reverse proxy, or tunnel; no provider mode is needed.

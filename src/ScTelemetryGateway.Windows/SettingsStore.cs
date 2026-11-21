@@ -19,7 +19,7 @@ public sealed class SettingsStore(string? directory = null)
             ? JsonSerializer.Deserialize<GatewayOptions>(File.ReadAllText(path), WireJson.Options)
                 ?? throw new JsonException("Settings cannot be null.")
             : new GatewayOptions();
-        options.Validate(requireEndpoint: false);
+        options.Validate(requireDestination: false);
         var keyPath = Path.Combine(root, "api-key.bin");
         if (!File.Exists(keyPath)) return (options, "");
         var clear = ProtectedData.Unprotect(File.ReadAllBytes(keyPath), null, DataProtectionScope.CurrentUser);
@@ -29,7 +29,7 @@ public sealed class SettingsStore(string? directory = null)
 
     public void Save(GatewayOptions options, string key)
     {
-        options.Validate(requireEndpoint: false);
+        options.Validate(requireDestination: false);
         if (key.Any(char.IsControl)) throw new ArgumentException("API key cannot contain control characters.");
         Directory.CreateDirectory(root);
         var clear = Encoding.UTF8.GetBytes(key);

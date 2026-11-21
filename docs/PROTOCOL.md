@@ -144,3 +144,31 @@ The client uses WebSocket ping/pong (20-second interval, 10-second pong timeout)
 This is transport liveness, not an empty telemetry batch or a remote-command
 channel. The server must answer control frames. No game-control messages exist.
 All telemetry fields start disabled; initial upload requires explicit Start.
+
+## Local MFD protocol
+
+The optional phone/tablet MFD uses a separate unencrypted HTTP and WebSocket
+interface on an explicitly selected LAN IPv4 address. It is off by default and
+does not use the remote `telemetry.batch` protocol or API key.
+
+MFD settings have an independent field allowlist. Static browser assets are
+bundled with the Windows application. No CDN, analytics, external fonts or
+runtime network downloads are used.
+
+The browser receives `mfd.snapshot` schema v1 text messages. Each message is a
+full replaceable snapshot and is published at a target cadence of 4 Hz
+(250 ms). The message contains `session_id`, `stream_id`, `sequence`,
+`connection_status`, `published_at`, `last_frame_at`, and the selected
+`fields`.
+
+Field entries contain `value`, `updated_at`, and `last_known`. Invalid numbers
+are represented as unavailable (`null`) values. Missing fields remain absent
+from an otherwise complete snapshot. A stream change or pause clears the
+snapshot, and disconnection marks retained values as `last_known`. The browser
+marks data stale after 2 seconds and labels disconnected and paused separately.
+
+HTTP and WebSocket access are not confidential or authenticated by TLS.
+Untrusted LAN clients must not be able to reach the interface. The gateway
+requires explicit pairing and approval. It supports at most 8 active approved
+browser sessions. Pairing codes expire after 2 minutes and credentials are
+held only in running-service memory and browser session storage.

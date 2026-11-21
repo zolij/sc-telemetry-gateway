@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d12">
+  <title>Star Citizen Telemetry MFD</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL TELEMETRY</p>
+        <h1>MFD</h1>
+      </div>
+      <div id="connection" class="status disconnected" role="status">DISCONNECTED</div>
+    </header>
+
+    <section id="warning" class="warning" role="note">
+      Unencrypted local network access. Use only on a trusted network.
+    </section>
+
+    <section id="pairing" class="panel">
+      <h2>Pair this browser</h2>
+      <label for="device-label">Device label</label>
+      <input id="device-label" maxlength="48" autocomplete="off" value="Phone or tablet">
+      <label for="pair-code">Pairing code</label>
+      <input id="pair-code" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      <button id="pair-button" type="button">Request access</button>
+      <p id="pair-message" role="status"></p>
+    </section>
+
+    <section id="dashboard" class="dashboard" aria-live="polite" hidden>
+      <article class="frame age-frame">
+        <span class="label">Last frame</span>
+        <strong id="frame-age">No frame</strong>
+      </article>
+      <div id="fields" class="fields"></div>
+    </section>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

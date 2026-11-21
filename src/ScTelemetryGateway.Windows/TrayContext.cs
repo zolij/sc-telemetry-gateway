@@ -88,7 +88,7 @@ internal sealed class TrayContext : ApplicationContext
         try
         {
             options.Validate();
-            if (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl))
+            if (options.RemoteConfigured && (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl)))
                 throw new ArgumentException("Configure an API key in Settings first.");
             error = null;
             runtime = new();
@@ -127,7 +127,7 @@ internal sealed class TrayContext : ApplicationContext
         busy = true;
         try
         {
-            using var form = new SettingsForm(options, key);
+            using var form = new SettingsForm(options, key, runtime);
             if (form.ShowDialog() != DialogResult.OK) return;
             await Stop();
             try
@@ -162,6 +162,8 @@ internal sealed class TrayContext : ApplicationContext
         var status = runtime?.Status;
         statusLabel.Text = (running is null ? "Collection paused. No data is being uploaded." : "Collection running.") +
             $"\n\nGame: {status?.Game ?? "Stopped"}\nReceiver: {status?.Delivery ?? "Stopped"}" +
+            $"\nMFD: {status?.Mfd ?? "Stopped"}" +
+            (runtime?.MfdServer?.Status.Url is { } url ? "\nMFD URL: " + url : "") +
             $"\nQueued: {status?.Queued ?? 0} batches / {status?.QueueBytes ?? 0} bytes" +
             $"\nDropped: {status?.BatchesDropped ?? 0} batches, {status?.EventsDropped ?? 0} events" +
             $"\nLast ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}" +

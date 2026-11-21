@@ -59,6 +59,21 @@ Loss of the Windows user profile/key material may make the key unrecoverable;
 enter it again instead of disabling protection. Corrupt settings are reported,
 not silently replaced. No telemetry values are written to disk.
 
+## Local phone/tablet MFD
+
+The bundled MFD is disabled by default. To use it, select **Enable local MFD
+access** in Settings, choose an eligible IPv4 address and port, and select an
+independent MFD field allowlist. Start collection and open the displayed URL on
+a phone or tablet on the same trusted network.
+
+Create a two-minute pairing code in Settings and have the browser submit it with
+a device label. The pending request must be explicitly approved in Settings.
+Approved devices can be revoked independently. The HTTP and WebSocket interface
+is **not encrypted** and may expose telemetry to an observer or active attacker
+on the network. It does not use WSS, secure-context-only PWA features or remote
+upload credentials. Use it only on a trusted network; configure the Windows
+Firewall prompt yourself and do not open router forwarding.
+
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates
 never auto-install on startup. Unsigned preview updates require an explicit
