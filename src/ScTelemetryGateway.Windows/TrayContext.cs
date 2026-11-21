@@ -54,7 +54,11 @@ internal sealed class TrayContext : ApplicationContext
             await Stop();
             ExitThread();
         });
-        icon.ContextMenuStrip = menu;
+        icon.MouseUp += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right) return;
+            menu.Show(Cursor.Position);
+        };
         icon.DoubleClick += (_, _) => { statusWindow.Show(); statusWindow.Activate(); };
         statusWindow.Controls.Add(statusLabel);
         statusWindow.FormClosing += (_, e) =>
