@@ -3,40 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#090d12">
-  <title>Star Citizen Telemetry MFD</title>
+  <meta name="theme-color" content="#101815">
+  <title>Telemetry MFD</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <main>
-    <header>
-      <div>
-        <p class="eyebrow">LOCAL TELEMETRY</p>
-        <h1>MFD</h1>
-      </div>
-      <div id="connection" class="status disconnected" role="status">DISCONNECTED</div>
+  <main class="console">
+    <header class="masthead">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><div><span class="eyebrow">STAR CITIZEN TELEMETRY GATEWAY</span><h1>FLIGHT <span>DISPLAY</span></h1></div></div>
+      <div class="link-status"><span class="status-dot" aria-hidden="true"></span><span id="connection" role="status">NOT PAIRED</span></div>
     </header>
 
-    <section id="warning" class="warning" role="note">
-      Unencrypted local network access. Use only on a trusted network.
+    <div class="security-note">LAN HTTP IS UNENCRYPTED <span>·</span> USE ONLY ON A TRUSTED NETWORK</div>
+
+    <section id="pairing" class="pairing" aria-labelledby="pair-title">
+      <div class="pairing-intro"><span class="section-index">01 / DEVICE ACCESS</span><h2 id="pair-title">Connect your<br><em>display.</em></h2><p>Enter the code from the gateway on your PC. Your request must be approved there before telemetry is shared.</p></div>
+      <form id="pair-form" class="pair-form">
+        <label for="device-label">DEVICE LABEL</label>
+        <input id="device-label" maxlength="48" autocomplete="off" value="Phone or tablet" required>
+        <label for="pair-code">PAIRING CODE</label>
+        <input id="pair-code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required placeholder="000000">
+        <button id="pair-button" type="submit">REQUEST ACCESS <span aria-hidden="true">↗</span></button>
+        <p id="pair-message" role="status"></p>
+      </form>
     </section>
 
-    <section id="pairing" class="panel">
-      <h2>Pair this browser</h2>
-      <label for="device-label">Device label</label>
-      <input id="device-label" maxlength="48" autocomplete="off" value="Phone or tablet">
-      <label for="pair-code">Pairing code</label>
-      <input id="pair-code" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
-      <button id="pair-button" type="button">Request access</button>
-      <p id="pair-message" role="status"></p>
-    </section>
-
-    <section id="dashboard" class="dashboard" aria-live="polite" hidden>
-      <article class="frame age-frame">
-        <span class="label">Last frame</span>
-        <strong id="frame-age">No frame</strong>
-      </article>
-      <div id="fields" class="fields"></div>
+    <section id="dashboard" hidden aria-label="Telemetry display">
+      <div class="display-bar"><span id="view-kicker">01 / FLIGHT</span><span id="frame-age">NO FRAME</span><button id="unpair-button" class="text-button" type="button">PAIR AGAIN</button></div>
+      <nav class="navigation" aria-label="Display views">
+        <button type="button" class="nav-button active" data-view="flight" aria-pressed="true"><span>01</span> FLIGHT</button>
+        <button type="button" class="nav-button" data-view="systems" aria-pressed="false"><span>02</span> SYSTEMS</button>
+        <button type="button" class="nav-button" data-view="crew" aria-pressed="false"><span>03</span> CREW</button>
+      </nav>
+      <div id="view-flight" class="view" aria-label="Flight instruments">
+        <div class="view-heading"><div><span class="section-index">LIVE INSTRUMENTS</span><h2>Flight overview</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
+        <div id="flight-cards" class="instrument-grid flight-grid"></div>
+        <details class="additional"><summary>MORE FLIGHT DATA <span aria-hidden="true">+</span></summary><div id="flight-extra" class="extra-grid"></div></details>
+      </div>
+      <div id="view-systems" class="view" aria-label="Vehicle systems" hidden>
+        <div class="view-heading"><div><span class="section-index">VEHICLE STATUS</span><h2>Systems overview</h2></div><span class="view-note">READ ONLY<br>NO GAME CONTROLS</span></div>
+        <div id="systems-cards" class="instrument-grid"></div>
+        <details class="additional"><summary>MORE SYSTEM DATA <span aria-hidden="true">+</span></summary><div id="systems-extra" class="extra-grid"></div></details>
+      </div>
+      <div id="view-crew" class="view" aria-label="Crew and environment" hidden>
+        <div class="view-heading"><div><span class="section-index">CREW &amp; ENVIRONMENT</span><h2>Occupant overview</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
+        <div id="crew-cards" class="instrument-grid"></div>
+        <details class="additional"><summary>MORE CREW DATA <span aria-hidden="true">+</span></summary><div id="crew-extra" class="extra-grid"></div></details>
+      </div>
+      <footer><span>LOCAL DISPLAY / READ ONLY</span><span>SELECT DATA IN GATEWAY SETTINGS</span></footer>
     </section>
   </main>
   <script src="/assets/app.js"></script>

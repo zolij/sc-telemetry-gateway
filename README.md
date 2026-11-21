@@ -74,6 +74,12 @@ on the network. It does not use WSS, secure-context-only PWA features or remote
 upload credentials. Use it only on a trusted network; configure the Windows
 Firewall prompt yourself and do not open router forwarding.
 
+The display has Flight, Systems and Crew views. Each shows key selected values;
+expand “More” for other fields in that view. Fields not selected in the MFD
+settings are labelled as such, unavailable values are not replaced with zeros,
+and stale or last-known data is marked. Values are shown without assumed units
+or scales.
+
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates
 never auto-install on startup. Unsigned preview updates require an explicit
