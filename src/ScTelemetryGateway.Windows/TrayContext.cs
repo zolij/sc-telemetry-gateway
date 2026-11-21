@@ -6,6 +6,7 @@ internal sealed class TrayContext : ApplicationContext
 {
     public const string ProductName = "Star Citizen Telemetry Gateway";
     private readonly NotifyIcon icon;
+    private readonly ContextMenuStrip menu;
     private readonly SettingsStore store = new();
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60000 };
@@ -29,7 +30,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         (options, key) = store.Load();
         icon = new NotifyIcon { Text = ProductName, Icon = SystemIcons.Application, Visible = true };
-        var menu = new ContextMenuStrip();
+        menu = new ContextMenuStrip();
         menu.Items.Add("Status", null, (_, _) => { statusWindow.Show(); statusWindow.Activate(); });
         menu.Items.Add("Settings", null, async (_, _) => await EditSettings());
         start = new("Start", null, (_, _) => Start());
@@ -53,7 +54,11 @@ internal sealed class TrayContext : ApplicationContext
             await Stop();
             ExitThread();
         });
-        icon.ContextMenuStrip = menu;
+        icon.MouseUp += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right)
+                menu.Show(Cursor.Position);
+        };
         icon.DoubleClick += (_, _) => { statusWindow.Show(); statusWindow.Activate(); };
         statusWindow.Controls.Add(statusLabel);
         statusWindow.FormClosing += (_, e) =>
@@ -252,7 +257,7 @@ internal sealed class TrayContext : ApplicationContext
             updateTimer.Dispose();
             lifetime.Cancel();
             icon.Visible = false;
-            icon.ContextMenuStrip?.Dispose();
+            menu.Dispose();
             icon.Dispose();
             statusWindow.Dispose();
             stop?.Dispose();
