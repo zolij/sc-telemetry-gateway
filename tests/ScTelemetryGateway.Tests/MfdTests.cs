@@ -76,6 +76,38 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public void AgesFieldsAndFramesWithMonotonicTimeAcrossClockChanges()
+    {
+        var clock = new MfdClock();
+        const string speed = "vehicle.state.flight.instruments.speed";
+        const string heartRate = "actor.vitals.heart_rate";
+        var store = new MfdSnapshotStore([speed, heartRate], clock);
+        store.Ingest(new() { Vehicle = new() { State = new() { Flight = new() { Instruments = new() { Speed = 12 } } } } });
+        clock.Advance(TimeSpan.FromSeconds(3));
+        clock.WallTime -= TimeSpan.FromHours(1);
+        store.Ingest(new() { Actor = new() { Vitals = new() { HeartRate = 72 } } });
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+
+        var snapshot = store.Current();
+        Assert.Equal(3500, snapshot.Fields[speed].AgeMs);
+        Assert.Equal(500, snapshot.Fields[heartRate].AgeMs);
+        Assert.Equal(500, snapshot.LastFrameAgeMs);
+        Assert.Contains(speed, snapshot.SelectedFields);
+        store.StartStream();
+        Assert.Null(store.Current().LastFrameAgeMs);
+    }
+
+    private sealed class MfdClock : TimeProvider
+    {
+        public DateTimeOffset WallTime { get; set; } = DateTimeOffset.UnixEpoch;
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override DateTimeOffset GetUtcNow() => WallTime;
+        public override long GetTimestamp() => timestamp;
+        public void Advance(TimeSpan by) { timestamp += by.Ticks; WallTime += by; }
+    }
+
+    [Fact]
     public void MigratedOptionsPreserveRemoteAndKeepMfdOff()
     {
         var options = JsonSerializer.Deserialize<GatewayOptions>(

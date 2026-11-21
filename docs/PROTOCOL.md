@@ -158,12 +158,15 @@ runtime network downloads are used.
 The browser receives `mfd.snapshot` schema v1 text messages. Each message is a
 full replaceable snapshot and is published at a target cadence of 4 Hz
 (250 ms). The message contains `session_id`, `stream_id`, `sequence`,
-`connection_status`, `published_at`, `last_frame_at`, and the selected
-`fields`.
+`connection_status`, `published_at`, `last_frame_at`, `last_frame_age_ms`,
+`selected_fields`, and the available selected `fields`.
 
-Field entries contain `value`, `updated_at`, and `last_known`. Invalid numbers
+Field entries contain `value`, `updated_at`, `last_known`, and `age_ms`. Invalid numbers
 are represented as unavailable (`null`) values. Missing fields remain absent
-from an otherwise complete snapshot. A stream change or pause clears the
+from an otherwise complete snapshot; the `selected_fields` list distinguishes
+unselected from selected-but-unavailable fields. Ages are measured using the
+server's monotonic clock at publication; the browser adds elapsed monotonic time
+since receipt. A stream change or pause clears the
 snapshot, and disconnection marks retained values as `last_known`. The browser
 marks data stale after 2 seconds and labels disconnected and paused separately.
 
