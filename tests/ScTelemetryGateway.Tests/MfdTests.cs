@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Net;
+using System.Net.Sockets;
 using Sc.Game.Telemetry.V1;
 using ScTelemetryGateway.Core;
 
@@ -6,6 +8,31 @@ namespace ScTelemetryGateway.Tests;
 
 public sealed class MfdTests
 {
+    [Fact]
+    public async Task ServerStartsAndServesBundledIndex()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "index.html"), "synthetic MFD");
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        try
+        {
+            await using var server = new MfdServer(IPAddress.Loopback, port, new MfdSnapshotStore([]), root);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await server.StartAsync(timeout.Token);
+            using var client = new HttpClient();
+            Assert.Equal("synthetic MFD", await client.GetStringAsync($"http://127.0.0.1:{port}/", timeout.Token));
+        }
+        finally
+        {
+            File.Delete(Path.Combine(root, "index.html"));
+            Directory.Delete(root);
+        }
+    }
+
     [Fact]
     public void SnapshotUsesIndependentSelectionAndClearsOnStreamStart()
     {

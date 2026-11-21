@@ -54,11 +54,7 @@ internal sealed class TrayContext : ApplicationContext
             await Stop();
             ExitThread();
         });
-        icon.MouseUp += (_, e) =>
-        {
-            if (e.Button != MouseButtons.Right) return;
-            menu.Show(Cursor.Position);
-        };
+        icon.ContextMenuStrip = menu;
         icon.DoubleClick += (_, _) => { statusWindow.Show(); statusWindow.Activate(); };
         statusWindow.Controls.Add(statusLabel);
         statusWindow.FormClosing += (_, e) =>
@@ -98,7 +94,9 @@ internal sealed class TrayContext : ApplicationContext
             error = null;
             runtime = new();
             stop = new();
-            running = Observe(runtime.RunAsync(options, key, stop.Token));
+            var activeRuntime = runtime;
+            var token = stop.Token;
+            running = Observe(Task.Run(() => activeRuntime.RunAsync(options, key, token)));
         }
         catch (ArgumentException ex) { MessageBox.Show(ex.Message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         RefreshStatus();

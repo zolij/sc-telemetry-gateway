@@ -115,12 +115,14 @@ public sealed class MfdServer : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions
         {
             Args = [],
             EnvironmentName = "Production"
         });
+        builder.WebHost.UseKestrelCore();
         builder.WebHost.ConfigureKestrel(options => options.Listen(address, port));
+        builder.Services.AddRouting();
         builder.Services.AddSingleton(this);
         app = builder.Build();
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
