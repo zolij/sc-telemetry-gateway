@@ -95,7 +95,6 @@ internal sealed class TrayContext : ApplicationContext
             runtime = new();
             stop = new();
             running = Observe(runtime.RunAsync(options, key, stop.Token));
-            RebindTrayMenu();
         }
         catch (ArgumentException ex) { MessageBox.Show(ex.Message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         RefreshStatus();
@@ -120,16 +119,7 @@ internal sealed class TrayContext : ApplicationContext
         running = null;
         stop?.Dispose();
         stop = null;
-        RebindTrayMenu();
         RefreshStatus();
-    }
-
-    private void RebindTrayMenu()
-    {
-        icon.Visible = false;
-        icon.ContextMenuStrip = null;
-        icon.Visible = true;
-        icon.ContextMenuStrip = menu;
     }
 
     private async Task EditSettings()
