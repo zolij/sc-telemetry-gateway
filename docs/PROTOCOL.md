@@ -181,13 +181,20 @@ marks data stale after 2 seconds and labels disconnected and paused separately.
 
 HTTP and WebSocket access are not confidential or authenticated by TLS.
 Untrusted LAN clients must not be able to reach the interface. The gateway
-requires explicit pairing and approval. It supports at most 8 active approved
+requires explicit pairing: a valid one-use code immediately authorizes the
+display without a separate PC approval. It supports at most 8 active approved
 browser sessions; unauthenticated connections also reserve a slot. Fragmented
 authentication messages are limited to 512 bytes and a 10-second deadline,
 including a failed-authentication close handshake. Pairing request bodies are
-limited to 4096 bytes, including chunked requests. Pairing codes are single-use,
-expire after 2 minutes, and credentials are held only in running-service memory
-and browser session storage. Shutdown cancels pending requests and connections.
+limited to 4096 bytes, including chunked requests. Pairing codes are single-use
+and expire after 2 minutes. The dashboard's QR code contains the MFD URL with
+the code in its fragment; the browser removes the fragment and sends the code
+to the pairing endpoint. A browser-generated identifier is included as the
+display label. The browser stores its token and identifier in local storage,
+scoped to the gateway origin; the PC persists approved device records and
+SHA-256 token hashes in `mfd-devices.json`. Grants survive collection and
+application restarts until revoked; revocation disconnects active sockets.
+These mechanisms do not protect the unencrypted connection.
 
 Each display has its own sender with at most one replaceable pending snapshot.
 A send exceeding 5 seconds disconnects only that display; slow displays cannot
@@ -239,7 +246,7 @@ does not change subscriptions, enable fields or send game commands.
 
 The following same-origin HTTP endpoints require
 `Authorization: Bearer <session_token>` using the token granted by the existing
-pairing flow. Every PC-approved display has profile read/write access; revoking
+pairing flow. Every paired display has profile read/write access; revoking
 a device also revokes its profile API access. Tokens are never part of URLs or
 profile files. Write requests require the gateway's exact `Origin`, and all
 requests require its exact `Host`; foreign origins are rejected without CORS.
@@ -363,9 +370,8 @@ The PC stores `{schema_version: 1, profiles: [...]}` in `mfd-profiles.json`
 under its existing application-data directory. Writes use flush and atomic
 replacement; success is returned only after persistence. Invalid or unsupported
 stores are reported, never silently discarded or replaced with an empty store.
-Profiles survive gateway restarts, but pairing credentials remain ephemeral:
-devices must pair again after a restart. Profile errors do not disable the
-independent telemetry transport.
+Profiles and approved device records survive gateway restarts. Profile errors
+do not disable the independent telemetry transport.
 
 Browser export produces one profile with `schema_version`, `name`, and
 `pages`, omitting the server profile ID, revision and credentials. POST accepts

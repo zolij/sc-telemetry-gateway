@@ -6,16 +6,21 @@ A read-only Windows tray application that turns selected local Star Citizen
 telemetry into a customizable phone or tablet MFD. Optionally, it can also
 forward a separate selection of aggregated telemetry to a WebSocket receiver.
 
+**Documentation: [Project wiki](https://github.com/zolij/sc-telemetry-gateway/wiki)** —
+setup, local MFD, troubleshooting, and privacy guides.
+
 **Independent community project.** Not affiliated with, endorsed by, sponsored
 by, or supported by Cloud Imperium Games.
 Star Citizen and related marks belong to their respective owners.
 
 ## Compatibility
 
-The protocol is build-specific, recovered from PTU `5.0.202.205`
-(changelist `13238477`), not an official or stable SDK.
-Compatibility with other game builds, game terms, or anti-cheat systems is not
-guaranteed. See [NOTICE](NOTICE) for provenance.
+The application targets **PTU only**; LIVE is unsupported. The PTU installation
+checked on November 22, 2026 reported build `5.0.202.10025` (changelist
+`13248297`; manifest dated November 20, 2026). The build-specific telemetry
+mapping was recovered from PTU `5.0.202.205` (changelist `13238477`), not an
+official or stable SDK. Compatibility with other builds, game terms, or
+anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
 
 ## Design
 
@@ -38,13 +43,28 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
    publisher/SmartScreen warning. Trusted signing requires external approval.
    The ZIP from a successful [Actions run](https://github.com/zolij/sc-telemetry-gateway/actions)
    remains available for portable use; extract all files before running the EXE.
-2. In the game's console, configure and enable the local service:
+2. To configure the game telemetry service persistently, add the following
+   assignments to the PTU build's `user.cfg` (usually
+   `...\Roberts Space Industries\StarCitizen\PTU\user.cfg`, not the `USER`
+   subfolder), preserving any existing settings:
+
+   ```text
+   grpc.client.server.port = 50051
+   grpc.client.server.external = 0
+   server.game.telemetry.enabled = 1
+   ```
+
+   Restart Star Citizen after saving. For a current-session test, enter these
+   commands in the game console instead:
 
    ```text
    grpc.client.server.port 50051
    grpc.client.server.external 0
    server.game.telemetry.enabled 1
    ```
+
+   Keep the gateway's game port equal to the configured port and `external`
+   set to `0`.
 
 3. Open **Settings** in the dashboard. Under **Local MFD**, choose a network
    interface and port on a trusted network and enable local MFD access. Under
@@ -92,7 +112,10 @@ The browser retains its pairing token across browser and gateway restarts;
 each browser also receives a stable generated identifier shown in the approved
 device list. Approved devices can be revoked in the dashboard. The unencrypted
 local interface does not use WSS, secure-context-only PWA features or remote
-upload credentials.
+upload credentials. The generated identifier belongs to the browser's
+storage for this gateway origin, not to the physical device; clearing that
+storage resets it. Scanning a new QR code attempts a fresh pairing even if a
+previous token is stored.
 
 The display starts empty, with no built-in layouts. Select **New profile** to
 build your own MFD with named pages. In **Edit**, search the shared-field library
@@ -146,8 +169,9 @@ restrictions cannot be overridden by the gateway.
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under
 `%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are
-shared by all PC-approved displays. Each browser chooses its own active profile
-and page. Every approved display can edit or delete shared profiles. If another
+shared by all approved displays. Each browser chooses its own active profile
+and page; when only one profile exists, it is selected automatically. Every
+approved display can edit or delete shared profiles. If another
 display saves first, your draft is retained: reload the saved profile or save
 your changes as a new profile instead of overwriting it.
 
