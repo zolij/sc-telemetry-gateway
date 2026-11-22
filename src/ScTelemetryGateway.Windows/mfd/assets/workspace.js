@@ -59,6 +59,7 @@ const MfdWorkspace = (() => {
   }
   function controls() {
     const editing = draft !== null;
+    MfdFocus.update(!busy && !editing && !!saved, !editing && !!saved);
     $("editor-toolbar").hidden = !editing;
     $("field-library").hidden = !editing;
     $("workspace-message").setAttribute("aria-busy", String(busy));
@@ -124,6 +125,7 @@ const MfdWorkspace = (() => {
     const current = profile();
     if (current && !current.pages.some(item => item.id === pageId)) pageId = current.pages[0].id;
     $("page-navigation").replaceChildren();
+    $("page-navigation").dataset.pageCount = String(current?.pages.length ?? 0);
     for (const [index, item] of (current?.pages ?? []).entries()) {
       const button = node("button", "page-button", String(index + 1).padStart(2, "0") + " / " + item.name);
       button.type = "button";

@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101815">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Telemetry MFD">
   <title>Telemetry MFD</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
@@ -33,6 +35,7 @@
       <div class="workspace-toolbar">
         <label class="profile-picker">DISPLAY PROFILE<select id="profile-select" aria-label="Display profile"><option value="">Choose a profile</option></select></label>
         <div class="toolbar-actions">
+          <button id="focus-button" type="button" aria-pressed="false" disabled>FOCUS MODE</button>
           <button id="new-profile" type="button" data-action>NEW PROFILE</button>
           <button id="edit-profile" type="button" data-action>EDIT</button>
           <button id="copy-profile" type="button" data-action>DUPLICATE</button>
@@ -48,7 +51,14 @@
         <button id="reload-profile" type="button" data-action>RELOAD FROM PC</button>
         <button id="save-copy" type="button" data-action>SAVE AS NEW PROFILE</button>
       </div>
-      <nav id="page-navigation" class="page-navigation" aria-label="Profile pages"></nav>
+      <div class="page-bar">
+        <nav id="page-navigation" class="page-navigation" aria-label="Profile pages"></nav>
+        <button id="leave-focus" type="button" aria-label="Exit focus mode" hidden>EXIT FOCUS</button>
+      </div>
+      <div id="focus-feedback" class="focus-feedback" hidden>
+        <p id="focus-message" role="status"></p>
+        <button id="dismiss-focus-message" type="button">DISMISS</button>
+      </div>
       <p id="page-trigger-summary" class="trigger-summary"></p>
       <div id="editor-toolbar" class="editor-toolbar" hidden>
         <label>PROFILE NAME<input id="profile-name" maxlength="80" required></label>
@@ -111,6 +121,7 @@
   </main>
   <script src="/assets/presentation.js"></script>
   <script src="/assets/triggers.js"></script>
+  <script src="/assets/focus.js"></script>
   <script src="/assets/workspace.js"></script>
   <script src="/assets/app.js"></script>
 </body>

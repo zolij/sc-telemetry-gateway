@@ -105,6 +105,7 @@ $("unpair-button").addEventListener("click", () => {
   $("connection").parentElement.className = "link-status";
 });
 
+MfdFocus.init();
 MfdWorkspace.init(() => token, paint);
 setInterval(paint, 250);
 if (token) {

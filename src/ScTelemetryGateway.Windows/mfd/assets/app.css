@@ -57,6 +57,11 @@ h1 span { color: var(--accent); }
 .workspace-message.error { color: var(--warning); }
 .conflict-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--warning); background: #2e291e; color: var(--warning); font: 11px Consolas, monospace; margin-bottom: 12px; }
 .page-navigation { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 10px; }
+.page-bar { display: flex; align-items: start; gap: 8px; }
+.page-bar .page-navigation { flex: 1; min-width: 0; }
+.focus-feedback { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin-bottom: 10px; border: 1px solid var(--warning); color: var(--warning); background: #2e291e; }
+.focus-feedback p { flex: 1; margin: 0; font-size: 13px; line-height: 1.5; }
+.focus-feedback button { flex: none; }
 .page-button { white-space: nowrap; min-width: 130px; }
 .page-button[aria-pressed="true"] { background: var(--accent); color: #132018; border-color: var(--accent); }
 .editor-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; border: 1px solid #738b56; background: #202e22; margin-block: 6px 16px; }
@@ -122,6 +127,21 @@ h1 span { color: var(--accent); }
 .form-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 .status-rule { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-block: 12px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 footer { display: flex; justify-content: space-between; gap: 15px; padding: 24px 0; color: #8ca18e; line-height: 1.5; }
+body.focus-mode { background: #101815; }
+.focus-mode .console {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+}
+.focus-mode .masthead, .focus-mode .security-note, .focus-mode .display-bar,
+.focus-mode .workspace-toolbar, .focus-mode .workspace-message, .focus-mode .conflict-actions,
+.focus-mode .trigger-summary, .focus-mode .editor-toolbar, .focus-mode .field-library,
+.focus-mode .view-heading, .focus-mode .empty-display, .focus-mode footer { display: none; }
+.focus-mode .page-navigation[data-page-count="0"], .focus-mode .page-navigation[data-page-count="1"] { display: none; }
+.focus-mode .page-bar { position: sticky; top: 0; z-index: 2; align-items: start; justify-content: end; background: #101815; padding-bottom: 8px; }
+.focus-mode .page-navigation { padding-bottom: 0; }
+.focus-mode #leave-focus { flex: none; }
 @media (max-width: 1100px) {
   .workspace-body.editing { grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; }
   .editing .instrument-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
