@@ -2,7 +2,7 @@
 
 const MfdPresentation = (() => {
   function readable(text) {
-    return text.replace(/^(VEHICLE_COMPONENT_DEPLOYMENT_STATE|VEHICLE_MASTER_MODE|ACTOR_LOCOMOTION_STATE|ACTOR_CREW_ROLE|DOOR_OPEN_STATE|DOOR_LOCK_STATE|ANNUNCIATOR_STATE|VEHICLE_TYPE|COUNTERMEASURE_TYPE)_/, "")
+    return text.replace(/^(VEHICLE_COMPONENT_DEPLOYMENT_STATE|VEHICLE_MASTER_MODE|ACTOR_LOCOMOTION_STATE|ACTOR_CREW_ROLE|DOOR_OPEN_STATE|DOOR_LOCK_STATE|ANNUNCIATOR_STATE|VEHICLE_TYPE|COUNTERMEASURE_TYPE|GAME_EVENT_TYPE)_/, "")
       .replace(/_/g, " ").toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
   }
 
@@ -16,13 +16,13 @@ const MfdPresentation = (() => {
       validMaximum(maximum.value) ? maximum.value : null;
   }
 
-  function format(value, decimals, mode = "number", maximum = null) {
+  function format(value, decimals, mode = "number", maximum = null, type = null) {
     if (!["number", "percent_fraction", "percent", "percent_max"].includes(mode))
       throw new Error("Unsupported display format.");
-    if (value === null || value === undefined) return "Unavailable";
-    if (Array.isArray(value)) return value.length ? value.map(item => format(item, decimals, mode, maximum)).join(" / ") : "None";
+    if (value === null || value === undefined) return "Unknown";
+    if (Array.isArray(value)) return value.length ? value.map(item => format(item, decimals, mode, maximum, type)).join(" / ") : "None";
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) return "Unavailable";
+      if (!Number.isFinite(value)) return "Unknown";
       if (mode === "percent_max" && !validMaximum(maximum)) return "Unavailable";
       const scaled = mode === "percent" ? value / 100 : mode === "percent_max" ? value / maximum : value;
       if (!Number.isFinite(scaled)) return "Unavailable";
@@ -32,7 +32,7 @@ const MfdPresentation = (() => {
       }).format(scaled);
     }
     if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (typeof value === "string") return value ? (/^[A-Z][A-Z0-9_]*$/.test(value) ? readable(value) : value) : "Unavailable";
+    if (typeof value === "string") return value ? (type === "enum" ? readable(value) : value) : "Empty";
     return "Unavailable";
   }
 

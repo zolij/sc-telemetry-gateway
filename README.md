@@ -85,8 +85,10 @@ values to your own labels and a fixed color palette. No graphs, arbitrary
 formulas or game controls are included; measurement units are not inferred.
 
 **Value format** defaults to **Automatic**, including for existing profiles.
-Shield level/faces use 0–1 ratios (`0.75` → `75%`); hydrogen and quantum fuel
-use 0–100 values (`75` → `75%`). Actor health, oxygen, hunger and thirst use
+Shield level/faces and hydrogen fuel use 0–1 ratios (`0.75` → `75%`).
+Quantum fuel retains its 0–100 default (`75` → `75%`); its scale has not been
+verified in the current PTU because the sampled game stream omits this field.
+Actor health, oxygen, hunger and thirst use
 `current / max`: enable both the `current` and `max` fields in gateway MFD
 settings. A missing, nonpositive or mismatched maximum is marked unavailable,
 not replaced with an assumed scale. Other fields remain raw values.
@@ -109,9 +111,13 @@ tiles per page are supported, subject to a 512 KiB profile/import limit and a
 16 MiB total store limit. Back up exported profiles before moving to another PC.
 
 The field library includes enabled fields even before game values arrive.
-Fields no longer selected in gateway MFD settings are marked as such; missing
-values are never replaced with zeros. Stale, offline and last-known values
-remain visibly marked. Most lists show the latest received repeated values.
+Fields no longer selected in gateway MFD settings are marked as such.
+Numbers omitted from the protobuf payload are shown as **Unknown**, not zero.
+Proto3 can also omit genuine zeros, so those are unknown too unless explicitly
+encoded. Boolean defaults remain false. Text values retain their exact spelling;
+empty strings are shown as **Empty**, distinct from missing values.
+Stale, offline and last-known values remain visibly marked. Most lists show
+the latest received repeated values.
 The event list retains the current stream's last 100 events, including
 duplicates, and reports how many older events were dropped. Restarting the
 game stream or pausing clears this history. The layout adapts to tablet and

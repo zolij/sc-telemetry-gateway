@@ -135,7 +135,7 @@ public static class MfdFieldFormats
     public static string Default(string path) => path switch
     {
         "vehicle.state.shields.level" or "vehicle.state.shields.faces" => "percent_fraction",
-        "vehicle.state.flight.instruments.hydrogen_fuel" or
+        "vehicle.state.flight.instruments.hydrogen_fuel" => "percent_fraction",
         "vehicle.state.flight.instruments.quantum_fuel" => "percent",
         "actor.vitals.health.current" or "actor.vitals.oxygen.current" or
         "actor.vitals.hunger.current" or "actor.vitals.thirst.current" => "percent_max",

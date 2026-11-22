@@ -292,7 +292,8 @@ Automatic field formats are:
 | Field | Interpretation |
 | --- | --- |
 | `vehicle.state.shields.level`, `vehicle.state.shields.faces` | 0–1 ratios |
-| `vehicle.state.flight.instruments.hydrogen_fuel`, `vehicle.state.flight.instruments.quantum_fuel` | 0–100 values |
+| `vehicle.state.flight.instruments.hydrogen_fuel` | 0–1 ratio |
+| `vehicle.state.flight.instruments.quantum_fuel` | 0–100 default; scale unverified in the current sampled PTU feed |
 | `actor.vitals.health.current`, `actor.vitals.oxygen.current`, `actor.vitals.hunger.current`, `actor.vitals.thirst.current` | Current divided by the corresponding `.max` |
 | Other fields, including temperature and unverified vehicle health scales | Raw values |
 
@@ -303,6 +304,10 @@ unavailable percentage, never an assumed denominator. Percentages are not
 clamped to 0–100, missing values are not replaced with zeros, and status rules
 continue to match raw values before display formatting. Neither the snapshot
 schema nor the gateway allowlist is changed by a formatting choice.
+
+Only fields identified as enums by the catalogue have human-readable enum
+labels applied. String fields retain their exact spelling and capitalization.
+An empty string displays `Empty`, distinct from absent/null values (`Unknown`).
 
 Profiles are limited to 512 KiB serialized JSON; request/import bodies,
 including chunked requests, have the same byte limit. The complete versioned

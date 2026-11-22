@@ -179,6 +179,7 @@ message VehicleState {
 }
 
 message VehicleFrame {
+  reserved 1;
   sc.game.telemetry.v1.VehicleState state = 2;
 }
 
@@ -247,6 +248,7 @@ message FeedbackAxes {
 }
 
 message ForceFeedbackFrame {
+  reserved 1;
   sc.game.telemetry.v1.FeedbackAxes angular = 2;
   sc.game.telemetry.v1.FeedbackAxes linear = 3;
   float gunfire = 4;
@@ -254,6 +256,7 @@ message ForceFeedbackFrame {
 }
 
 message ActorVitals {
+  reserved 6;
   sc.game.telemetry.v1.Gauge health = 1;
   sc.game.telemetry.v1.Gauge oxygen = 2;
   sc.game.telemetry.v1.Gauge hunger = 3;

@@ -175,26 +175,26 @@ const MfdWorkspace = (() => {
       card.dataset.color = "neutral";
       if (!selected.has(tile.field) || !field) {
         delete value.dataset.signature;
-        value.textContent = !selected.has(tile.field) ? "Not selected" : "Unavailable";
+        value.textContent = !selected.has(tile.field) ? "Not selected" : "Unknown";
         meta.textContent = !selected.has(tile.field) ? "Enable this field in PC settings" : online ? "No value received" : "Waiting / offline";
         card.dataset.state = "unavailable";
         continue;
       }
       const age = Number.isFinite(field.age_ms) ? field.age_ms + elapsed : NaN;
-      const state = !online ? "OFFLINE / LAST KNOWN" : field.last_known ? "LAST KNOWN" : field.value === null ? "UNAVAILABLE" :
+      const state = !online ? "OFFLINE / LAST KNOWN" : field.last_known ? "LAST KNOWN" : field.value === null ? "UNKNOWN" :
         history ? "HISTORY" : !Number.isFinite(age) ? "AGE UNKNOWN" : age >= 2000 ? "STALE" : "LIVE";
       const rule = tile.widget === "status" && field.value !== null
         ? tile.rules.find(item => item.value === String(field.value)) : null;
       if (tile.widget === "list" && Array.isArray(field.value)) {
-        const signature = JSON.stringify([field.value, mode, tile.decimals]);
+        const signature = JSON.stringify([field.value, mode, tile.decimals, definition?.type]);
         if (value.dataset.signature !== signature) {
           value.replaceChildren();
-          for (const item of field.value) value.append(node("div", "list-value", MfdPresentation.format(item, tile.decimals, mode)));
+          for (const item of field.value) value.append(node("div", "list-value", MfdPresentation.format(item, tile.decimals, mode, null, definition?.type)));
           if (!field.value.length) value.textContent = "None";
           value.dataset.signature = signature;
         }
       } else {
-        value.textContent = rule?.label ?? MfdPresentation.format(field.value, tile.decimals, mode, maximumValue);
+        value.textContent = rule?.label ?? MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type);
         delete value.dataset.signature;
       }
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;

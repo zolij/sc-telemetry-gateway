@@ -170,7 +170,7 @@ public sealed class MfdProfileTests : IDisposable
     [Theory]
     [InlineData("vehicle.state.shields.level", "percent_fraction", null)]
     [InlineData("vehicle.state.shields.faces", "percent_fraction", null)]
-    [InlineData("vehicle.state.flight.instruments.hydrogen_fuel", "percent", null)]
+    [InlineData("vehicle.state.flight.instruments.hydrogen_fuel", "percent_fraction", null)]
     [InlineData("vehicle.state.flight.instruments.quantum_fuel", "percent", null)]
     [InlineData("actor.vitals.health.current", "percent_max", "actor.vitals.health.max")]
     [InlineData("actor.vitals.oxygen.current", "percent_max", "actor.vitals.oxygen.max")]
