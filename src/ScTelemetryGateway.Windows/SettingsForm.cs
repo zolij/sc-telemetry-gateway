@@ -19,6 +19,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown mfdPort = new() { Minimum = 1024, Maximum = 65535, Width = 120 };
     private readonly CheckBox automaticUpdates = new() { Text = "Check for updates automatically (GitHub)", AutoSize = true };
     private readonly CheckBox previewUpdates = new() { Text = "Include unsigned preview updates (not recommended)", AutoSize = true };
+    private readonly CheckBox usageStatistics = new() { Text = "Send application usage statistics", AutoSize = true };
 
     public GatewayOptions Options { get; private set; }
     public string ApiKey => apiKey.Text;
@@ -39,6 +40,7 @@ internal sealed class SettingsForm : Form
         mfdPort.Value = options.MfdPort;
         automaticUpdates.Checked = options.AutomaticUpdateChecks;
         previewUpdates.Checked = options.IncludePreviewUpdates;
+        usageStatistics.Checked = options.UsageStatisticsEnabled;
 
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces()
                      .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback))
@@ -87,6 +89,13 @@ internal sealed class SettingsForm : Form
         AddText(updates, "Updates are never installed without your approval.");
         tabs.TabPages.Add(Page("Updates", updates));
 
+        var privacy = CreatePage("Privacy");
+        AddText(privacy, "Usage statistics", true);
+        privacy.Controls.Add(usageStatistics);
+        AddText(privacy, "When enabled, the application sends a random installation ID, application version and whether collection is running to the project usage service hosted by Cloudflare. No game telemetry, receiver URL or API key is sent.");
+        AddText(privacy, "Cloudflare can see network metadata including your IP address. Usage records become eligible for hourly cleanup after 30 days. Disabling deletes the local ID and stops further reports; previously sent records remain until cleanup.");
+        tabs.TabPages.Add(Page("Privacy", privacy));
+
         var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(8), FlowDirection = FlowDirection.RightToLeft };
         var save = new Button { Text = "Apply settings", AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
@@ -99,6 +108,7 @@ internal sealed class SettingsForm : Form
                     GamePort = (int)port.Value, IntervalSeconds = (int)interval.Value,
                     Endpoint = endpoint.Text.Trim(), AutomaticUpdateChecks = automaticUpdates.Checked,
                     IncludePreviewUpdates = previewUpdates.Checked, Fields = Selected(fields),
+                    UsageStatisticsEnabled = usageStatistics.Checked, UsageNoticeShown = options.UsageNoticeShown,
                     RemoteEnabled = remoteEnabled.Checked, MfdEnabled = mfdEnabled.Checked,
                     MfdAddress = (mfdAddress.SelectedItem as AddressItem)?.Address ?? "",
                     MfdPort = (int)mfdPort.Value, MfdFields = Selected(mfdFields)

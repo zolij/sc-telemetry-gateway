@@ -18,12 +18,13 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
 
 - Native Windows x64 tray application, self-contained .NET 10 distribution.
 - Loopback-only, read-only gRPC `TelemetryStream`; no game action RPCs.
-- Explicit field allowlist, initially empty. No automatic uploads.
+- Explicit game-field allowlist, initially empty. No automatic game telemetry uploads.
 - Five-second aggregation windows and WSS/JSON delivery with batch acknowledgements.
 - Provider-neutral endpoint: direct TLS, reverse proxy, or Cloudflare Tunnel.
 - Bounded in-memory buffering; no raw gameplay logs or disk telemetry queue.
 - API key protected with Windows DPAPI for the current user.
 - Per-user Windows installer and approval-gated built-in updates.
+- Separate, configurable application usage statistics with first-run notice.
 
 ## Windows quick start
 
@@ -157,6 +158,15 @@ Downloading and installation each require confirmation; downloaded updates
 never auto-install on startup. Unsigned preview updates require an explicit
 Settings opt-in. See [installation and update privacy](docs/INSTALLATION.md)
 and the [code signing policy and setup](docs/SIGNING.md).
+
+The application also asks on first launch whether to send usage statistics.
+The default choice is enabled; select **No** or turn off **Send application
+usage statistics** in Settings > Privacy to disable it. When enabled, it sends
+a random installation ID, app version and collection-running state to the
+project's Cloudflare-hosted usage service. No game telemetry, receiver URL or
+API key is included. Cloudflare sees network metadata, including IP addresses.
+See [usage statistics](docs/USAGE-STATISTICS.md) for retention, limitations and
+operator setup.
 
 ## Receiver
 

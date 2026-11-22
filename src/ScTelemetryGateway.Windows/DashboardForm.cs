@@ -133,7 +133,7 @@ internal sealed class DashboardForm : Form
     }
 
     public void UpdateView(bool running, bool busy, GatewayOptions options, GatewayStatus? status,
-        MfdServerStatus? mfdStatus, string updateStatus, string? error)
+        MfdServerStatus? mfdStatus, string updateStatus, string usageStatus, string? error)
     {
         this.busy = busy;
         start.Enabled = !running && !busy;
@@ -144,7 +144,8 @@ internal sealed class DashboardForm : Form
             $"MFD: {status?.Mfd ?? "Stopped"}    Selected fields: remote {options.Fields.Count}, MFD {options.MfdFields.Count}\n" +
             $"Queue: {status?.Queued ?? 0} batches / {status?.QueueBytes ?? 0} bytes    " +
             $"Dropped: {status?.BatchesDropped ?? 0} batches, {status?.EventsDropped ?? 0} events\n" +
-            $"Last ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}    Updates: {updateStatus}" +
+            $"Last ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}    Updates: {updateStatus}\n" +
+            $"Usage statistics: {usageStatus}" +
             (error is null ? "" : "\nError: " + error);
         listenerActive = running && status?.Mfd == "Listener active" && mfdStatus?.Listening == true;
         url.Text = listenerActive ? mfdStatus!.Url ?? "" :

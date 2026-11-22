@@ -13,6 +13,8 @@ public sealed record GatewayOptions
     public HashSet<string> MfdFields { get; init; } = [];
     public bool AutomaticUpdateChecks { get; init; } = true;
     public bool IncludePreviewUpdates { get; init; }
+    public bool UsageStatisticsEnabled { get; init; } = true;
+    public bool UsageNoticeShown { get; init; }
 
     public void Validate(bool requireDestination = true)
     {

@@ -10,7 +10,21 @@ internal sealed class TrayContext : ApplicationContext
     private readonly SettingsStore store;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60000 };
+    private readonly System.Windows.Forms.Timer usageTimer = new() { Interval = 6 * 60 * 60 * 1000 };
     private readonly CancellationTokenSource lifetime = new();
+    private CancellationTokenSource usageCancellation = new();
+    private readonly HttpClient usageClient = new(new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false
+    }) { Timeout = TimeSpan.FromSeconds(10) };
+    private readonly UsageIdentityStore usageIdentity = new();
+    private readonly UsageReporter usageReporter;
+    private readonly bool smokeTest;
+    private Task usageTask = Task.CompletedTask;
+    private bool pendingUsage;
+    private bool pendingCollection;
+    private string usageStatus = "Not reported";
     private readonly ToolStripMenuItem start;
     private readonly ToolStripMenuItem pause;
     private readonly DashboardForm statusWindow = new();
@@ -22,13 +36,37 @@ internal sealed class TrayContext : ApplicationContext
     private string? error;
     private bool busy;
     private bool updateBusy;
+    private bool disposed;
     private string updateStatus = "Not checked";
     private readonly ToolStripMenuItem checkUpdates;
 
     public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null)
     {
+        this.smokeTest = smokeTest;
+        usageReporter = new UsageReporter(usageClient, usageIdentity, UsageReporter.Endpoint);
         store = settingsStore ?? new SettingsStore();
         (options, key) = store.Load();
+        if (!smokeTest && !options.UsageNoticeShown)
+        {
+            var enabled = MessageBox.Show(
+                "This application sends usage statistics to the project service hosted by Cloudflare: " +
+                "a random installation ID, application version and whether collection is running. " +
+                "No game data, receiver URL or API key is sent. Cloudflare can see your IP address. " +
+                "Records become eligible for hourly cleanup after 30 days.\n\n" +
+                "Send usage statistics? You can change this later in Settings > Privacy.",
+                ProductName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes;
+            options = options with { UsageStatisticsEnabled = enabled, UsageNoticeShown = true };
+            store.Save(options, key);
+        }
+        if (!smokeTest && !options.UsageStatisticsEnabled)
+        {
+            try { usageIdentity.Delete(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error = "Usage statistics are disabled, but the local installation ID could not be deleted. " +
+                    "No further reports will be sent. " + ex.Message;
+            }
+        }
         icon = new NotifyIcon { Text = ProductName, Icon = SystemIcons.Application, Visible = true };
         menu = new ContextMenuStrip();
         menu.Items.Add("Open dashboard", null, (_, _) => ShowDashboard());
@@ -50,6 +88,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             if (busy) return;
             busy = true;
+            await StopUsageAsync(deleteIdentity: false);
             await lifetime.CancelAsync();
             await Stop();
             ExitThread();
@@ -92,8 +131,14 @@ internal sealed class TrayContext : ApplicationContext
             if (options.AutomaticUpdateChecks) await CheckUpdates(false);
         };
         if (!smokeTest) updateTimer.Start();
+        usageTimer.Tick += (_, _) => RequestUsageReport(running is { IsCompleted: false });
         RefreshStatus();
         statusWindow.Show();
+        if (!smokeTest && options.UsageStatisticsEnabled)
+        {
+            usageTimer.Start();
+            RequestUsageReport(false);
+        }
         if (smokeTest)
         {
             using var settings = new SettingsForm(options, key);
@@ -128,6 +173,7 @@ internal sealed class TrayContext : ApplicationContext
             var activeRuntime = runtime;
             var token = stop.Token;
             running = Observe(Task.Run(() => activeRuntime.RunAsync(options, key, token)));
+            RequestUsageReport(true);
         }
         catch (ArgumentException ex) { MessageBox.Show(ex.Message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         RefreshStatus();
@@ -173,18 +219,33 @@ internal sealed class TrayContext : ApplicationContext
             using var form = new SettingsForm(options, key, running is not null);
             if (form.ShowDialog(statusWindow.Visible ? statusWindow : null) != DialogResult.OK) return;
             await Stop();
+            var saved = false;
             try
             {
+                var previousUsageEnabled = options.UsageStatisticsEnabled;
                 store.Save(form.Options, form.ApiKey);
+                saved = true;
                 options = form.Options;
                 key = form.ApiKey;
                 error = null;
                 updateStatus = "Not checked";
+                if (!smokeTest && previousUsageEnabled && !options.UsageStatisticsEnabled)
+                    await StopUsageAsync(deleteIdentity: true);
+                else if (!smokeTest && !previousUsageEnabled && options.UsageStatisticsEnabled)
+                {
+                    usageCancellation.Dispose();
+                    usageCancellation = new CancellationTokenSource();
+                    usageStatus = "Not reported";
+                    usageTimer.Start();
+                    RequestUsageReport(false);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                 System.Security.Cryptography.CryptographicException or ArgumentException)
             {
-                error = "Settings were not saved. Collection remains stopped.";
+                error = saved
+                    ? "Settings were saved, but the usage statistics ID could not be deleted. No further reports will be sent."
+                    : "Settings were not saved. Collection remains stopped.";
                 MessageBox.Show(error + "\n\n" + ex.Message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -203,7 +264,48 @@ internal sealed class TrayContext : ApplicationContext
         pause.Enabled = running is not null && !busy;
         checkUpdates.Enabled = !busy && !updateBusy;
         statusWindow.UpdateView(running is not null, busy || updateBusy, options, runtime?.Status,
-            runtime?.MfdServer?.Status, updateStatus, error);
+            runtime?.MfdServer?.Status, updateStatus,
+            options.UsageStatisticsEnabled ? usageStatus : "Disabled", error);
+    }
+
+    private void RequestUsageReport(bool collectionRunning)
+    {
+        if (smokeTest || !options.UsageStatisticsEnabled || usageCancellation.IsCancellationRequested) return;
+        pendingUsage = true;
+        pendingCollection |= collectionRunning;
+        if (usageTask.IsCompleted) usageTask = SendUsageReportsAsync();
+    }
+
+    private async Task SendUsageReportsAsync()
+    {
+        while (pendingUsage && !usageCancellation.IsCancellationRequested)
+        {
+            var collectionRunning = pendingCollection;
+            pendingUsage = false;
+            pendingCollection = false;
+            try
+            {
+                await usageReporter.ReportAsync(collectionRunning, usageCancellation.Token);
+                usageStatus = "Reported";
+            }
+            catch (OperationCanceledException) when (usageCancellation.IsCancellationRequested) { }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or
+                UnauthorizedAccessException or OperationCanceledException)
+            {
+                usageStatus = "Report failed (" + ex.GetType().Name + "); will retry later";
+            }
+            if (!usageCancellation.IsCancellationRequested) RefreshStatus();
+        }
+    }
+
+    private async Task StopUsageAsync(bool deleteIdentity)
+    {
+        usageTimer.Stop();
+        pendingUsage = false;
+        pendingCollection = false;
+        await usageCancellation.CancelAsync();
+        await usageTask;
+        if (deleteIdentity) usageIdentity.Delete();
     }
 
     private async Task CheckUpdates(bool interactive)
@@ -258,6 +360,7 @@ internal sealed class TrayContext : ApplicationContext
             {
                 await Stop();
                 updater.ScheduleInstall();
+                await StopUsageAsync(deleteIdentity: false);
                 await lifetime.CancelAsync();
                 ExitThread();
             }
@@ -282,10 +385,15 @@ internal sealed class TrayContext : ApplicationContext
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !disposed)
         {
+            disposed = true;
             timer.Dispose();
             updateTimer.Dispose();
+            usageTimer.Dispose();
+            usageCancellation.Cancel();
+            usageCancellation.Dispose();
+            usageClient.Dispose();
             lifetime.Cancel();
             icon.Visible = false;
             menu.Dispose();

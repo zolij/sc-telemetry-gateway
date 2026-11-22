@@ -17,6 +17,13 @@ Telemetry collection is always paused on launch, including after an update.
 Configure a destination and allowed fields in Settings, then choose Start
 explicitly in the dashboard.
 
+On the first launch after installing or upgrading to a version with usage
+statistics, a separate notice asks whether to send application usage statistics.
+The default choice is enabled. Choose **No** to disable them before the first
+report, or change the setting later in **Settings > Privacy**. See
+[usage statistics](USAGE-STATISTICS.md) for the transmitted fields, Cloudflare
+processing and retention. This does not start game telemetry collection.
+
 ### Upgrading from 0.2.0-preview.1
 
 The first preview used a different package identity. Exit and uninstall that
@@ -56,7 +63,9 @@ Use Windows **Settings > Apps > Installed apps > Star Citizen Telemetry Gateway 
 Uninstall**. Close the tray app first. Uninstall removes program files and
 shortcuts, but retains user settings and the encrypted API key. To remove those
 too, delete the `StarCitizenTelemetryGateway` folder under your own LocalAppData
-after exiting the app. No telemetry archive needs to be removed.
+after exiting the app. This also removes the local usage statistics ID. Previously
+sent usage records remain on the service until their scheduled cleanup. No game
+telemetry archive needs to be removed.
 
 ## Build
 
