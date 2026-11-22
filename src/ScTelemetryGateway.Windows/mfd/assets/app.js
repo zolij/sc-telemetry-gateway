@@ -71,7 +71,8 @@ async function pairWithCode(code) {
         code, device_label: "Display"
       })
     });
-    if (!response.ok) throw new Error("Pairing code is invalid or expired. Create a new code on the PC.");
+    if (response.status === 401) throw new Error("Pairing code is invalid or expired. Create a new code on the PC.");
+    if (!response.ok) throw new Error("The display could not be saved. Check the gateway's storage, create a new code, and retry.");
     const result = await response.json();
     if (typeof result.session_token !== "string" || !result.session_token) throw new Error("Invalid pairing response.");
     token = result.session_token;

@@ -75,16 +75,21 @@ Receiver protocol or authentication errors are shown in collection status; when
 the MFD is also enabled, remote delivery stops without stopping the local MFD.
 
 Settings live in `%LOCALAPPDATA%\StarCitizenTelemetryGateway\settings.json`;
-the separately DPAPI-encrypted key is `api-key.bin`. Do not share either file.
+the separately DPAPI-encrypted key is `api-key.bin`, and approved local display
+permissions are in `mfd-devices.json` (the file contains token hashes, not the
+display credentials). Do not share these files.
 Loss of the Windows user profile/key material may make the key unrecoverable;
 enter it again instead of disabling protection. Corrupt settings are reported,
-not silently replaced. No telemetry values are written to disk.
+not silently replaced. Approved local displays remain authorized across
+collection and application restarts until revoked. No telemetry values are
+written to disk.
 
 ## Local phone/tablet MFD
 
 Pairing codes are single-use and expire after two minutes. Scanning the QR code
 automatically pairs the display; entering the code manually is also supported.
-Approved devices can be revoked in the dashboard. The unencrypted local
+The browser retains its pairing token across browser and gateway restarts;
+approved devices can be revoked in the dashboard. The unencrypted local
 interface does not use WSS, secure-context-only PWA features or remote upload
 credentials.
 

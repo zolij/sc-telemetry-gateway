@@ -51,6 +51,87 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public async Task ApprovedDeviceSurvivesRestartAndRevocationIsPersistent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-device-" + Guid.NewGuid().ToString("N"));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var origin = $"http://127.0.0.1:{port}";
+        var snapshot = new MfdSnapshotStore([]);
+        MfdServer? server = null;
+        try
+        {
+            MfdServer NewServer() => new(IPAddress.Loopback, port, snapshot, Path.GetTempPath(),
+                new MfdProfileStore(root), new MfdDeviceStore(root));
+            server = NewServer();
+            await server.StartAsync(deadline.Token);
+            using var http = new HttpClient { BaseAddress = new Uri(origin) };
+            http.DefaultRequestHeaders.Add("Origin", origin);
+            using var paired = await http.PostAsJsonAsync("/api/pair/request", new
+            {
+                schema_version = 1, type = "mfd.pair.request",
+                code = server.CreatePairingCode(), device_label = "Persistent display"
+            }, deadline.Token);
+            paired.EnsureSuccessStatusCode();
+            using var pairedBody = JsonDocument.Parse(await paired.Content.ReadAsStringAsync(deadline.Token));
+            var token = pairedBody.RootElement.GetProperty("session_token").GetString()!;
+            var deviceId = Assert.Single(server.Status.Devices).Id;
+            var saved = await File.ReadAllTextAsync(Path.Combine(root, "mfd-devices.json"), deadline.Token);
+            Assert.DoesNotContain(token, saved);
+
+            await server.DisposeAsync();
+            server = null;
+            server = NewServer();
+            await server.StartAsync(deadline.Token);
+            Assert.Equal(deviceId, Assert.Single(server.Status.Devices).Id);
+            using (var socket = new ClientWebSocket())
+            {
+                socket.Options.SetRequestHeader("Origin", origin);
+                await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{port}/mfd/ws"), deadline.Token);
+                await Authenticate(socket, token, deadline.Token);
+                using var restored = JsonDocument.Parse(await ReadSnapshot(socket, deadline.Token));
+                Assert.Equal("mfd.snapshot", restored.RootElement.GetProperty("type").GetString());
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", deadline.Token);
+            }
+
+            Assert.True(server.RevokeDevice(deviceId));
+            await server.DisposeAsync();
+            server = null;
+            server = NewServer();
+            await server.StartAsync(deadline.Token);
+            Assert.Empty(server.Status.Devices);
+            using var revokedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/mfd/profiles");
+            revokedRequest.Headers.Authorization = new("Bearer", token);
+            using var revoked = await http.SendAsync(revokedRequest, deadline.Token);
+            Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+        }
+        finally
+        {
+            if (server is not null) await server.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CorruptDeviceStoreIsNotSilentlyReplaced()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-device-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "mfd-devices.json");
+        const string corrupt = "{ invalid";
+        File.WriteAllText(path, corrupt);
+        try
+        {
+            Assert.Throws<JsonException>(() => new MfdDeviceStore(root).List());
+            Assert.Equal(corrupt, File.ReadAllText(path));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task FragmentedAuthenticationReceivesSnapshotsAndRevocationStopsAccess()
     {
         await using var test = await MfdTestServer.Start();
@@ -200,7 +281,8 @@ public sealed class MfdTests
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
             Store = new(fields);
-            Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(), new MfdProfileStore(profileRoot));
+            Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(),
+                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot));
             http.DefaultRequestHeaders.Add("Origin", Origin);
         }
 
@@ -391,7 +473,8 @@ public sealed class MfdTests
         listener.Stop();
         try
         {
-            await using var server = new MfdServer(IPAddress.Loopback, port, new MfdSnapshotStore([]), root);
+            await using var server = new MfdServer(IPAddress.Loopback, port, new MfdSnapshotStore([]), root,
+                new MfdProfileStore(root), new MfdDeviceStore(root));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await server.StartAsync(timeout.Token);
             using var client = new HttpClient();

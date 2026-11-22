@@ -109,8 +109,16 @@ internal sealed class TrayContext : ApplicationContext
         };
         statusWindow.RevokeRequested += (_, _) =>
         {
-            if (statusWindow.SelectedDevice is { } id && runtime?.MfdServer?.RevokeDevice(id) != true)
-                MessageBox.Show(statusWindow, "The device is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            try
+            {
+                if (statusWindow.SelectedDevice is { } id && runtime?.MfdServer?.RevokeDevice(id) != true)
+                    MessageBox.Show(statusWindow, "The device is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(statusWindow, "The device permission could not be revoked. Check the local device store.\n\n" + ex.Message,
+                    ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             RefreshStatus();
         };
         timer.Tick += (_, _) => RefreshStatus();

@@ -31,10 +31,11 @@ public sealed partial class MfdServer : IAsyncDisposable
     private readonly string assetRoot;
     private readonly MfdSnapshotStore snapshot;
     private readonly MfdProfileStore profiles;
+    private readonly MfdDeviceStore deviceStore;
     private readonly string host;
     private readonly string origin;
     private readonly object gate = new();
-    private readonly ConcurrentDictionary<Guid, ApprovedDevice> approved = new();
+    private readonly ConcurrentDictionary<Guid, MfdStoredDevice> approved = new();
     private readonly ConcurrentDictionary<WebSocket, MfdWebSocketState> sockets = new();
     private readonly CryptoRandomPairCode pairCode = new();
     private readonly CancellationTokenSource shutdown = new();
@@ -47,13 +48,17 @@ public sealed partial class MfdServer : IAsyncDisposable
     private Task? publisherTask;
 
     public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot,
-        MfdProfileStore? profiles = null)
+        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null)
     {
         this.address = address;
         this.port = port;
         this.snapshot = snapshot;
-        this.profiles = profiles ?? new MfdProfileStore(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarCitizenTelemetryGateway"));
+        var dataDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarCitizenTelemetryGateway");
+        this.profiles = profiles ?? new MfdProfileStore(dataDirectory);
+        this.deviceStore = deviceStore ?? new MfdDeviceStore(dataDirectory);
+        foreach (var device in this.deviceStore.List())
+            approved[device.Id] = device;
         this.assetRoot = assetRoot;
         host = address.ToString() + ":" + port.ToString(CultureInfo.InvariantCulture);
         origin = "http://" + host;
@@ -89,8 +94,10 @@ public sealed partial class MfdServer : IAsyncDisposable
     {
         lock (gate)
         {
-            if (!approved.TryRemove(deviceId, out _))
-                return false;
+            if (!approved.ContainsKey(deviceId)) return false;
+            if (!deviceStore.Remove(deviceId))
+                throw new InvalidDataException("Approved MFD device was missing from the device store.");
+            approved.TryRemove(deviceId, out _);
             foreach (var item in sockets.Where(s => s.Value.DeviceId == deviceId))
                 item.Key.Abort();
             return true;
@@ -268,7 +275,9 @@ public sealed partial class MfdServer : IAsyncDisposable
                 {
                     token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
                     var deviceId = Guid.NewGuid();
-                    approved[deviceId] = new ApprovedDevice(deviceId, label, token, DateTimeOffset.UtcNow);
+                    var device = new MfdStoredDevice(deviceId, label, MfdDeviceStore.HashToken(token), DateTimeOffset.UtcNow);
+                    deviceStore.Add(device);
+                    approved[deviceId] = device;
                 }
             }
             if (token is null)
@@ -294,6 +303,12 @@ public sealed partial class MfdServer : IAsyncDisposable
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
             context.Response.StatusCode = 503;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger?.LogError("MFD device permission could not be saved: {FailureType}", ex.GetType().Name);
+            context.Response.StatusCode = 503;
+            await context.Response.WriteAsJsonAsync(new { error = "permission_store_unavailable" });
         }
     }
 
@@ -349,8 +364,8 @@ public sealed partial class MfdServer : IAsyncDisposable
             var token = Encoding.UTF8.GetBytes(tokenElement.GetString() ?? "");
             lock (gate)
             {
-                var device = approved.Values.FirstOrDefault(d =>
-                    CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(d.Token), token));
+                var device = approved.Values.FirstOrDefault(d => MfdDeviceStore.TokenMatches(
+                    Encoding.UTF8.GetString(token), d.TokenHash));
                 if (stopping || device is null)
                     throw new WebSocketException("Not approved.");
                 state.DeviceId = device.Id;
@@ -449,7 +464,6 @@ public sealed partial class MfdServer : IAsyncDisposable
         _ => "application/octet-stream"
     };
 
-    private sealed record ApprovedDevice(Guid Id, string Label, string Token, DateTimeOffset ApprovedAt);
     private sealed class MfdWebSocketState
     {
         public Guid? DeviceId { get; set; }
