@@ -105,8 +105,9 @@ events; the editor warns when this is not enabled.
 
 Only the active saved profile switches pages, and only on new events. Initial
 connection/reconnection does not replay history. Automatic switching pauses
-while editing, without catching up afterwards; if several matching events
-arrive together, the last one wins. Manual page selection remains available.
+while editing; events received during editing are not replayed afterwards.
+If several matching events arrive together, the last one wins.
+Manual page selection remains available.
 
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under

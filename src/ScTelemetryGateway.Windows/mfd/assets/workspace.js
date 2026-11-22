@@ -640,7 +640,7 @@ const MfdWorkspace = (() => {
         render();
       }));
     $("delete-page").addEventListener("click", () => {
-      if (!window.confirm("Delete this page and its tiles from the draft?")) return;
+      if (!window.confirm("Delete this page, its tiles and its event triggers from the draft?")) return;
       run(() => { draft.pages = draft.pages.filter(item => item.id !== pageId); pageId = draft.pages[0].id; render(); });
     });
     $("field-search").addEventListener("input", renderLibrary);

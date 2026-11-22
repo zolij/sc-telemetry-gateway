@@ -27,6 +27,7 @@ public sealed class MfdProfileTests : IDisposable
         Assert.Equal("GAME_EVENT_TYPE_ACTOR_ENTER_SEAT", Store.Get(saved.Id)!.Pages[0].TriggerEvents[0]);
         Assert.Equal(2, Store.Get(saved.Id)!.Pages[0].TriggerEvents.Length);
         var legacyJson = System.Text.Json.JsonSerializer.Serialize(draft, WireJson.Options).Replace(",\"trigger_events\":[]", "");
+        Assert.DoesNotContain("\"trigger_events\"", legacyJson);
         var legacy = System.Text.Json.JsonSerializer.Deserialize<MfdProfile>(legacyJson, WireJson.Options)!;
         legacy.Validate();
         Assert.Empty(legacy.Pages[0].TriggerEvents);

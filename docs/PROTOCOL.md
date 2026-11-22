@@ -161,7 +161,8 @@ The browser receives `mfd.snapshot` schema v1 text messages. Each message is a
 full replaceable snapshot and is published at a target cadence of 4 Hz
 (250 ms). The message contains `session_id`, `stream_id`, `sequence`,
 `connection_status`, `published_at`, `last_frame_at`, `last_frame_age_ms`,
-`selected_fields`, `events`, `events_dropped`, and the available selected `fields`.
+`selected_fields`, `events`, `page_events`, `events_dropped`, and the available
+selected `fields`.
 
 Field entries contain `value`, `updated_at`, `last_known`, and `age_ms`. Invalid numbers
 are represented as unavailable (`null`) values. Missing fields remain absent
@@ -202,6 +203,10 @@ The additive `events` array exposes the same retained history as
 each occurrence, including identical event types, and reset with `stream_id`.
 They remain stable across repeated snapshots. If `events.events.type` is not
 selected, this array is empty and event data is not exposed.
+`page_events` contains the most recent occurrence of each known nonzero game
+event type, ordered by event sequence. This small, schema-bounded list survives
+history overflow, so page triggers do not depend on the 100-event history cap.
+It follows the same selection, stream-reset and pause rules as `events`.
 
 ### Custom MFD profiles
 
@@ -218,7 +223,7 @@ authentication and origin checks as the profile API and does not subscribe to
 data or expose game-control RPCs.
 
 Browsers apply page triggers only to the active saved profile. They baseline
-the retained history on each WebSocket connection, then consume each new
+the `page_events` occurrences on each WebSocket connection, then consume each new
 per-stream event sequence once. A new game stream resets the cursor; initial
 events in that new stream can trigger a page when the display is already
 connected. Events consumed while editing, busy, inactive or disconnected do
@@ -243,6 +248,7 @@ Responses use `Cache-Control: no-store`.
 | Method | Path | Result |
 | --- | --- | --- |
 | GET | `/api/mfd/fields` | Enabled-field metadata, independent of whether values have arrived |
+| GET | `/api/mfd/events` | Known nonzero game-event names for page triggers, independent of field selection |
 | GET | `/api/mfd/profiles` | Array of `{id, name, revision}` summaries |
 | GET | `/api/mfd/profiles/{id}` | Full profile and revision ETag |
 | POST | `/api/mfd/profiles` | Create a new profile; returns 201 and the saved document |
@@ -255,7 +261,7 @@ Field metadata entries contain `path`, `type` (lowercase protobuf scalar type),
 int64/uint64 wire strings are excluded. `maximum_field` identifies a gauge's
 companion maximum, if applicable; it does not enable that field.
 Only fields enabled in the MFD allowlist are
-listed. The existing snapshot format and 4 Hz cadence are unchanged.
+listed. Existing field-value entries and the 4 Hz snapshot cadence are unchanged.
 
 Profile GET, POST and PUT responses use a strong revision ETag such as `"2"`.
 PUT and DELETE require `If-Match: "2"`; PUT also requires the same profile
@@ -277,6 +283,7 @@ Example saved profile:
   "pages": [{
     "id": "8beaa358-5dac-4ea5-bb5e-cab25d9d974d",
     "name": "Flight",
+    "trigger_events": ["GAME_EVENT_TYPE_ACTOR_ENTER_SEAT"],
     "tiles": [{
       "id": "b5930bd3-c044-4a72-9512-9938af8d0b13",
       "field": "vehicle.state.flight.instruments.speed",

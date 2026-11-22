@@ -600,8 +600,10 @@ public sealed class MfdTests
         var first = store.Current();
         Assert.Equal(new long[] { 1, 2 }, first.Events.Select(item => item.Sequence));
         Assert.Equal(first.Events, store.Current().Events);
+        Assert.Equal(2, Assert.Single(first.PageEvents).Sequence);
         store.StartStream();
         Assert.Empty(store.Current().Events);
+        Assert.Empty(store.Current().PageEvents);
         store.Ingest(frame);
         var restarted = store.Current();
         Assert.NotEqual(first.StreamId, restarted.StreamId);
@@ -624,6 +626,7 @@ public sealed class MfdTests
         Assert.Equal(1, history.EventsDropped);
         Assert.Equal(2, history.Events[0].Sequence);
         Assert.Equal(101, history.Events[^1].Sequence);
+        Assert.Contains(history.PageEvents, item => item.Sequence == 1 && item.Type == "GAME_EVENT_TYPE_ACTOR_SPAWN");
         store.Disconnected();
         Assert.True(store.Current().Fields[eventType].LastKnown);
         Assert.Equal(1, store.Current().EventsDropped);
@@ -633,11 +636,13 @@ public sealed class MfdTests
         store.Ingest(frame);
         store.SetPaused();
         Assert.Empty(store.Current().Fields);
+        Assert.Empty(store.Current().PageEvents);
         Assert.Equal(0, store.Current().EventsDropped);
         var unselected = new MfdSnapshotStore([]);
         unselected.Ingest(frame);
         Assert.Empty(unselected.Current().Fields);
         Assert.Empty(unselected.Current().Events);
+        Assert.Empty(unselected.Current().PageEvents);
         Assert.Equal(0, unselected.Current().EventsDropped);
     }
 

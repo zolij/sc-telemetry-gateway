@@ -71,3 +71,12 @@ test("capped history uses the retained new events and malformed identities are r
   assert.equal(cursor.target(snapshot([event(101, leave), event(102)]), pages(), true).event.sequence, 102);
   assert.throws(() => cursor.target(snapshot([event(102), event(101)]), pages(), true), /sequence/);
 });
+
+test("page event heads retain a trigger even after it leaves the bounded history", () => {
+  const cursor = triggers.createCursor();
+  cursor.target({stream_id: "game", events: [], page_events: []}, pages(), true);
+  const update = { stream_id: "game", events: [event(101, "GAME_EVENT_TYPE_ACTOR_SPAWN")],
+    page_events: [event(1, leave), event(101, "GAME_EVENT_TYPE_ACTOR_SPAWN")] };
+  assert.equal(cursor.target(update, pages(), true).page.id, "crew");
+  assert.equal(cursor.target(update, pages(), true), null);
+});

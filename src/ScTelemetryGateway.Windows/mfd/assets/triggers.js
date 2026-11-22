@@ -30,7 +30,8 @@ const MfdPageTriggers = (() => {
     return {
       reset() { stream = null; sequence = 0; },
       target(snapshot, pages, enabled) {
-        const events = snapshot.events === undefined ? [] : snapshot.events;
+        const events = snapshot.page_events === undefined
+          ? (snapshot.events === undefined ? [] : snapshot.events) : snapshot.page_events;
         if (typeof snapshot.stream_id !== "string" || !snapshot.stream_id || !Array.isArray(events))
           throw new Error("Invalid event snapshot.");
         let previous = 0;

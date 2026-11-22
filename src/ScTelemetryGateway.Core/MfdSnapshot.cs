@@ -14,6 +14,7 @@ public sealed record MfdSnapshot(
     public int SchemaVersion => 1;
     public long EventsDropped { get; init; }
     public IReadOnlyList<TelemetryEvent> Events { get; init; } = [];
+    public IReadOnlyList<TelemetryEvent> PageEvents { get; init; } = [];
 }
 
 public sealed class MfdSnapshotStore
@@ -34,6 +35,7 @@ public sealed class MfdSnapshotStore
     private long? lastFrameTimestamp;
     private long sequence;
     private readonly Queue<TelemetryEvent> events = new();
+    private readonly Dictionary<string, TelemetryEvent> pageEvents = new(StringComparer.Ordinal);
     private long eventsDropped;
     private long eventSequence;
 
@@ -52,6 +54,7 @@ public sealed class MfdSnapshotStore
             streamId = Guid.NewGuid();
             snapshot.Clear();
             events.Clear();
+            pageEvents.Clear();
             eventsDropped = 0;
             eventSequence = 0;
             lastFrameAt = null;
@@ -67,6 +70,7 @@ public sealed class MfdSnapshotStore
         {
             snapshot.Clear();
             events.Clear();
+            pageEvents.Clear();
             eventsDropped = 0;
             eventSequence = 0;
             lastFrameAt = null;
@@ -119,7 +123,10 @@ public sealed class MfdSnapshotStore
                                 events.Dequeue();
                                 eventsDropped++;
                             }
-                            events.Enqueue(new(++eventSequence, now, FieldCatalog.EventType(item)));
+                            var received = new TelemetryEvent(++eventSequence, now, FieldCatalog.EventType(item));
+                            events.Enqueue(received);
+                            if (MfdProfile.TriggerEvents.Contains(received.Type, StringComparer.Ordinal))
+                                pageEvents[received.Type] = received;
                         }
                         if (frame.Events.Events.Count > 0 || !snapshot.ContainsKey(path))
                             snapshot[path] = new(new JsonArray(events.Select(value => JsonValue.Create(value.Type)).ToArray()),
@@ -160,7 +167,11 @@ public sealed class MfdSnapshotStore
                 ? Math.Max(0, clock.GetElapsedTime(last, timestamp).TotalMilliseconds)
                 : (double?)null;
             return new(sessionId, streamId, sequence, connectionStatus, now, lastFrameAt, frameAge,
-                fields.Select(field => field.Path).ToArray(), copy) { EventsDropped = eventsDropped, Events = [.. events] };
+                fields.Select(field => field.Path).ToArray(), copy)
+            {
+                EventsDropped = eventsDropped, Events = [.. events],
+                PageEvents = pageEvents.Values.OrderBy(item => item.Sequence).ToArray()
+            };
         }
     }
 }
