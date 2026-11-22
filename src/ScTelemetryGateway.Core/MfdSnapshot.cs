@@ -12,12 +12,16 @@ public sealed record MfdSnapshot(
 {
     public string Type => "mfd.snapshot";
     public int SchemaVersion => 1;
+    public long EventsDropped { get; init; }
+    public IReadOnlyList<TelemetryEvent> Events { get; init; } = [];
+    public IReadOnlyList<TelemetryEvent> PageEvents { get; init; } = [];
 }
 
 public sealed class MfdSnapshotStore
 {
     public const int MaxMessageBytes = 1024 * 1024;
     public const int MaxClients = 8;
+    public const int MaxEvents = 100;
 
     private readonly object gate = new();
     private readonly TelemetryField[] fields;
@@ -30,6 +34,10 @@ public sealed class MfdSnapshotStore
     private DateTimeOffset? lastFrameAt;
     private long? lastFrameTimestamp;
     private long sequence;
+    private readonly Queue<TelemetryEvent> events = new();
+    private readonly Dictionary<string, TelemetryEvent> pageEvents = new(StringComparer.Ordinal);
+    private long eventsDropped;
+    private long eventSequence;
 
     public MfdSnapshotStore(IEnumerable<string> selected, TimeProvider? clock = null)
     {
@@ -37,12 +45,18 @@ public sealed class MfdSnapshotStore
         this.clock = clock ?? TimeProvider.System;
     }
 
+    public IReadOnlyList<string> SelectedFields => fields.Select(item => item.Path).ToArray();
+
     public void StartStream()
     {
         lock (gate)
         {
             streamId = Guid.NewGuid();
             snapshot.Clear();
+            events.Clear();
+            pageEvents.Clear();
+            eventsDropped = 0;
+            eventSequence = 0;
             lastFrameAt = null;
             lastFrameTimestamp = null;
             connectionStatus = "connected";
@@ -55,6 +69,10 @@ public sealed class MfdSnapshotStore
         lock (gate)
         {
             snapshot.Clear();
+            events.Clear();
+            pageEvents.Clear();
+            eventsDropped = 0;
+            eventSequence = 0;
             lastFrameAt = null;
             lastFrameTimestamp = null;
             connectionStatus = "paused";
@@ -74,7 +92,12 @@ public sealed class MfdSnapshotStore
         }
     }
 
-    public void Ingest(TelemetryStreamResponse frame)
+    public void Ingest(TelemetryStreamResponse frame) => Ingest(frame, (TelemetryWirePresence?)null);
+
+    public void Ingest(TelemetryStreamResponse frame, ReadOnlyMemory<byte> payload) =>
+        Ingest(frame, TelemetryWirePresence.Parse(payload));
+
+    private void Ingest(TelemetryStreamResponse frame, TelemetryWirePresence? presence)
     {
         lock (gate)
         {
@@ -88,11 +111,35 @@ public sealed class MfdSnapshotStore
                 if (!section.Accessor.HasValue(frame))
                     continue;
                 var prefix = section.Name + ".";
+                if (section.Name == "events")
+                {
+                    const string path = "events.events.type";
+                    if (fields.Any(field => field.Path == path))
+                    {
+                        foreach (var item in frame.Events.Events)
+                        {
+                            if (events.Count == MaxEvents)
+                            {
+                                events.Dequeue();
+                                eventsDropped++;
+                            }
+                            var received = new TelemetryEvent(++eventSequence, now, FieldCatalog.EventType(item));
+                            events.Enqueue(received);
+                            if (MfdProfile.TriggerEvents.Contains(received.Type, StringComparer.Ordinal))
+                                pageEvents[received.Type] = received;
+                        }
+                        if (frame.Events.Events.Count > 0 || !snapshot.ContainsKey(path))
+                            snapshot[path] = new(new JsonArray(events.Select(value => JsonValue.Create(value.Type)).ToArray()),
+                                now, false, timestamp);
+                    }
+                    continue;
+                }
                 foreach (var path in snapshot.Keys.Where(p => p.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
                     snapshot.Remove(path);
                 foreach (var field in fields.Where(f => f.Path.StartsWith(prefix, StringComparison.Ordinal)))
                 {
-                    var (value, invalid) = FieldCatalog.Read(frame, field);
+                    var (value, invalid) = presence is null
+                        ? FieldCatalog.Read(frame, field) : FieldCatalog.Read(frame, field, presence);
                     if (value is not null || invalid > 0)
                         snapshot[field.Path] = new(value, now, false, timestamp);
                 }
@@ -120,7 +167,11 @@ public sealed class MfdSnapshotStore
                 ? Math.Max(0, clock.GetElapsedTime(last, timestamp).TotalMilliseconds)
                 : (double?)null;
             return new(sessionId, streamId, sequence, connectionStatus, now, lastFrameAt, frameAge,
-                fields.Select(field => field.Path).ToArray(), copy);
+                fields.Select(field => field.Path).ToArray(), copy)
+            {
+                EventsDropped = eventsDropped, Events = [.. events],
+                PageEvents = pageEvents.Values.OrderBy(item => item.Sequence).ToArray()
+            };
         }
     }
 }

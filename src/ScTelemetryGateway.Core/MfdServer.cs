@@ -20,7 +20,7 @@ public sealed record MfdApprovedDevice(Guid Id, string Label, DateTimeOffset App
 public sealed record MfdServerStatus(bool Listening, string? Url, string? Error,
     IReadOnlyList<MfdPairRequest> PendingRequests, IReadOnlyList<MfdApprovedDevice> Devices);
 
-public sealed class MfdServer : IAsyncDisposable
+public sealed partial class MfdServer : IAsyncDisposable
 {
     public const int PairingCodeLifetimeSeconds = 120;
     private const int MaxPairRequests = 16;
@@ -32,6 +32,7 @@ public sealed class MfdServer : IAsyncDisposable
     private readonly int port;
     private readonly string assetRoot;
     private readonly MfdSnapshotStore snapshot;
+    private readonly MfdProfileStore profiles;
     private readonly string host;
     private readonly string origin;
     private readonly object gate = new();
@@ -48,11 +49,14 @@ public sealed class MfdServer : IAsyncDisposable
     private CancellationTokenSource? publisher;
     private Task? publisherTask;
 
-    public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot)
+    public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot,
+        MfdProfileStore? profiles = null)
     {
         this.address = address;
         this.port = port;
         this.snapshot = snapshot;
+        this.profiles = profiles ?? new MfdProfileStore(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarCitizenTelemetryGateway"));
         this.assetRoot = assetRoot;
         host = address.ToString() + ":" + port.ToString(CultureInfo.InvariantCulture);
         origin = "http://" + host;
@@ -138,6 +142,7 @@ public sealed class MfdServer : IAsyncDisposable
         app.MapGet("/assets/{*path}", ServeAsset);
         app.MapMethods("/api/pair/request", [HttpMethods.Post], PairRequestAsync);
         app.MapMethods("/mfd/ws", [HttpMethods.Get], WebSocketAsync);
+        MapProfileApi(app);
         app.MapMethods("/{*path}", [HttpMethods.Options], (HttpContext context) =>
         {
             context.Response.StatusCode = 405;

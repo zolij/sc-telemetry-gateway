@@ -302,16 +302,19 @@ public sealed class DeliveryTests
         await using var app = await StartGame(timeout.Token);
         var address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
         var store = new TelemetryAggregator(["actor.vitals.heart_rate"], Guid.NewGuid());
+        var mfd = new MfdSnapshotStore(["actor.vitals.heart_rate", "actor.vitals.gravity"]);
         var reader = new GameTelemetryReader(address.Port);
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        var task = reader.RunAsync(store, state =>
+        var task = reader.RunAsync([store.Ingest], state =>
         {
             if (state == "Game connected") received.TrySetResult();
-        }, stop.Token);
+        }, stop.Token, rawSink: mfd.Ingest);
         await received.Task.WaitAsync(timeout.Token);
         var batch = store.CloseWindow(0)!;
         Assert.Equal(72, batch.Statistics["actor.vitals.heart_rate"].Last);
+        Assert.Equal(72, mfd.Current().Fields["actor.vitals.heart_rate"].Value!.GetValue<float>());
+        Assert.DoesNotContain("actor.vitals.gravity", mfd.Current().Fields.Keys);
         await stop.CancelAsync();
         await Stop(task, stop.Token);
         await app.StopAsync(CancellationToken.None);

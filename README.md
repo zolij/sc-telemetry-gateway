@@ -76,11 +76,81 @@ on the network. It does not use WSS, secure-context-only PWA features or remote
 upload credentials. Use it only on a trusted network; configure the Windows
 Firewall prompt yourself and do not open router forwarding.
 
-The display has Flight, Systems and Crew views. Each shows key selected values;
-expand “More” for other fields in that view. Fields not selected in the MFD
-settings are labelled as such, unavailable values are not replaced with zeros,
-and stale or last-known data is marked. Values are shown without assumed units
-or scales.
+The display starts empty, with no built-in layouts. Select **New profile** to
+build your own MFD with named pages. In **Edit**, search the shared-field library
+and add value tiles, status indicators or lists. Configure labels, decimal
+precision and normal, wide or large tile sizes. Rearrange tiles by their move
+handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
+values to your own labels and a fixed color palette. No graphs, arbitrary
+formulas or game controls are included; measurement units are not inferred.
+
+**Value format** defaults to **Automatic**, including for existing profiles.
+Shield level/faces and hydrogen fuel use 0–1 ratios (`0.75` → `75%`).
+Quantum fuel retains its 0–100 default (`75` → `75%`); its scale has not been
+verified in the current PTU because the sampled game stream omits this field.
+Actor health, oxygen, hunger and thirst use
+`current / max`: enable both the `current` and `max` fields in gateway MFD
+settings. A missing, nonpositive or mismatched maximum is marked unavailable,
+not replaced with an assumed scale. Other fields remain raw values.
+Each tile can override this with **Raw value**, either percentage scale, or
+**current divided by max** for a gauge. Overrides are saved/exported with the
+profile; status rules still match the original raw values.
+
+In **Edit**, use **Auto-switch to this page** to select one or more known game
+events. An event can belong to only one page within a profile; assigning it
+elsewhere asks for confirmation before moving it from the previous page.
+Changes take effect after **Save to PC**, and triggers are included in exports.
+Enable `events.events.type` in PC MFD settings and restart collection to receive
+events; the editor warns when this is not enabled.
+
+Only the active saved profile switches pages, and only on new events. Initial
+connection/reconnection does not replay history. Automatic switching pauses
+while editing; events received during editing are not replayed afterwards.
+If several matching events arrive together, the last one wins.
+Manual page selection remains available.
+
+Select **Focus Mode** on a saved profile to show only its instruments and, for
+multi-page profiles, the page switcher. Editing and management controls, headings
+and other page chrome are hidden; telemetry freshness/unknown markers inside
+tiles and automatic page triggers continue to work. **Exit Focus** remains
+available as a touch-friendly escape, and Escape or the browser's fullscreen
+exit restores the normal view. Focus mode is unavailable while editing and is
+not remembered across reloads.
+
+Entering focus mode requests full screen directly from the button tap, including
+on supported phone/tablet browsers. Some browsers, notably iPhone browsers, do
+not support fullscreen for arbitrary page elements; focus mode still works and
+shows an explicit notice instead of claiming full screen. On iPhone/iPad, use
+Safari's **Add to Home Screen**, launch the page from there, then select
+**Focus Mode** for a standalone display without browser bars. Browser/platform
+restrictions cannot be overridden by the gateway.
+
+Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
+Profiles are stored in `mfd-profiles.json` under
+`%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are
+shared by all PC-approved displays. Each browser chooses its own active profile
+and page. Every approved display can edit or delete shared profiles. If another
+display saves first, your draft is retained: reload the saved profile or save
+your changes as a new profile instead of overwriting it.
+
+**Duplicate**, **Export** and **Import** let you reuse layouts. Export includes
+the current draft when editing; imports create new profiles and never enable
+additional telemetry fields. Up to 32 profiles, 16 pages per profile and 64
+tiles per page are supported, subject to a 512 KiB profile/import limit and a
+16 MiB total store limit. Back up exported profiles before moving to another PC.
+
+The field library includes enabled fields even before game values arrive.
+Fields no longer selected in gateway MFD settings are marked as such.
+Numbers omitted from the protobuf payload are shown as **Unknown**, not zero.
+Proto3 can also omit genuine zeros, so those are unknown too unless explicitly
+encoded. Boolean defaults remain false. Text values retain their exact spelling;
+empty strings are shown as **Empty**, distinct from missing values.
+Stale, offline and last-known values remain visibly marked. Most lists show
+the latest received repeated values.
+The event list retains the current stream's last 100 events, including
+duplicates, in a scrollable tile and reports how many older events were dropped.
+Restarting the game stream or pausing clears this history. The layout adapts to tablet and
+monitor widths.
 
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates

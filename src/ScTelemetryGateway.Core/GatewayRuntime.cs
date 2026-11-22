@@ -89,8 +89,6 @@ public sealed class GatewayRuntime
             sinks.Add(frame => { lock (gate) { if (remoteActive) remoteAggregator.Ingest(frame); } });
         if (mfdAggregator is not null)
             sinks.Add(mfdAggregator.Ingest);
-        if (mfdSnapshot is not null)
-            sinks.Add(mfdSnapshot.Ingest);
         var readerTask = reader.RunAsync(sinks, value => { lock (gate) game = value; }, stop.Token, () =>
         {
             lock (gate) { if (remoteActive) remoteAggregator?.Disconnected(); }
@@ -101,7 +99,7 @@ public sealed class GatewayRuntime
         {
             lock (gate) { if (remoteActive) remoteAggregator?.StartStream(); }
             mfdSnapshot?.StartStream();
-        });
+        }, rawSink: (frame, payload) => mfdSnapshot?.Ingest(frame, payload));
         tasks.Add(readerTask);
         if (remoteEnabled)
         {

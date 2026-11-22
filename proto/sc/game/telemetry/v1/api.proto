@@ -7,6 +7,7 @@ import "sc/game/telemetry/v1/types.proto";
 message TelemetryStreamRequest {}
 
 message TelemetryStreamResponse {
+  reserved 1, 2;
   VehicleFrame vehicle = 3;
   WeaponsFrame weapons = 4;
   EventsFrame events = 5;
