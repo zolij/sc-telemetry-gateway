@@ -680,6 +680,19 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public void EmptyMfdSelectionCanBeSavedButCannotBeStarted()
+    {
+        var options = new GatewayOptions
+        {
+            RemoteEnabled = false, MfdEnabled = true, MfdAddress = "127.0.0.1"
+        };
+        options.Validate(requireDestination: false);
+        var error = Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Contains("MFD telemetry field", error.Message);
+        (options with { MfdFields = ["actor.state.locomotion"] }).Validate();
+    }
+
+    [Fact]
     public void MigratedOptionsPreserveRemoteAndKeepMfdOff()
     {
         var options = JsonSerializer.Deserialize<GatewayOptions>(

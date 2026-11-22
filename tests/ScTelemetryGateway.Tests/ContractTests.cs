@@ -34,6 +34,16 @@ public sealed class ContractTests
         Assert.Throws<ArgumentException>(() => new GatewayOptions { Endpoint = url }.Validate(false));
 
     [Fact]
+    public void EmptyRemoteSelectionCanBeSavedButCannotBeStarted()
+    {
+        var options = new GatewayOptions { Endpoint = "wss://example.org/telemetry" };
+        options.Validate(requireDestination: false);
+        var error = Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Contains("remote telemetry field", error.Message);
+        (options with { Fields = ["actor.state.locomotion"] }).Validate();
+    }
+
+    [Fact]
     public void RejectsUnknownAndNullConfigurationRatherThanUsingDefaults()
     {
         var options = JsonSerializer.Deserialize<GatewayOptions>("""{"fields":null}""", WireJson.Options)!;
