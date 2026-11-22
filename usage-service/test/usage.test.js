@@ -100,6 +100,13 @@ test('validates Access tokens and groups each installation by its latest version
       headers: { 'cf-access-jwt-assertion': token },
     });
     assert.equal((await worker.fetch(dashboardRequest(await makeToken('wrong')), env)).status, 403);
+    const expired = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+      .setIssuer('https://example.cloudflareaccess.com').setAudience(env.ACCESS_AUDIENCE)
+      .setExpirationTime('1s ago').sign(privateKey);
+    assert.equal((await worker.fetch(dashboardRequest(expired), env)).status, 403);
+    const noExpiry = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+      .setIssuer('https://example.cloudflareaccess.com').setAudience(env.ACCESS_AUDIENCE).sign(privateKey);
+    assert.equal((await worker.fetch(dashboardRequest(noExpiry), env)).status, 403);
     const result = await worker.fetch(dashboardRequest(await makeToken(env.ACCESS_AUDIENCE)), env);
     assert.equal(result.status, 200);
     const stats = await result.json();

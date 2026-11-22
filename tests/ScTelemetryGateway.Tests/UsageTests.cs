@@ -8,6 +8,18 @@ namespace ScTelemetryGateway.Tests;
 public sealed class UsageTests
 {
     [Fact]
+    public void ExistingSettingsRequireNoticeAndPersistDisabledChoice()
+    {
+        var existing = JsonSerializer.Deserialize<GatewayOptions>("""{}""", WireJson.Options)!;
+        Assert.True(existing.UsageStatisticsEnabled);
+        Assert.False(existing.UsageNoticeShown);
+        var updated = existing with { UsageStatisticsEnabled = false, UsageNoticeShown = true };
+        var restored = JsonSerializer.Deserialize<GatewayOptions>(JsonSerializer.Serialize(updated, WireJson.Options), WireJson.Options)!;
+        Assert.False(restored.UsageStatisticsEnabled);
+        Assert.True(restored.UsageNoticeShown);
+    }
+
+    [Fact]
     public async Task ReportsOnlyRequiredFieldsAndRotatesIdAfterDeletion()
     {
         var path = Path.Combine(Path.GetTempPath(), "sctg-usage-" + Guid.NewGuid().ToString("N"));
@@ -62,6 +74,14 @@ public sealed class UsageTests
             Assert.Throws<InvalidDataException>(() => new UsageIdentityStore(path).GetOrCreate());
         }
         finally { Clean(path); }
+    }
+
+    [Fact]
+    public void DeletingIdDoesNotRequireAnExistingSettingsDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "sctg-usage-" + Guid.NewGuid().ToString("N"));
+        new UsageIdentityStore(path).Delete();
+        Assert.False(Directory.Exists(path));
     }
 
     private static void Clean(string path)

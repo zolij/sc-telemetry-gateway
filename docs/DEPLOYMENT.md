@@ -1,5 +1,9 @@
 # Receiver deployment
 
+The separate application usage service is described in
+[usage statistics](USAGE-STATISTICS.md). It is not the game telemetry receiver
+described below.
+
 ## Local MFD network binding
 
 The MFD is an opt-in LAN HTTP and WebSocket listener. It is not an HTTPS or

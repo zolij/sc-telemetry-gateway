@@ -29,7 +29,7 @@ public sealed class UsageIdentityStore(string? directory = null)
 
     public void Delete()
     {
-        File.Delete(Path.Combine(root, "usage-id"));
+        if (Directory.Exists(root)) File.Delete(Path.Combine(root, "usage-id"));
     }
 }
 

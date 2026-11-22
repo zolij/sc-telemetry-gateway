@@ -99,7 +99,7 @@ async function authorize(request, env) {
     return true;
   } catch (error) {
     if (error.code?.startsWith('ERR_JWT') || error.code?.startsWith('ERR_JWS') ||
-        error.code === 'ERR_JWKS_NO_MATCHING_KEY') return false;
+        error.code === 'ERR_JOSE_ALG_NOT_ALLOWED' || error.code === 'ERR_JWKS_NO_MATCHING_KEY') return false;
     throw error;
   }
 }
@@ -163,7 +163,7 @@ export default {
       }
       return response('Not found', 404, 'text/plain; charset=utf-8');
     } catch (error) {
-      console.error('Usage service error', error);
+      console.error('Usage service error:', error instanceof Error ? error.name : 'Unknown error');
       return response('Service unavailable', 503, 'text/plain; charset=utf-8');
     }
   },
