@@ -36,6 +36,7 @@ internal sealed class TrayContext : ApplicationContext
     private string? error;
     private bool busy;
     private bool updateBusy;
+    private bool disposed;
     private string updateStatus = "Not checked";
     private readonly ToolStripMenuItem checkUpdates;
 
@@ -377,8 +378,9 @@ internal sealed class TrayContext : ApplicationContext
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !disposed)
         {
+            disposed = true;
             timer.Dispose();
             updateTimer.Dispose();
             usageTimer.Dispose();
