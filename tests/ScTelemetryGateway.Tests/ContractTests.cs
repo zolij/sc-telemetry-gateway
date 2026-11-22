@@ -43,6 +43,28 @@ public sealed class ContractTests
         (options with { Fields = ["actor.state.locomotion"] }).Validate();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ClearingOneDestinationPreservesTheOtherAcrossSettingsRoundTrip(bool clearMfd)
+    {
+        var options = new GatewayOptions
+        {
+            Endpoint = "wss://example.org/telemetry",
+            Fields = clearMfd ? ["actor.state.locomotion"] : [],
+            MfdEnabled = true, MfdAddress = "127.0.0.1",
+            MfdFields = clearMfd ? [] : ["actor.vitals.heart_rate"]
+        };
+        options.Validate(requireDestination: false);
+        var loaded = JsonSerializer.Deserialize<GatewayOptions>(
+            JsonSerializer.Serialize(options, WireJson.Options), WireJson.Options)!;
+        loaded.Validate(requireDestination: false);
+        Assert.Equal(options.Fields, loaded.Fields);
+        Assert.Equal(options.MfdFields, loaded.MfdFields);
+        var error = Assert.Throws<ArgumentException>(() => loaded.Validate());
+        Assert.Contains(clearMfd ? "MFD telemetry field" : "remote telemetry field", error.Message);
+    }
+
     [Fact]
     public void RejectsUnknownAndNullConfigurationRatherThanUsingDefaults()
     {
