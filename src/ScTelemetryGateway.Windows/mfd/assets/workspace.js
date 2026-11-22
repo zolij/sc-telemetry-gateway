@@ -151,7 +151,8 @@ const MfdWorkspace = (() => {
     for (const tile of page()?.tiles ?? []) {
       const card = node("article", "instrument size-" + tile.size);
       card.dataset.tileId = tile.id;
-      const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unavailable");
+      card.dataset.widget = tile.widget;
+      const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
       card.append(node("span", "instrument-label", tile.label), value, meta);
       if (draft) addTileControls(card, tile);

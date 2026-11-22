@@ -86,6 +86,8 @@ h1 span { color: var(--accent); }
 .instrument[data-color="red"] .instrument-value { color: #f29e94; }
 .instrument[data-color="blue"] .instrument-value { color: #8bc5e6; }
 .list-value { font-size: 17px; border-bottom: 1px solid var(--line); padding-block: 5px; }
+.instrument[data-widget="list"] .instrument-value { max-height: 240px; overflow-y: auto; }
+.instrument.size-large[data-widget="list"] .instrument-value { max-height: 480px; }
 .tile-controls { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 8px; }
 .tile-controls button { font-size: 9px; flex: 1 1 auto; padding-inline: 7px; }
 .drag-handle { width: 100%; touch-action: none; }

@@ -119,8 +119,8 @@ empty strings are shown as **Empty**, distinct from missing values.
 Stale, offline and last-known values remain visibly marked. Most lists show
 the latest received repeated values.
 The event list retains the current stream's last 100 events, including
-duplicates, and reports how many older events were dropped. Restarting the
-game stream or pausing clears this history. The layout adapts to tablet and
+duplicates, in a scrollable tile and reports how many older events were dropped.
+Restarting the game stream or pausing clears this history. The layout adapts to tablet and
 monitor widths.
 
 Installed copies check GitHub for updates automatically (configurable).

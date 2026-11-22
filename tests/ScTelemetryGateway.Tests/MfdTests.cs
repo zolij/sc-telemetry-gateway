@@ -567,17 +567,20 @@ public sealed class MfdTests
     public void SnapshotRetainsDuplicateEventHistoryAcrossEmptySections()
     {
         const string eventType = "events.events.type";
-        var store = new MfdSnapshotStore([eventType]);
+        var clock = new MfdClock();
+        var store = new MfdSnapshotStore([eventType], clock);
         var frame = new TelemetryStreamResponse { Events = new() };
         frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorLeaveSeat });
         store.Ingest(frame);
         Assert.Equal("[\"GAME_EVENT_TYPE_ACTOR_LEAVE_SEAT\"]", store.Current().Fields[eventType].Value!.ToJsonString());
         store.Ingest(frame);
         Assert.Equal(2, store.Current().Fields[eventType].Value!.AsArray().Count);
+        clock.Advance(TimeSpan.FromSeconds(3));
         store.Ingest(new() { Actor = new() });
         Assert.True(store.Current().Fields.ContainsKey(eventType));
         store.Ingest(new() { Events = new() });
         Assert.Equal(2, store.Current().Fields[eventType].Value!.AsArray().Count);
+        Assert.Equal(3000, store.Current().Fields[eventType].AgeMs);
     }
 
     [Fact]
