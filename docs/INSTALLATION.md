@@ -49,8 +49,9 @@ Downloads are checksum-verified by Velopack over HTTPS. This does not substitute
 for trusted Authenticode signing; see [Code signing policy](SIGNING.md).
 
 Updates stop collection and discard unsent RAM data only when installation is
-approved. After restart, collection remains paused. Settings and the DPAPI key
-stay in `%LOCALAPPDATA%\StarCitizenTelemetryGateway`, outside versioned app files.
+approved. After restart, collection remains paused. Settings, the DPAPI key,
+MFD profiles and approved MFD device records stay in
+`%LOCALAPPDATA%\StarCitizenTelemetryGateway`, outside versioned app files.
 
 Stable is the default update channel. **Include unsigned preview updates** is
 an explicit opt-in; previews are not stable and may have no trusted signature.
@@ -63,11 +64,13 @@ does not support managed updates: install Setup to enable them.
 
 Use Windows **Settings > Apps > Installed apps > Star Citizen Telemetry Gateway >
 Uninstall**. Close the tray app first. Uninstall removes program files and
-shortcuts, but retains user settings and the encrypted API key. To remove those
-too, delete the `StarCitizenTelemetryGateway` folder under your own LocalAppData
-after exiting the app. This also removes the local usage statistics ID. Previously
-sent usage records remain on the service until their scheduled cleanup. No game
-telemetry archive needs to be removed.
+shortcuts, but retains user settings, the encrypted API key, MFD profiles and
+approved device records. To remove those too, delete the
+`StarCitizenTelemetryGateway` folder under your own LocalAppData after exiting
+the app. This also removes the local usage statistics ID. Browser-stored MFD
+tokens and identifiers are separate. Previously sent usage records remain on
+the service until their scheduled cleanup. No game telemetry archive needs to
+be removed.
 
 ## Build
 

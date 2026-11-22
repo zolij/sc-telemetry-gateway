@@ -1,4 +1,5 @@
 using ScTelemetryGateway.Core;
+using QRCoder;
 
 namespace ScTelemetryGateway.Windows;
 
@@ -8,15 +9,18 @@ internal sealed class DashboardForm : Form
     private readonly Button pause = new() { Text = "Pause and clear buffer", AutoSize = true };
     private readonly Button settings = new() { Text = "Settings...", AutoSize = true };
     private readonly Button createCode = new() { Text = "Create pairing code", AutoSize = true };
-    private readonly Button approve = new() { Text = "Approve", AutoSize = true };
-    private readonly Button deny = new() { Text = "Deny", AutoSize = true };
     private readonly Button revoke = new() { Text = "Revoke", AutoSize = true };
     private readonly Label summary = new() { Dock = DockStyle.Fill, AutoSize = false };
     private readonly Label details = new() { Dock = DockStyle.Top, AutoSize = true };
     private readonly Label mfdGuidance = new() { Dock = DockStyle.Fill };
     private readonly Label code = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "No pairing code" };
     private readonly TextBox url = new() { Dock = DockStyle.Fill, ReadOnly = true, AccessibleName = "MFD address" };
-    private readonly ListBox pending = new() { Dock = DockStyle.Fill, AccessibleName = "Pending pairing requests" };
+    private readonly PictureBox pairingQr = new()
+    {
+        Dock = DockStyle.Fill,
+        SizeMode = PictureBoxSizeMode.Zoom,
+        AccessibleName = "MFD pairing QR code"
+    };
     private readonly ListBox devices = new() { Dock = DockStyle.Fill, AccessibleName = "Approved devices" };
     private DateTimeOffset? codeExpires;
     private bool listenerActive;
@@ -26,10 +30,7 @@ internal sealed class DashboardForm : Form
     public event EventHandler? PauseRequested;
     public event EventHandler? SettingsRequested;
     public event EventHandler? PairingCodeRequested;
-    public event EventHandler? ApproveRequested;
-    public event EventHandler? DenyRequested;
     public event EventHandler? RevokeRequested;
-    public Guid? SelectedRequest => (pending.SelectedItem as DeviceItem)?.Id;
     public Guid? SelectedDevice => (devices.SelectedItem as DeviceItem)?.Id;
 
     public DashboardForm()
@@ -95,15 +96,12 @@ internal sealed class DashboardForm : Form
         codeRow.Controls.Add(code);
         pairLayout.Controls.Add(codeRow, 0, 3);
         pairLayout.SetColumnSpan(codeRow, 2);
-        pairLayout.Controls.Add(new Label { Text = "Pending requests", AutoSize = true }, 0, 4);
+        pairLayout.Controls.Add(new Label { Text = "Scan to connect", AutoSize = true }, 0, 4);
         pairLayout.Controls.Add(new Label { Text = "Approved devices", AutoSize = true }, 1, 4);
-        pairLayout.Controls.Add(pending, 0, 5);
+        pairLayout.Controls.Add(pairingQr, 0, 5);
         pairLayout.Controls.Add(devices, 1, 5);
-        var requestActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        requestActions.Controls.AddRange([approve, deny]);
         var deviceActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
         deviceActions.Controls.Add(revoke);
-        pairLayout.Controls.Add(requestActions, 0, 6);
         pairLayout.Controls.Add(deviceActions, 1, 6);
         pairing.Controls.Add(pairLayout);
         layout.Controls.Add(pairing, 0, 2);
@@ -114,10 +112,7 @@ internal sealed class DashboardForm : Form
         pause.Click += (_, _) => PauseRequested?.Invoke(this, EventArgs.Empty);
         settings.Click += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         createCode.Click += (_, _) => PairingCodeRequested?.Invoke(this, EventArgs.Empty);
-        approve.Click += (_, _) => ApproveRequested?.Invoke(this, EventArgs.Empty);
-        deny.Click += (_, _) => DenyRequested?.Invoke(this, EventArgs.Empty);
         revoke.Click += (_, _) => RevokeRequested?.Invoke(this, EventArgs.Empty);
-        pending.SelectedIndexChanged += (_, _) => RefreshButtons();
         devices.SelectedIndexChanged += (_, _) => RefreshButtons();
         FormClosing += (_, e) =>
         {
@@ -125,16 +120,25 @@ internal sealed class DashboardForm : Form
         };
     }
 
-    public void ShowPairingCode(string value)
+    public void ShowPairingCode(string value, string pairingUrl)
     {
         code.Text = value + " (one use; expires in 2 minutes)";
         codeExpires = DateTimeOffset.UtcNow.AddMinutes(2);
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(pairingUrl, QRCodeGenerator.ECCLevel.M);
+        using var qrCode = new QRCode(data);
+        var oldImage = pairingQr.Image;
+        pairingQr.Image = qrCode.GetGraphic(6);
+        oldImage?.Dispose();
     }
 
     public void ClearPairingCode()
     {
         code.Text = "No pairing code";
         codeExpires = null;
+        var oldImage = pairingQr.Image;
+        pairingQr.Image = null;
+        oldImage?.Dispose();
     }
 
     public void UpdateView(bool running, bool busy, GatewayOptions options, GatewayStatus? status,
@@ -153,7 +157,7 @@ internal sealed class DashboardForm : Form
             $"Last ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}    Updates: {updateStatus}\n" +
             $"Usage statistics: {usageStatus}";
         listenerActive = running && status?.Mfd == "Listener active" && mfdStatus?.Listening == true;
-        mfdGuidance.Text = listenerActive ? "Open the URL on your display, then create a pairing code." :
+        mfdGuidance.Text = listenerActive ? "Scan a pairing QR code or enter its code on your display." :
             !options.MfdEnabled ? "Open Settings to configure and enable the local MFD." :
             options.MfdFields.Count == 0 ? "Select at least one MFD field in Settings." :
             !running ? "Start collection to connect a display." :
@@ -164,7 +168,6 @@ internal sealed class DashboardForm : Form
             !running ? "Start collection to display the URL." :
             "MFD is not available yet. Check its status below.";
         if (!listenerActive || codeExpires <= DateTimeOffset.UtcNow) ClearPairingCode();
-        UpdateItems(pending, listenerActive ? mfdStatus!.PendingRequests.Select(r => new DeviceItem(r.Id, r.Label)) : []);
         UpdateItems(devices, listenerActive ? mfdStatus!.Devices.Select(d => new DeviceItem(d.Id, d.Label)) : []);
         RefreshButtons();
     }
@@ -172,8 +175,6 @@ internal sealed class DashboardForm : Form
     private void RefreshButtons()
     {
         createCode.Enabled = listenerActive && !busy;
-        approve.Enabled = listenerActive && !busy && SelectedRequest.HasValue;
-        deny.Enabled = listenerActive && !busy && SelectedRequest.HasValue;
         revoke.Enabled = listenerActive && !busy && SelectedDevice.HasValue;
     }
 

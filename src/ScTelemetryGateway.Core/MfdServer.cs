@@ -15,15 +15,13 @@ using Microsoft.Extensions.Logging;
 
 namespace ScTelemetryGateway.Core;
 
-public sealed record MfdPairRequest(Guid Id, string Label, DateTimeOffset ExpiresAt);
 public sealed record MfdApprovedDevice(Guid Id, string Label, DateTimeOffset ApprovedAt);
 public sealed record MfdServerStatus(bool Listening, string? Url, string? Error,
-    IReadOnlyList<MfdPairRequest> PendingRequests, IReadOnlyList<MfdApprovedDevice> Devices);
+    IReadOnlyList<MfdApprovedDevice> Devices);
 
 public sealed partial class MfdServer : IAsyncDisposable
 {
     public const int PairingCodeLifetimeSeconds = 120;
-    private const int MaxPairRequests = 16;
     private const int MaxRequestBytes = 4096;
     private const int MaxAuthBytes = 512;
     private const int UnauthenticatedTimeoutSeconds = 10;
@@ -33,11 +31,11 @@ public sealed partial class MfdServer : IAsyncDisposable
     private readonly string assetRoot;
     private readonly MfdSnapshotStore snapshot;
     private readonly MfdProfileStore profiles;
+    private readonly MfdDeviceStore deviceStore;
     private readonly string host;
     private readonly string origin;
     private readonly object gate = new();
-    private readonly ConcurrentDictionary<Guid, ApprovedDevice> approved = new();
-    private readonly ConcurrentDictionary<Guid, PairRequest> pending = new();
+    private readonly ConcurrentDictionary<Guid, MfdStoredDevice> approved = new();
     private readonly ConcurrentDictionary<WebSocket, MfdWebSocketState> sockets = new();
     private readonly CryptoRandomPairCode pairCode = new();
     private readonly CancellationTokenSource shutdown = new();
@@ -50,13 +48,17 @@ public sealed partial class MfdServer : IAsyncDisposable
     private Task? publisherTask;
 
     public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot,
-        MfdProfileStore? profiles = null)
+        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null)
     {
         this.address = address;
         this.port = port;
         this.snapshot = snapshot;
-        this.profiles = profiles ?? new MfdProfileStore(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarCitizenTelemetryGateway"));
+        var dataDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StarCitizenTelemetryGateway");
+        this.profiles = profiles ?? new MfdProfileStore(dataDirectory);
+        this.deviceStore = deviceStore ?? new MfdDeviceStore(dataDirectory);
+        foreach (var device in this.deviceStore.List())
+            approved[device.Id] = device;
         this.assetRoot = assetRoot;
         host = address.ToString() + ":" + port.ToString(CultureInfo.InvariantCulture);
         origin = "http://" + host;
@@ -68,10 +70,8 @@ public sealed partial class MfdServer : IAsyncDisposable
         {
             lock (gate)
             {
-                var now = DateTimeOffset.UtcNow;
-                var stale = pending.Values.Where(p => p.ExpiresAt > now).Select(p => new MfdPairRequest(p.Id, p.Label, p.ExpiresAt)).ToArray();
                 var devices = approved.Values.Select(d => new MfdApprovedDevice(d.Id, d.Label, d.ApprovedAt)).ToArray();
-                return new(app is not null, app is null ? null : origin + "/", lastError, stale, devices);
+                return new(app is not null, app is null ? null : origin + "/", lastError, devices);
             }
         }
     }
@@ -80,42 +80,24 @@ public sealed partial class MfdServer : IAsyncDisposable
     {
         lock (gate)
         {
-            CleanupExpired();
             return pairCode.Create();
         }
     }
 
-    public bool ApproveRequest(Guid requestId)
+    public string CreatePairingUrl(string code)
     {
-        lock (gate)
-        {
-            if (!pending.TryRemove(requestId, out var request) || request.ExpiresAt <= DateTimeOffset.UtcNow)
-                return false;
-            var deviceId = Guid.NewGuid();
-            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            approved[deviceId] = new ApprovedDevice(deviceId, request.Label, token, DateTimeOffset.UtcNow);
-            request.Completion.TrySetResult(token);
-            return true;
-        }
-    }
-
-    public bool DenyRequest(Guid requestId)
-    {
-        lock (gate)
-        {
-            if (!pending.TryRemove(requestId, out var request))
-                return false;
-            request.Completion.TrySetResult(null);
-            return true;
-        }
+        ArgumentException.ThrowIfNullOrEmpty(code);
+        return origin + "/#pair=" + Uri.EscapeDataString(code);
     }
 
     public bool RevokeDevice(Guid deviceId)
     {
         lock (gate)
         {
-            if (!approved.TryRemove(deviceId, out _))
-                return false;
+            if (!approved.ContainsKey(deviceId)) return false;
+            if (!deviceStore.Remove(deviceId))
+                throw new InvalidDataException("Approved MFD device was missing from the device store.");
+            approved.TryRemove(deviceId, out _);
             foreach (var item in sockets.Where(s => s.Value.DeviceId == deviceId))
                 item.Key.Abort();
             return true;
@@ -250,7 +232,6 @@ public sealed partial class MfdServer : IAsyncDisposable
             return;
         }
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token, context.RequestAborted);
-        PairRequest? request = null;
         try
         {
             var body = new byte[MaxRequestBytes + 1];
@@ -271,24 +252,19 @@ public sealed partial class MfdServer : IAsyncDisposable
             if (root.ValueKind != JsonValueKind.Object ||
                 !root.TryGetProperty("schema_version", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 1 ||
                 !root.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || type.GetString() != "mfd.pair.request" ||
-                !root.TryGetProperty("code", out var codeElement) || codeElement.ValueKind != JsonValueKind.String ||
-                !root.TryGetProperty("device_label", out var labelElement) || labelElement.ValueKind != JsonValueKind.String)
+                !root.TryGetProperty("code", out var codeElement) || codeElement.ValueKind != JsonValueKind.String)
                 throw new JsonException();
             var code = codeElement.GetString();
-            var label = labelElement.GetString()?.Trim();
+            var label = root.TryGetProperty("device_label", out var labelElement) &&
+                labelElement.ValueKind == JsonValueKind.String ? labelElement.GetString()?.Trim() : "Display";
             if (string.IsNullOrEmpty(code) || label is null || label.Length is < 1 or > 48)
                 throw new JsonException();
+            string? token = null;
             lock (gate)
             {
                 if (stopping)
                 {
                     context.Response.StatusCode = 503;
-                    return;
-                }
-                CleanupExpired();
-                if (pending.Count >= MaxPairRequests)
-                {
-                    context.Response.StatusCode = 429;
                     return;
                 }
                 if (!pairCode.TryConsume(code))
@@ -297,21 +273,22 @@ public sealed partial class MfdServer : IAsyncDisposable
                 }
                 else
                 {
-                    var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    request = new PairRequest(Guid.NewGuid(), label, completion, DateTimeOffset.UtcNow.AddMinutes(2));
-                    pending[request.Id] = request;
+                    token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+                    var deviceId = Guid.NewGuid();
+                    var device = new MfdStoredDevice(deviceId, label, MfdDeviceStore.HashToken(token), DateTimeOffset.UtcNow);
+                    var replacedIds = deviceStore.Add(device);
+                    foreach (var replacedId in replacedIds)
+                    {
+                        approved.TryRemove(replacedId, out _);
+                        foreach (var item in sockets.Where(s => s.Value.DeviceId == replacedId))
+                            item.Key.Abort();
+                    }
+                    approved[deviceId] = device;
                 }
             }
-            if (request is null)
-            {
-                await context.Response.WriteAsJsonAsync(new { error = "pairing_code_invalid" }, lifetime.Token);
-                return;
-            }
-            var token = await request.Completion.Task.WaitAsync(TimeSpan.FromMinutes(2), lifetime.Token);
             if (token is null)
             {
-                context.Response.StatusCode = 403;
-                await context.Response.WriteAsJsonAsync(new { error = "pairing_denied" });
+                await context.Response.WriteAsJsonAsync(new { error = "pairing_code_invalid" }, lifetime.Token);
                 return;
             }
             await context.Response.WriteAsJsonAsync(new
@@ -333,10 +310,11 @@ public sealed partial class MfdServer : IAsyncDisposable
         {
             context.Response.StatusCode = 503;
         }
-        finally
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (request is not null)
-                lock (gate) pending.TryRemove(request.Id, out _);
+            logger?.LogError("MFD device permission could not be saved: {FailureType}", ex.GetType().Name);
+            context.Response.StatusCode = 503;
+            await context.Response.WriteAsJsonAsync(new { error = "permission_store_unavailable" });
         }
     }
 
@@ -392,8 +370,8 @@ public sealed partial class MfdServer : IAsyncDisposable
             var token = Encoding.UTF8.GetBytes(tokenElement.GetString() ?? "");
             lock (gate)
             {
-                var device = approved.Values.FirstOrDefault(d =>
-                    CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(d.Token), token));
+                var device = approved.Values.FirstOrDefault(d => MfdDeviceStore.TokenMatches(
+                    Encoding.UTF8.GetString(token), d.TokenHash));
                 if (stopping || device is null)
                     throw new WebSocketException("Not approved.");
                 state.DeviceId = device.Id;
@@ -460,15 +438,6 @@ public sealed partial class MfdServer : IAsyncDisposable
         return originHeader is null || originHeader.Equals(origin, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void CleanupExpired()
-    {
-        foreach (var item in pending.Where(p => p.Value.ExpiresAt <= DateTimeOffset.UtcNow))
-        {
-            if (pending.TryRemove(item.Key, out var request))
-                request.Completion.TrySetResult(null);
-        }
-    }
-
     public async ValueTask DisposeAsync()
     {
         lock (gate)
@@ -476,8 +445,6 @@ public sealed partial class MfdServer : IAsyncDisposable
             stopping = true;
             pairCode.Revoke();
             approved.Clear();
-            foreach (var request in pending.Values) request.Completion.TrySetResult(null);
-            pending.Clear();
             foreach (var socket in sockets.Keys) socket.Abort();
         }
         publisher?.Cancel();
@@ -499,13 +466,11 @@ public sealed partial class MfdServer : IAsyncDisposable
         ".js" => "application/javascript",
         ".png" => "image/png",
         ".svg" => "image/svg+xml",
+        ".mp4" => "video/mp4",
         ".json" => "application/json",
         _ => "application/octet-stream"
     };
 
-    private sealed record PairRequest(Guid Id, string Label,
-        TaskCompletionSource<string?> Completion, DateTimeOffset ExpiresAt);
-    private sealed record ApprovedDevice(Guid Id, string Label, string Token, DateTimeOffset ApprovedAt);
     private sealed class MfdWebSocketState
     {
         public Guid? DeviceId { get; set; }

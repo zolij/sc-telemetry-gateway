@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -37,9 +36,8 @@ public sealed partial class MfdServer
             unavailable = stopping;
             if (!stopping && authorization.StartsWith("Bearer ", StringComparison.Ordinal) && authorization.Length == 71)
             {
-                var tokenBytes = Encoding.UTF8.GetBytes(authorization[7..]);
                 approvedToken = approved.Values.Any(device =>
-                    CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(device.Token), tokenBytes));
+                    MfdDeviceStore.TokenMatches(authorization[7..], device.TokenHash));
             }
         }
         if (unavailable)
@@ -49,7 +47,7 @@ public sealed partial class MfdServer
         }
         if (!approvedToken)
         {
-            await ProfileError(context, 401, "not_approved", "Pair this display and approve it on the PC.");
+            await ProfileError(context, 401, "not_approved", "Pair this display with a code shown on the PC.");
             return;
         }
 

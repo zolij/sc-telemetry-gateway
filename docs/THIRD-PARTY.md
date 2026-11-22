@@ -7,7 +7,9 @@ versions and hashes are recorded in the projects' NuGet lock files.
 | --- | --- | --- |
 | Google.Protobuf | 3.36.2 | [BSD-3-Clause](licenses/Google.Protobuf.txt) |
 | Grpc.Net.Client, Grpc.Net.Common, Grpc.Core.Api | 2.85.0 | [Apache-2.0](../LICENSE), Copyright 2019 The gRPC Authors |
-| Microsoft.Extensions.Logging.Abstractions, DependencyInjection.Abstractions | 8.0.1 | [MIT](licenses/Microsoft.Extensions.txt), [notices](licenses/Microsoft.Extensions.NOTICES.txt) |
+| Microsoft.Extensions.Logging.Abstractions | 8.0.1 | [MIT](licenses/Microsoft.Extensions.txt), [notices](licenses/Microsoft.Extensions.NOTICES.txt) |
+| Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.0 | [MIT](licenses/Microsoft.Extensions.txt), [notices](licenses/Microsoft.Extensions.NOTICES.txt) |
+| QRCoder | 1.6.0 | [MIT](licenses/QRCoder.txt) |
 | System.Security.Cryptography.ProtectedData | 11.0.0 | [MIT](licenses/ProtectedData.txt), [notices](licenses/ProtectedData.NOTICES.txt) |
 | .NET runtime | 10.0.15 | [MIT](licenses/DotnetRuntime.txt), [notices](licenses/DotnetRuntime.NOTICES.txt) |
 | Windows Desktop runtime | 10.0.15 | [MIT](licenses/WindowsDesktop.txt), applicable .NET component notices above |

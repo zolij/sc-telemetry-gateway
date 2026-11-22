@@ -25,7 +25,7 @@ function fixture({ supported = true, prefixed = false, standalone = false, reque
     getElementById: element,
     addEventListener(type, callback) { listeners.set(type, callback); }
   };
-  let requests = 0, exits = 0;
+  let requests = 0, exits = 0, wakeStarts = 0, wakeStops = 0, wakeWarning;
   const change = value => {
     doc[prefixed ? "webkitFullscreenElement" : "fullscreenElement"] = value;
     listeners.get(prefixed ? "webkitfullscreenchange" : "fullscreenchange")?.();
@@ -49,7 +49,12 @@ function fixture({ supported = true, prefixed = false, standalone = false, reque
   }
   const focus = vm.runInNewContext(source + "\nMfdFocus;", {
     document: doc, navigator: { standalone },
-    window: { matchMedia: () => ({ matches: false }) }
+    window: { matchMedia: () => ({ matches: false }) },
+    MfdWakeLock: {
+      init(callback) { wakeWarning = callback; },
+      start() { wakeStarts++; },
+      stop() { wakeStops++; }
+    }
   });
   focus.init();
   focus.update(true, true);
@@ -57,18 +62,21 @@ function fixture({ supported = true, prefixed = false, standalone = false, reque
     enter: () => element("focus-button").listeners.click(),
     leave: () => element("leave-focus").listeners.click(),
     focused: () => classes.has("focus-mode"),
-    requests: () => requests, exits: () => exits };
+    requests: () => requests, exits: () => exits,
+    wakeStarts: () => wakeStarts, wakeStops: () => wakeStops, wakeWarning: text => wakeWarning(text) };
 }
 
 test("focus requests the whole document synchronously and touch exit restores the normal view", async () => {
   const view = fixture();
   const entering = view.enter();
   assert.equal(view.requests(), 1);
+  assert.equal(view.wakeStarts(), 1);
   assert.equal(view.focused(), true);
   await entering;
   await view.leave();
   assert.equal(view.focused(), false);
   assert.equal(view.exits(), 1);
+  assert.equal(view.wakeStops(), 1);
   assert.equal(view.doc.activeElement, view.element("focus-button"));
 });
 
@@ -156,4 +164,14 @@ test("failed fullscreen exit is visible rather than silently swallowed", async (
   await view.leave();
   assert.match(view.element("focus-message").textContent, /Could not leave/);
   assert.equal(view.element("focus-feedback").hidden, false);
+});
+
+test("wake lock failures remain visible alongside fullscreen warnings", async () => {
+  const view = fixture({ supported: false });
+  await view.enter();
+  view.wakeWarning("Could not keep the screen awake.");
+  assert.match(view.element("focus-message").textContent, /Home Screen/);
+  assert.match(view.element("focus-message").textContent, /screen awake/);
+  await view.leave();
+  assert.equal(view.wakeStops(), 1);
 });

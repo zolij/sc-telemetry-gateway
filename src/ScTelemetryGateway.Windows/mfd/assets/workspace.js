@@ -307,10 +307,17 @@ const MfdWorkspace = (() => {
         }
       }
     }
+    if (!saved && !draft) {
+      const preferred = summaries.find(item => item.id === preference?.profile);
+      const onlyProfile = summaries.length === 1 ? summaries[0] : null;
+      const next = preferred ?? onlyProfile;
+      if (next) await selectProfile(next.id, version);
+    }
     controls();
   }
-  async function selectProfile(id) {
+  async function selectProfile(id, version = viewVersion) {
     const next = id ? (await api("profiles/" + id)).data : null;
+    if (version !== viewVersion) return;
     saved = next;
     draft = null;
     pageId = preference?.profile === id ? preference.page : next?.pages[0].id;
@@ -325,14 +332,13 @@ const MfdWorkspace = (() => {
       catalog = fields.data;
       triggerEvents = events.data;
       await refresh(true);
-      if (!saved && preference?.profile && summaries.some(item => item.id === preference.profile))
-        await selectProfile(preference.profile);
       renderLibrary();
       render();
     });
   }
   function reset() {
     epoch++;
+    viewVersion++;
     saved = draft = null;
     pageId = null;
     summaries = catalog = [];

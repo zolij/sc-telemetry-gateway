@@ -3,12 +3,18 @@
 const MfdFocus = (() => {
   const $ = id => document.getElementById(id);
   let active = false, available = false, pending = false, usedFullscreen = false, requestedFullscreen = false;
+  let fullscreenMessage = "", wakeMessage = "";
   const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement;
   const standalone = () => navigator.standalone === true ||
     window.matchMedia("(display-mode: standalone)").matches ||
     window.matchMedia("(display-mode: fullscreen)").matches;
 
   function message(text) {
+    fullscreenMessage = text;
+    renderMessage();
+  }
+  function renderMessage() {
+    const text = [fullscreenMessage, wakeMessage].filter(Boolean).join(" ");
     $("focus-message").textContent = text;
     $("focus-feedback").hidden = !text;
   }
@@ -21,6 +27,8 @@ const MfdFocus = (() => {
   function restore() {
     active = false;
     usedFullscreen = false;
+    MfdWakeLock.stop();
+    wakeMessage = "";
     message("");
     controls();
     $("focus-button").focus();
@@ -48,6 +56,7 @@ const MfdFocus = (() => {
     message("");
     controls();
     $("leave-focus").focus();
+    MfdWakeLock.start();
     try {
       if (standalone() || fullscreenElement() === document.documentElement) return;
       const root = document.documentElement;
@@ -74,9 +83,17 @@ const MfdFocus = (() => {
     controls();
   }
   function init() {
+    MfdWakeLock.init(text => {
+      if (!active) return;
+      wakeMessage = text;
+      renderMessage();
+    });
     $("focus-button").addEventListener("click", enter);
     $("leave-focus").addEventListener("click", leave);
-    $("dismiss-focus-message").addEventListener("click", () => message(""));
+    $("dismiss-focus-message").addEventListener("click", () => {
+      wakeMessage = "";
+      message("");
+    });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && active) void leave();
     });

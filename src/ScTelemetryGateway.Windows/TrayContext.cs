@@ -104,26 +104,21 @@ internal sealed class TrayContext : ApplicationContext
         statusWindow.PairingCodeRequested += (_, _) =>
         {
             if (runtime?.Status.Mfd != "Listener active" || runtime.MfdServer is null) return;
-            statusWindow.ShowPairingCode(runtime.MfdServer.CreatePairingCode());
-        };
-        statusWindow.ApproveRequested += (_, _) =>
-        {
-            if (statusWindow.SelectedRequest is { } id && runtime?.MfdServer?.ApproveRequest(id) != true)
-                MessageBox.Show(statusWindow, "The request is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            statusWindow.ClearPairingCode();
-            RefreshStatus();
-        };
-        statusWindow.DenyRequested += (_, _) =>
-        {
-            if (statusWindow.SelectedRequest is { } id && runtime?.MfdServer?.DenyRequest(id) != true)
-                MessageBox.Show(statusWindow, "The request is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            statusWindow.ClearPairingCode();
-            RefreshStatus();
+            var code = runtime.MfdServer.CreatePairingCode();
+            statusWindow.ShowPairingCode(code, runtime.MfdServer.CreatePairingUrl(code));
         };
         statusWindow.RevokeRequested += (_, _) =>
         {
-            if (statusWindow.SelectedDevice is { } id && runtime?.MfdServer?.RevokeDevice(id) != true)
-                MessageBox.Show(statusWindow, "The device is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            try
+            {
+                if (statusWindow.SelectedDevice is { } id && runtime?.MfdServer?.RevokeDevice(id) != true)
+                    MessageBox.Show(statusWindow, "The device is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(statusWindow, "The device permission could not be revoked. Check the local device store.\n\n" + ex.Message,
+                    ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             RefreshStatus();
         };
         timer.Tick += (_, _) => RefreshStatus();

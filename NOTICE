@@ -19,6 +19,10 @@ Google.Protobuf:
 Copyright 2015, Google Inc. Licensed under BSD-3-Clause; see
 docs/licenses/Google.Protobuf.txt for the upstream license and notices.
 
+QRCoder:
+Copyright 2013-2018 Raffael Herrmann. Licensed under MIT; see
+docs/licenses/QRCoder.txt for the upstream license.
+
 Microsoft .NET runtime, Windows Desktop runtime, Microsoft.Extensions
 abstractions, and System.Security.Cryptography.ProtectedData:
 Licensed under MIT, with component-specific third-party notices.

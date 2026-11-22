@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { webcrypto } = require("node:crypto");
 
 const assets = path.join(__dirname, "../../src/ScTelemetryGateway.Windows/mfd/assets");
 const source = ["presentation.js", "triggers.js", "workspace.js"]
@@ -16,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture() {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -27,6 +28,9 @@ async function fixture() {
       replaceChildren(...items) { this.children = items; },
       get childElementCount() { return this.children.length; },
       setAttribute() {},
+      focus() {},
+      select() {},
+      close() {},
       addEventListener(type, callback) { this.listeners.set(type, callback); },
       click() { return this.listeners.get("click")?.(); },
       querySelector(selector) {
@@ -39,7 +43,7 @@ async function fixture() {
     if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   };
-  let remote = profile(1), poll, failedProfile = false, blockedProfile = null, profileReads = 0;
+  let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, profileReads = 0;
   const summaryStatuses = [];
   const response = (status, data, etag = null) => ({
     status, ok: status >= 200 && status < 300,
@@ -49,18 +53,18 @@ async function fixture() {
   const workspace = vm.runInNewContext(source + "\nMfdWorkspace;", {
     document: { getElementById: getElement, createElement: element, querySelector: getElement, querySelectorAll: () => [] },
     window: { addEventListener() {}, confirm: () => true },
-    localStorage: { getItem: () => JSON.stringify({ profile: "ship", page: "flight" }), setItem() {} },
-    MfdFocus: { update() {} }, AbortSignal, TextEncoder,
+    localStorage: { getItem: () => preference ? JSON.stringify(preference) : null, setItem() {} },
+    MfdFocus: { update() {} }, AbortSignal, TextEncoder, crypto: webcrypto,
     Option: function (text, value) { return Object.assign(element(), { textContent: text, value }); },
     setInterval: callback => { poll = callback; },
     fetch: async (url, options) => {
       if (url.endsWith("/fields")) return response(200, []);
       if (url.endsWith("/events")) return response(200, [enter]);
       if (url.endsWith("/profiles")) {
-        const etag = '"' + remote.revision + '"';
+        const etag = '"' + (remote?.revision ?? "empty") + '"';
         const status = options.headers["If-None-Match"] === etag ? 304 : 200;
         summaryStatuses.push(status);
-        return response(status, [{ id: remote.id, name: remote.name, revision: remote.revision }], etag);
+        return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision }] : [], etag);
       }
       assert.equal(url, "/api/mfd/profiles/ship");
       profileReads++;
@@ -75,15 +79,25 @@ async function fixture() {
         blocked.started();
         await blocked.wait;
       }
+      if (blockedBody) {
+        const blocked = blockedBody;
+        blockedBody = null;
+        return { ...response(200, data), json: async () => {
+          blocked.started();
+          await blocked.wait;
+          return data;
+        } };
+      }
       return response(200, data);
     }
   });
   workspace.init(() => "test-token", () => {});
   await workspace.start();
-  assert.equal(getElement("page-title").textContent, "Flight");
+  assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
     workspace, element: getElement, poll: () => poll(), summaryStatuses,
     update: () => { remote = profile(2); },
+    create: () => { remote = profile(1); },
     failNextProfile: () => { failedProfile = true; },
     profileReads: () => profileReads,
     blockNextProfile: () => {
@@ -92,9 +106,57 @@ async function fixture() {
       const wait = new Promise(resolve => { release = resolve; });
       blockedProfile = { started, wait };
       return { waiting, release };
+    },
+    blockNextProfileBody: () => {
+      let started, release;
+      const waiting = new Promise(resolve => { started = resolve; });
+      const wait = new Promise(resolve => { release = resolve; });
+      blockedBody = { started, wait };
+      return { waiting, release };
     }
   };
 }
+
+test("the only saved profile is selected automatically when there is no saved preference", async () => {
+  const view = await fixture({ preference: null });
+  assert.equal(view.element("profile-select").value, "ship");
+  assert.equal(view.element("page-title").textContent, "Flight");
+});
+
+for (const preference of [null, { profile: "ship", page: "flight" }]) {
+  test(`automatic selection preserves a new draft during polling (preference: ${!!preference})`, async () => {
+    const view = await fixture({ preference, startEmpty: true });
+    view.create();
+    const blocked = view.blockNextProfile();
+    const polling = view.poll();
+    await blocked.waiting;
+    await view.element("new-profile").click();
+    view.element("profile-name").value = "My new draft";
+    view.element("profile-name").listeners.get("input")({ target: view.element("profile-name") });
+    blocked.release();
+    await polling;
+    assert.equal(view.element("profile-select").value, "draft");
+    assert.equal(view.element("profile-name").value, "My new draft");
+    assert.equal(view.element("page-title").textContent, "Page 1");
+    assert.equal(view.element("editor-toolbar").hidden, false);
+    await view.poll();
+    assert.equal(view.element("profile-select").value, "draft");
+    assert.equal(view.element("profile-name").value, "My new draft");
+  });
+}
+
+test("a profile response completing after reset does not restore a previous session", async () => {
+  const view = await fixture({ preference: null, startEmpty: true });
+  view.create();
+  const blocked = view.blockNextProfileBody();
+  const polling = view.poll();
+  await blocked.waiting;
+  view.workspace.reset();
+  blocked.release();
+  await polling;
+  assert.equal(view.element("profile-select").value, "");
+  assert.equal(view.element("page-title").textContent, "Your flight deck");
+});
 
 test("a failed active-profile fetch is retried on 304 and updates the layout and trigger mappings", async () => {
   const view = await fixture();

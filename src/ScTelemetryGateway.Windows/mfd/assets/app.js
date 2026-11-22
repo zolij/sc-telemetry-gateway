@@ -9,7 +9,7 @@ let snapshot = null;
 let receivedAt = 0;
 let socket = null;
 let reconnectTimer = null;
-let token = sessionStorage.getItem("mfd-session-token");
+let token = localStorage.getItem("mfd-session-token");
 
 function ageText(milliseconds) {
   if (!Number.isFinite(milliseconds)) return "Age unavailable";
@@ -60,23 +60,23 @@ function connect() {
   });
 }
 
-$("pair-form").addEventListener("submit", async event => {
-  event.preventDefault();
+async function pairWithCode(code) {
   pairButton.disabled = true;
-  pairMessage.textContent = "Waiting for approval on the PC...";
+  pairMessage.textContent = "Connecting display...";
   try {
     const response = await fetch("/api/pair/request", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "mfd.pair.request", schema_version: 1,
-        code: $("pair-code").value.trim(), device_label: $("device-label").value.trim()
+        code, device_label: "Display " + MfdDeviceIdentity.getOrCreate()
       })
     });
-    if (!response.ok) throw new Error("Pairing was rejected or expired. Request a new code.");
+    if (response.status === 401) throw new Error("Pairing code is invalid or expired. Create a new code on the PC.");
+    if (!response.ok) throw new Error("The display could not be saved. Check the gateway's storage, create a new code, and retry.");
     const result = await response.json();
     if (typeof result.session_token !== "string" || !result.session_token) throw new Error("Invalid pairing response.");
     token = result.session_token;
-    sessionStorage.setItem("mfd-session-token", token);
+    localStorage.setItem("mfd-session-token", token);
     $("pair-code").value = "";
     pairing.hidden = true;
     dashboard.hidden = false;
@@ -87,12 +87,17 @@ $("pair-form").addEventListener("submit", async event => {
   } finally {
     pairButton.disabled = false;
   }
+}
+
+$("pair-form").addEventListener("submit", event => {
+  event.preventDefault();
+  pairWithCode($("pair-code").value.trim());
 });
 
 $("unpair-button").addEventListener("click", () => {
   if (!MfdWorkspace.canLeave()) return;
   token = null;
-  sessionStorage.removeItem("mfd-session-token");
+  localStorage.removeItem("mfd-session-token");
   clearTimeout(reconnectTimer);
   socket?.close();
   socket = null;
@@ -108,10 +113,20 @@ $("unpair-button").addEventListener("click", () => {
 MfdFocus.init();
 MfdWorkspace.init(() => token, paint);
 setInterval(paint, 250);
+const pairingCode = new URLSearchParams(window.location.hash.slice(1)).get("pair");
+if (pairingCode) {
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  token = null;
+  localStorage.removeItem("mfd-session-token");
+}
 if (token) {
   pairing.hidden = true;
   dashboard.hidden = false;
   connect();
   MfdWorkspace.start();
+}
+if (pairingCode) {
+  $("pair-code").value = pairingCode;
+  pairWithCode(pairingCode);
 }
 paint();
