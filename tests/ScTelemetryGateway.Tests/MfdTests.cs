@@ -417,11 +417,14 @@ public sealed class MfdTests
     }
 
     [Fact]
-    public async Task ServerStartsAndServesBundledIndex()
+    public async Task ServerStartsAndServesBundledIndexAndPngAssets()
     {
         var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "index.html"), "synthetic MFD");
+        var assets = Path.Combine(root, "assets");
+        Directory.CreateDirectory(assets);
+        await File.WriteAllTextAsync(Path.Combine(assets, "app-icon.png"), "synthetic icon");
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -433,10 +436,15 @@ public sealed class MfdTests
             await server.StartAsync(timeout.Token);
             using var client = new HttpClient();
             Assert.Equal("synthetic MFD", await client.GetStringAsync($"http://127.0.0.1:{port}/", timeout.Token));
+            using var icon = await client.GetAsync($"http://127.0.0.1:{port}/assets/app-icon.png", timeout.Token);
+            Assert.Equal("image/png", icon.Content.Headers.ContentType?.MediaType);
+            Assert.Equal("synthetic icon", await icon.Content.ReadAsStringAsync(timeout.Token));
         }
         finally
         {
             File.Delete(Path.Combine(root, "index.html"));
+            File.Delete(Path.Combine(assets, "app-icon.png"));
+            Directory.Delete(assets);
             Directory.Delete(root);
         }
     }
@@ -677,6 +685,19 @@ public sealed class MfdTests
         Assert.Empty(unselected.Current().Events);
         Assert.Empty(unselected.Current().PageEvents);
         Assert.Equal(0, unselected.Current().EventsDropped);
+    }
+
+    [Fact]
+    public void EmptyMfdSelectionCanBeSavedButCannotBeStarted()
+    {
+        var options = new GatewayOptions
+        {
+            RemoteEnabled = false, MfdEnabled = true, MfdAddress = "127.0.0.1"
+        };
+        options.Validate(requireDestination: false);
+        var error = Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Contains("MFD telemetry field", error.Message);
+        (options with { MfdFields = ["actor.state.locomotion"] }).Validate();
     }
 
     [Fact]

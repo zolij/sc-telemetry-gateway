@@ -46,7 +46,7 @@ public sealed record GatewayOptions
                 address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
                 address.Equals(System.Net.IPAddress.Any))
                 throw new ArgumentException("Select an eligible local IPv4 address for the MFD listener.");
-            if (MfdFields.Count == 0)
+            if (requireDestination && MfdFields.Count == 0)
                 throw new ArgumentException("Select at least one MFD telemetry field.");
         }
         if (requireDestination && !remoteEnabled && !MfdEnabled)

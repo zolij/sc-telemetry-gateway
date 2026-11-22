@@ -122,9 +122,16 @@ async function stats(env) {
 
 const dashboard = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Gateway usage</title><style>body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:0 1rem}
-table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #bbb}
-th:last-child,td:last-child{text-align:right}.error{color:#a00}</style></head>
+<title>Gateway usage</title><style>
+:root{color-scheme:dark;background:#15191e;color:#e5e9ed}
+body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:0 1rem;line-height:1.5}
+h1{color:#f5f7f9}h2{color:#ffb56b}h3{color:#d5dde5}
+p{color:#b4c0cb}
+table{border-collapse:collapse;width:100%;margin-bottom:2rem}
+th,td{text-align:left;padding:.5rem;border-bottom:1px solid #38434e}
+th{color:#aebdca}th:last-child,td:last-child{text-align:right}
+.error{color:#ff9696}
+</style></head>
 <body><h1>Gateway usage</h1><p>Approximate unique installations, not people. Each installation is counted under its latest reported version for each activity. Data is retained for up to 30 days.</p>
 <main id="results">Loading…</main><script>
 async function load() {

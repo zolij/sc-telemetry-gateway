@@ -1,4 +1,4 @@
-# Receiver deployment
+# Network setup and receiver deployment
 
 The separate application usage service is described in
 [usage statistics](USAGE-STATISTICS.md). It is not the game telemetry receiver
@@ -17,6 +17,8 @@ Treat HTTP traffic as observable and modifiable. Pairing codes and session
 credentials do not provide transport confidentiality or gateway authentication.
 Use only on a trusted Wi-Fi or wired LAN. Close the service or pause collection
 when local access is not needed.
+
+## Optional remote receiver
 
 Implement the [v1 protocol](PROTOCOL.md) in your own server. This project ships
 the Windows client, not a production receiver. The same client works with a

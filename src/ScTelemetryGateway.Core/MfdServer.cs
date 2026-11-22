@@ -497,6 +497,7 @@ public sealed partial class MfdServer : IAsyncDisposable
         ".html" => "text/html",
         ".css" => "text/css",
         ".js" => "application/javascript",
+        ".png" => "image/png",
         ".svg" => "image/svg+xml",
         ".json" => "application/json",
         _ => "application/octet-stream"

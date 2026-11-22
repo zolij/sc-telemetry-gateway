@@ -55,32 +55,35 @@ internal sealed class SettingsForm : Form
             if (((AddressItem)mfdAddress.Items[i]!).Address == options.MfdAddress) mfdAddress.SelectedIndex = i;
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
-        var connection = CreatePage("Game & receiver");
-        AddText(connection, "Game connection", true);
-        AddText(connection, "The game service is read-only and accessed on this PC. Collection starts only when you choose Start.");
-        AddRow(connection, "Game port", port);
-        AddText(connection, "Remote upload", true);
-        connection.Controls.Add(remoteEnabled);
-        AddText(connection, "Optional. Only fields selected on the Remote fields tab are uploaded.");
-        AddRow(connection, "Receiver WSS URL", endpoint);
-        AddRow(connection, "API key", apiKey);
-        AddRow(connection, "Interval (seconds)", interval);
-        tabs.TabPages.Add(Page("Game & receiver", connection));
-
         var local = CreatePage("Local MFD");
         AddText(local, "Local phone and tablet display", true);
+        AddText(local, "Choose a trusted network interface and port, select fields on the MFD fields tab, then enable local MFD access. Apply settings and start collection from the dashboard.");
         local.Controls.Add(mfdEnabled);
-        AddText(local, "Choose the PC network interface and port. Select shared values separately on the MFD fields tab.");
         AddRow(local, "Local IPv4 interface", mfdAddress);
         AddRow(local, "MFD port", mfdPort);
         AddText(local, "WARNING: HTTP and WebSocket traffic are unencrypted. Anyone on the network may observe or modify the page, pairing codes, credentials and telemetry. Use only on a trusted network.");
         AddText(local, "Windows Firewall may require a rule you create yourself. Do not forward this port on your router.");
         tabs.TabPages.Add(Page("Local MFD", local));
 
-        tabs.TabPages.Add(FieldPage("Remote fields", fields, options.Fields,
-            "Only checked fields are sent to the remote receiver. This selection is independent of the MFD."));
         tabs.TabPages.Add(FieldPage("MFD fields", mfdFields, options.MfdFields,
             "Only checked fields are shared with approved local devices. This selection is independent of remote upload."));
+
+        var connection = CreatePage("Game");
+        AddText(connection, "Game connection", true);
+        AddText(connection, "The game service is read-only and accessed on this PC. Collection starts only when you choose Start.");
+        AddRow(connection, "Game port", port);
+        tabs.TabPages.Add(Page("Game", connection));
+
+        var remote = CreatePage("Remote upload");
+        AddText(remote, "Optional remote upload", true);
+        remote.Controls.Add(remoteEnabled);
+        AddText(remote, "Only fields selected on the Remote fields tab are uploaded. Remote upload is independent of the local MFD.");
+        AddRow(remote, "Receiver WSS URL", endpoint);
+        AddRow(remote, "API key", apiKey);
+        AddRow(remote, "Interval (seconds)", interval);
+        tabs.TabPages.Add(Page("Remote upload", remote));
+        tabs.TabPages.Add(FieldPage("Remote fields", fields, options.Fields,
+            "Only checked fields are sent to the remote receiver. This selection is independent of the MFD."));
 
         var updates = CreatePage("Updates");
         AddText(updates, "Application updates", true);
@@ -182,7 +185,8 @@ internal sealed class SettingsForm : Form
     private static TabPage FieldPage(string title, TreeView tree, HashSet<string> selected, string description)
     {
         var page = new TabPage(title);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 3 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 4 };
+        layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.Percent, 100));
@@ -190,7 +194,12 @@ internal sealed class SettingsForm : Form
             AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(0, 0, 0, 8) }, 0, 0);
         var count = new Label { AutoSize = true, Padding = new Padding(0, 0, 0, 8) };
         layout.Controls.Add(count, 0, 1);
-        layout.Controls.Add(tree, 0, 2);
+        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
+        var selectAll = new Button { Text = "Select all", AutoSize = true };
+        var clearAll = new Button { Text = "Clear all", AutoSize = true };
+        actions.Controls.AddRange([selectAll, clearAll]);
+        layout.Controls.Add(actions, 0, 2);
+        layout.Controls.Add(tree, 0, 3);
         page.Controls.Add(layout);
 
         foreach (var path in FieldCatalog.All.Keys.Order(StringComparer.Ordinal))
@@ -236,6 +245,24 @@ internal sealed class SettingsForm : Form
             }
             finally { checking = false; }
         };
+        void SetAll(bool value)
+        {
+            void SetNode(TreeNode node)
+            {
+                node.Checked = value;
+                foreach (TreeNode child in node.Nodes) SetNode(child);
+            }
+            tree.BeginUpdate();
+            checking = true;
+            try
+            {
+                foreach (TreeNode root in tree.Nodes) SetNode(root);
+                UpdateCount();
+            }
+            finally { checking = false; tree.EndUpdate(); }
+        }
+        selectAll.Click += (_, _) => SetAll(true);
+        clearAll.Click += (_, _) => SetAll(false);
         return page;
     }
 

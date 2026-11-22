@@ -1,7 +1,10 @@
+<p align="center"><img src="src/ScTelemetryGateway.Windows/mfd/assets/app-icon.png" alt="Star Citizen Telemetry Gateway icon" width="160"></p>
+
 # Star Citizen Telemetry Gateway
 
-A read-only Windows tray application that forwards selected, aggregated local
-Star Citizen telemetry to a configurable WebSocket receiver.
+A read-only Windows tray application that turns selected local Star Citizen
+telemetry into a customizable phone or tablet MFD. Optionally, it can also
+forward a separate selection of aggregated telemetry to a WebSocket receiver.
 
 **Independent community project.** Not affiliated with, endorsed by, sponsored
 by, or supported by Cloud Imperium Games.
@@ -18,11 +21,11 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
 
 - Native Windows x64 tray application, self-contained .NET 10 distribution.
 - Loopback-only, read-only gRPC `TelemetryStream`; no game action RPCs.
-- Explicit game-field allowlist, initially empty. No automatic game telemetry uploads.
-- Five-second aggregation windows and WSS/JSON delivery with batch acknowledgements.
-- Provider-neutral endpoint: direct TLS, reverse proxy, or Cloudflare Tunnel.
-- Bounded in-memory buffering; no raw gameplay logs or disk telemetry queue.
-- API key protected with Windows DPAPI for the current user.
+- Local MFD with approved devices and a separate, initially empty field allowlist.
+- Optional remote upload with its own initially empty field allowlist; no automatic game telemetry uploads.
+- Remote delivery uses five-second aggregation windows and WSS/JSON batch acknowledgements.
+- Provider-neutral receiver endpoint and bounded in-memory buffering; no raw gameplay logs or disk telemetry queue.
+- Remote API key protected with Windows DPAPI for the current user.
 - Per-user Windows installer and approval-gated built-in updates.
 - Separate, configurable application usage statistics with first-run notice.
 
@@ -43,18 +46,32 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
    server.game.telemetry.enabled 1
    ```
 
-3. Open **Settings** in the dashboard. Under **Game & receiver**, configure the
-   game port and, if using a receiver, its WSS URL and API key. Select only the
-   fields you need under **Remote fields** or **MFD fields**.
-4. Choose **Start collection** explicitly in the dashboard. Closing the
-   dashboard leaves the tray running; double-click the tray icon to reopen it.
-   Use **Pause and clear buffer** or the tray **Exit** to stop collection.
+3. Open **Settings** in the dashboard. Under **Local MFD**, choose a network
+   interface and port on a trusted network and enable local MFD access. Under
+   **MFD fields**, select the values to share. Check the game port under
+   **Game**, then apply the settings.
+4. Choose **Start collection** explicitly. Open the dashboard's browser URL on
+   a phone or tablet on the same network. Create a pairing code, enter it and a
+   device label in the browser, then approve the pending request on the PC.
+5. Create an MFD profile in the browser and add the instruments you need.
+   Closing the dashboard leaves the tray running; double-click the tray icon to
+   reopen it. Use **Pause and clear buffer** or the tray **Exit** to stop collection.
+
+The local MFD uses unencrypted HTTP and WebSocket traffic: anyone on the network
+may observe or modify the page, pairing codes, credentials and telemetry. Use only
+a trusted network, configure Windows Firewall yourself, and do not forward the
+port on your router. For optional remote delivery, see [Receiver](#receiver).
 
 The app neither starts with Windows nor resumes collection automatically.
-An empty field selection never uploads telemetry. Applying settings stops the
-current run and clears its window/queue; Start again when ready. Already sent
-data cannot be recalled. A protocol/authentication error stops the run and is
-shown in Status and a tray notification.
+Local MFD access is disabled until explicitly enabled; no network interface or
+fields are selected automatically. Each field tab offers **Select all** and
+**Clear all** for that destination only. Some fields contain sensitive values:
+review the selection before enabling access. An empty selection can be saved,
+but an enabled and configured destination with no selected fields cannot start.
+Applying settings stops the current run, clears its window/queue and disconnects
+local displays; Start again when ready. Already sent data cannot be recalled.
+Receiver protocol or authentication errors are shown in collection status; when
+the MFD is also enabled, remote delivery stops without stopping the local MFD.
 
 Settings live in `%LOCALAPPDATA%\StarCitizenTelemetryGateway\settings.json`;
 the separately DPAPI-encrypted key is `api-key.bin`. Do not share either file.
@@ -64,18 +81,10 @@ not silently replaced. No telemetry values are written to disk.
 
 ## Local phone/tablet MFD
 
-The bundled MFD is disabled by default. To use it, select **Enable local MFD
-access** in Settings, choose an eligible IPv4 address and port, and select an
-independent MFD field allowlist. Start collection and open the displayed URL on
-a phone or tablet on the same trusted network.
-
-Create a two-minute pairing code in the dashboard and have the browser submit it
-with a device label. Select the pending request in the dashboard and explicitly
-approve or deny it. Approved devices can be revoked independently there. The HTTP and WebSocket interface
-is **not encrypted** and may expose telemetry to an observer or active attacker
-on the network. It does not use WSS, secure-context-only PWA features or remote
-upload credentials. Use it only on a trusted network; configure the Windows
-Firewall prompt yourself and do not open router forwarding.
+Pairing codes are single-use and expire after two minutes. Select a pending
+request in the dashboard to approve or deny it; approved devices can be revoked
+independently there. The unencrypted local interface does not use WSS,
+secure-context-only PWA features or remote upload credentials.
 
 The display starts empty, with no built-in layouts. Select **New profile** to
 build your own MFD with named pages. In **Edit**, search the shared-field library
@@ -170,6 +179,11 @@ operator setup.
 
 ## Receiver
 
+Remote upload is optional and independent of the MFD. In **Settings > Remote
+upload**, enable it and configure the WSS URL, API key and interval. Choose the
+fields to upload under **Remote fields**; this selection does not change the
+MFD fields. Apply settings and start collection explicitly.
+
 Bring your own server implementing [the protocol and ACK contract](docs/PROTOCOL.md).
 The app sends selected last-known snapshots, window statistics and buffered
 events every 5 seconds by default (configurable from 1 to 300 seconds).
@@ -181,7 +195,7 @@ and synthetic example describe the wire format independently of server technolog
 
 The RAM queue holds at most 60 batches / 10 MiB. Events are capped at 1024 per
 window and each batch at 1 MiB. Overflow, oversize, exit and pause can lose data;
-the Status window reports drops during a run. Reconnect retries preserve batch
+the dashboard reports drops during a run. Reconnect retries preserve batch
 IDs for server-side deduplication, but do not guarantee lossless delivery.
 Forwarding data to a receiver is a separate privacy decision; its operator
 controls retention and access after receipt.
