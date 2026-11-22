@@ -27,6 +27,11 @@ test("missing, invalid and mismatched maxima never produce a false percentage", 
   for (const value of [null, undefined, NaN, Infinity])
     assert.equal(presentation.format(value, 2, "percent_fraction"), "Unavailable");
   assert.equal(presentation.format(1, 2, "percent_max", Number.MIN_VALUE), "Unavailable");
+  const current = { value: 150, updated_at: "2026-11-22T10:00:00Z", last_known: false };
+  const maximum = { value: 200, updated_at: current.updated_at, last_known: false };
+  assert.equal(presentation.maximumValue(current, maximum), 200);
+  for (const other of [null, { ...maximum, updated_at: "2026-11-22T09:59:00Z" }, { ...maximum, last_known: true }])
+    assert.equal(presentation.format(current.value, 2, "percent_max", presentation.maximumValue(current, other)), "Unavailable");
 });
 
 test("lists format each percentage without inventing missing values", () => {

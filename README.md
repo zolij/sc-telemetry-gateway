@@ -81,8 +81,18 @@ build your own MFD with named pages. In **Edit**, search the shared-field librar
 and add value tiles, status indicators or lists. Configure labels, decimal
 precision and normal, wide or large tile sizes. Rearrange tiles by their move
 handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
-values to your own labels and a fixed color palette. No graphs, assumed units,
-scales, formulas or game controls are included.
+values to your own labels and a fixed color palette. No graphs, arbitrary
+formulas or game controls are included; measurement units are not inferred.
+
+**Value format** defaults to **Automatic**, including for existing profiles.
+Shield level/faces use 0–1 ratios (`0.75` → `75%`); hydrogen and quantum fuel
+use 0–100 values (`75` → `75%`). Actor health, oxygen, hunger and thirst use
+`current / max`: enable both the `current` and `max` fields in gateway MFD
+settings. A missing, nonpositive or mismatched maximum is marked unavailable,
+not replaced with an assumed scale. Other fields remain raw values.
+Each tile can override this with **Raw value**, either percentage scale, or
+**current divided by max** for a gauge. Overrides are saved/exported with the
+profile; status rules still match the original raw values.
 
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under

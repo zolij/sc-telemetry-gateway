@@ -161,6 +161,7 @@ public sealed class MfdProfileTests : IDisposable
         Assert.Equal("percent_fraction", Store.Get(profile.Id)!.Pages[0].Tiles[0].Format);
         Assert.Equal("percent_max", Store.Get(profile.Id)!.Pages[0].Tiles[1].Format);
         var oldJson = System.Text.Json.JsonSerializer.Serialize(draft, WireJson.Options).Replace("\"format\":\"auto\",", "");
+        Assert.DoesNotContain("\"format\"", oldJson);
         var old = System.Text.Json.JsonSerializer.Deserialize<MfdProfile>(oldJson, WireJson.Options)!;
         Assert.Equal("auto", old.Pages[0].Tiles[0].Format);
         old.Validate();

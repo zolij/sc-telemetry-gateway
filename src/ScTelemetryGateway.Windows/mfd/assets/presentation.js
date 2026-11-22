@@ -10,6 +10,12 @@ const MfdPresentation = (() => {
     return typeof maximum === "number" && Number.isFinite(maximum) && maximum > 0;
   }
 
+  function maximumValue(current, maximum) {
+    return current && maximum && typeof current.updated_at === "string" &&
+      current.updated_at === maximum.updated_at && current.last_known === maximum.last_known &&
+      validMaximum(maximum.value) ? maximum.value : null;
+  }
+
   function format(value, decimals, mode = "number", maximum = null) {
     if (!["number", "percent_fraction", "percent", "percent_max"].includes(mode))
       throw new Error("Unsupported display format.");
@@ -30,5 +36,5 @@ const MfdPresentation = (() => {
     return "Unavailable";
   }
 
-  return { readable, format, validMaximum };
+  return { readable, format, validMaximum, maximumValue };
 })();

@@ -211,7 +211,11 @@ Responses use `Cache-Control: no-store`.
 | DELETE | `/api/mfd/profiles/{id}` | Delete with revision precondition; returns 204 |
 
 Field metadata entries contain `path`, `type` (lowercase protobuf scalar type),
-`repeated`, and `enum_values`. Only fields enabled in the MFD allowlist are
+`repeated`, `enum_values`, `numeric`, `display_format`, and `maximum_field`.
+`numeric` identifies scalar types that can be safely percentage-formatted;
+int64/uint64 wire strings are excluded. `maximum_field` identifies a gauge's
+companion maximum, if applicable; it does not enable that field.
+Only fields enabled in the MFD allowlist are
 listed. The existing snapshot format and 4 Hz cadence are unchanged.
 
 Profile GET, POST and PUT responses use a strong revision ETag such as `"2"`.
@@ -241,6 +245,7 @@ Example saved profile:
       "widget": "value",
       "size": "large",
       "decimals": 2,
+      "format": "auto",
       "rules": []
     }]
   }]
@@ -263,6 +268,30 @@ labels have the same 80-character limit; colors are `neutral`, `green`,
 `amber`, `red` or `blue`. Unmatched values remain visible; stale/offline
 values do not keep a misleading live status color. Lists show values from one
 repeated field, without inferring relationships between separate field arrays.
+
+The optional tile `format` defaults to `auto`, including when reading older
+profiles/imports. Supported values are `auto`, `number` (raw override),
+`percent_fraction` (0–1 ratio), `percent` (0–100 value) and `percent_max`
+(`current / max`, for non-repeated gauges only). Explicit percentage formats
+require a supported numeric field. The selected decimal precision applies
+to the displayed percentage, not the raw fraction.
+
+Automatic field formats are:
+
+| Field | Interpretation |
+| --- | --- |
+| `vehicle.state.shields.level`, `vehicle.state.shields.faces` | 0–1 ratios |
+| `vehicle.state.flight.instruments.hydrogen_fuel`, `vehicle.state.flight.instruments.quantum_fuel` | 0–100 values |
+| `actor.vitals.health.current`, `actor.vitals.oxygen.current`, `actor.vitals.hunger.current`, `actor.vitals.thirst.current` | Current divided by the corresponding `.max` |
+| Other fields, including temperature and unverified vehicle health scales | Raw values |
+
+For `percent_max`, both fields must be shared and received. The maximum must
+be finite, positive, and have the same `updated_at` and `last_known` status as
+the current value. Missing/invalid/mismatched maxima display an explicit
+unavailable percentage, never an assumed denominator. Percentages are not
+clamped to 0–100, missing values are not replaced with zeros, and status rules
+continue to match raw values before display formatting. Neither the snapshot
+schema nor the gateway allowlist is changed by a formatting choice.
 
 Profiles are limited to 512 KiB serialized JSON; request/import bodies,
 including chunked requests, have the same byte limit. The complete versioned

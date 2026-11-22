@@ -168,9 +168,8 @@ const MfdWorkspace = (() => {
       const field = snapshot?.fields?.[tile.field];
       const definition = catalog.find(item => item.path === tile.field);
       const mode = !tile.format || tile.format === "auto" ? definition?.display_format ?? "number" : tile.format;
-      const maximum = snapshot?.fields?.[definition?.maximum_field];
-      const maximumValue = maximum && maximum.updated_at === field?.updated_at && maximum.last_known === field?.last_known
-        ? maximum.value : null;
+      const maximum = selected.has(definition?.maximum_field) ? snapshot?.fields?.[definition.maximum_field] : null;
+      const maximumValue = MfdPresentation.maximumValue(field, maximum);
       const needsMaximum = mode === "percent_max" && field?.value != null && !MfdPresentation.validMaximum(maximumValue);
       card.dataset.color = "neutral";
       if (!selected.has(tile.field) || !field) {
@@ -200,7 +199,8 @@ const MfdWorkspace = (() => {
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;
       meta.textContent = state + " / " + ageText(age);
       if (needsMaximum && !rule)
-        meta.textContent += " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
+        meta.textContent = "PERCENTAGE UNAVAILABLE / " + meta.textContent +
+          " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
         field.value === null || needsMaximum && !rule ? "unavailable" : !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
     }
