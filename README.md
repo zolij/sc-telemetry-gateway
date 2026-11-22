@@ -76,11 +76,33 @@ on the network. It does not use WSS, secure-context-only PWA features or remote
 upload credentials. Use it only on a trusted network; configure the Windows
 Firewall prompt yourself and do not open router forwarding.
 
-The display has Flight, Systems and Crew views. Each shows key selected values;
-expand “More” for other fields in that view. Fields not selected in the MFD
-settings are labelled as such, unavailable values are not replaced with zeros,
-and stale or last-known data is marked. Values are shown without assumed units
-or scales.
+The display starts empty, with no built-in layouts. Select **New profile** to
+build your own MFD with named pages. In **Edit**, search the shared-field library
+and add value tiles, status indicators or lists. Configure labels, decimal
+precision and normal, wide or large tile sizes. Rearrange tiles by their move
+handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
+values to your own labels and a fixed color palette. No graphs, assumed units,
+scales, formulas or game controls are included.
+
+Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
+Profiles are stored in `mfd-profiles.json` under
+`%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are
+shared by all PC-approved displays. Each browser chooses its own active profile
+and page. Every approved display can edit or delete shared profiles. If another
+display saves first, your draft is retained: reload the saved profile or save
+your changes as a new profile instead of overwriting it.
+
+**Duplicate**, **Export** and **Import** let you reuse layouts. Export includes
+the current draft when editing; imports create new profiles and never enable
+additional telemetry fields. Up to 32 profiles, 16 pages per profile and 64
+tiles per page are supported, subject to a 512 KiB profile/import limit and a
+16 MiB total store limit. Back up exported profiles before moving to another PC.
+
+The field library includes enabled fields even before game values arrive.
+Fields no longer selected in gateway MFD settings are marked as such; missing
+values are never replaced with zeros. Stale, offline and last-known values
+remain visibly marked. Lists show the latest received repeated values, not an
+accumulated event history. The layout adapts to tablet and monitor widths.
 
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates

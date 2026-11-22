@@ -8,6 +8,7 @@ const MfdWorkspace = (() => {
   let catalog = [], summaries = [], saved = null, draft = null, pageId = null;
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
+  let preferenceWarning = "";
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -16,8 +17,8 @@ const MfdWorkspace = (() => {
     return element;
   }
   function notice(message, error = false) {
-    $("workspace-message").textContent = message;
-    $("workspace-message").classList.toggle("error", error);
+    $("workspace-message").textContent = [message, preferenceWarning].filter(Boolean).join(" ");
+    $("workspace-message").classList.toggle("error", error || !!preferenceWarning);
   }
   const clone = value => JSON.parse(JSON.stringify(value));
   function uuid() {
@@ -73,6 +74,7 @@ const MfdWorkspace = (() => {
     $("workspace-message").setAttribute("aria-busy", String(busy));
     for (const button of document.querySelectorAll("#dashboard [data-action]")) button.disabled = busy;
     $("profile-select").disabled = busy;
+    $("unpair-button").disabled = busy;
     for (const id of ["edit-profile", "copy-profile", "delete-profile"]) $(id).disabled = busy || !saved || editing;
     $("copy-profile").disabled ||= summaries.length >= limits.profiles;
     $("export-profile").disabled = busy || !profile();
@@ -110,14 +112,22 @@ const MfdWorkspace = (() => {
     if (!saved || draft) return;
     preference = { profile: saved.id, page: pageId };
     try { localStorage.setItem("mfd-active-view", JSON.stringify(preference)); }
-    catch { notice("This browser cannot remember the active view. Profiles are still saved on the PC.", true); }
+    catch {
+      preferenceWarning = "This browser cannot remember the active view. Profiles are still saved on the PC.";
+      notice("");
+    }
   }
   function renderProfiles() {
     const select = $("profile-select");
     select.replaceChildren(new Option("Choose a profile", ""));
     for (const item of [...summaries].sort((a, b) => a.name.localeCompare(b.name)))
       select.append(new Option(item.name, item.id));
-    select.value = saved?.id ?? "";
+    if (draft && !saved) {
+      const unsaved = new Option(draft.name + " (unsaved)", "draft");
+      unsaved.disabled = true;
+      select.append(unsaved);
+    }
+    select.value = saved?.id ?? (draft ? "draft" : "");
   }
   function render() {
     renderProfiles();
@@ -354,6 +364,7 @@ const MfdWorkspace = (() => {
       }
       const button = node("button", "field-item");
       button.type = "button";
+      button.disabled = busy;
       button.append(node("strong", "", label(field.path)), node("span", "", field.path));
       button.addEventListener("click", () => {
         if (busy) return;
@@ -472,7 +483,10 @@ const MfdWorkspace = (() => {
   function init(tokenReader, paintDisplay) {
     getToken = tokenReader; repaint = paintDisplay;
     try { preference = JSON.parse(localStorage.getItem("mfd-active-view") ?? "null"); }
-    catch { notice("This browser could not read its saved view preference.", true); }
+    catch {
+      preferenceWarning = "This browser could not read its saved view preference. PC profiles are unaffected.";
+      notice("");
+    }
     $("profile-select").addEventListener("change", () => {
       const id = $("profile-select").value;
       if (!canLeave()) { renderProfiles(); return; }
