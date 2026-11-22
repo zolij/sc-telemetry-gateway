@@ -108,6 +108,41 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public void IncompleteRemoteSelectionCanBeEditedButCannotStart()
+    {
+        var options = JsonSerializer.Deserialize<GatewayOptions>(
+            """{"endpoint":"wss://example.org/telemetry","fields":[]}""", WireJson.Options)!;
+        options.Validate(requireDestination: false);
+        Assert.Throws<ArgumentException>(() => options.Validate());
+    }
+
+    [Fact]
+    public void WildcardMfdAddressIsRejected()
+    {
+        var options = new GatewayOptions
+        {
+            MfdEnabled = true, MfdAddress = "0.0.0.0", MfdFields = ["actor.state.locomotion"]
+        };
+        Assert.Throws<ArgumentException>(() => options.Validate(requireDestination: false));
+        Assert.Throws<ArgumentException>(() => options.Validate());
+    }
+
+    [Fact]
+    public void SnapshotIncludesSelectedEventTypesAndReplacesTheEventSection()
+    {
+        const string eventType = "events.events.type";
+        var store = new MfdSnapshotStore([eventType]);
+        var frame = new TelemetryStreamResponse { Events = new() };
+        frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorLeaveSeat });
+        store.Ingest(frame);
+        Assert.Equal("[\"GAME_EVENT_TYPE_ACTOR_LEAVE_SEAT\"]", store.Current().Fields[eventType].Value!.ToJsonString());
+        store.Ingest(new() { Actor = new() });
+        Assert.True(store.Current().Fields.ContainsKey(eventType));
+        store.Ingest(new() { Events = new() });
+        Assert.Equal("[]", store.Current().Fields[eventType].Value!.ToJsonString());
+    }
+
+    [Fact]
     public void MigratedOptionsPreserveRemoteAndKeepMfdOff()
     {
         var options = JsonSerializer.Deserialize<GatewayOptions>(

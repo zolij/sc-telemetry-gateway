@@ -34,14 +34,15 @@ public sealed record GatewayOptions
             throw new ArgumentException("The selected remote fields include an unknown protocol field.");
         if (MfdFields.Any(path => !FieldCatalog.All.ContainsKey(path)))
             throw new ArgumentException("The selected MFD fields include an unknown protocol field.");
-        if (remoteEnabled && Fields.Count == 0)
+        if (requireDestination && remoteEnabled && Fields.Count == 0)
             throw new ArgumentException("Select at least one remote telemetry field.");
         if (MfdEnabled)
         {
             if (MfdPort is < 1024 or > 65535)
                 throw new ArgumentException("MFD port must be between 1024 and 65535.");
             if (!System.Net.IPAddress.TryParse(MfdAddress, out var address) ||
-                address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+                address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+                address.Equals(System.Net.IPAddress.Any))
                 throw new ArgumentException("Select an eligible local IPv4 address for the MFD listener.");
             if (MfdFields.Count == 0)
                 throw new ArgumentException("Select at least one MFD telemetry field.");

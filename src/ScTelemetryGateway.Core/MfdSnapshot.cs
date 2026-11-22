@@ -85,7 +85,7 @@ public sealed class MfdSnapshotStore
             connectionStatus = "connected";
             foreach (var section in TelemetryStreamResponse.Descriptor.Fields.InFieldNumberOrder())
             {
-                if (!section.Accessor.HasValue(frame) || section.Name == "events")
+                if (!section.Accessor.HasValue(frame))
                     continue;
                 var prefix = section.Name + ".";
                 foreach (var path in snapshot.Keys.Where(p => p.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
