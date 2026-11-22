@@ -109,6 +109,22 @@ while editing; events received during editing are not replayed afterwards.
 If several matching events arrive together, the last one wins.
 Manual page selection remains available.
 
+Select **Focus Mode** on a saved profile to show only its instruments and, for
+multi-page profiles, the page switcher. Editing and management controls, headings
+and other page chrome are hidden; telemetry freshness/unknown markers inside
+tiles and automatic page triggers continue to work. **Exit Focus** remains
+available as a touch-friendly escape, and Escape or the browser's fullscreen
+exit restores the normal view. Focus mode is unavailable while editing and is
+not remembered across reloads.
+
+Entering focus mode requests full screen directly from the button tap, including
+on supported phone/tablet browsers. Some browsers, notably iPhone browsers, do
+not support fullscreen for arbitrary page elements; focus mode still works and
+shows an explicit notice instead of claiming full screen. On iPhone/iPad, use
+Safari's **Add to Home Screen**, launch the page from there, then select
+**Focus Mode** for a standalone display without browser bars. Browser/platform
+restrictions cannot be overridden by the gateway.
+
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under
 `%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are
