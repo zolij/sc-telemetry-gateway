@@ -50,12 +50,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $startedAt = Get-Date
           $process = Start-Process ./artifacts/win-x64/StarCitizenTelemetryGateway.exe -ArgumentList '--smoke-test' -PassThru
           if (-not $process.WaitForExit(20000)) {
             Stop-Process -Id $process.Id
             throw 'Windows application smoke test timed out.'
           }
-          if ($process.ExitCode -ne 0) { throw "Windows application exited with $($process.ExitCode)." }
+          if ($process.ExitCode -ne 0) {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1026, 1000; StartTime = $startedAt } -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host $_.Message }
+            throw "Windows application exited with $($process.ExitCode)."
+          }
       - name: Package portable Windows application
         if: runner.os == 'Windows'
         shell: pwsh
