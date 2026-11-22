@@ -475,7 +475,6 @@ public sealed class MfdServer : IAsyncDisposable
             pending.Clear();
             foreach (var socket in sockets.Keys) socket.Abort();
         }
-        await shutdown.CancelAsync();
         publisher?.Cancel();
         if (publisherTask is not null)
         {
@@ -483,6 +482,7 @@ public sealed class MfdServer : IAsyncDisposable
         }
         if (app is not null) await app.StopAsync();
         if (app is not null) await app.DisposeAsync();
+        await shutdown.CancelAsync();
         publisher?.Dispose();
         shutdown.Dispose();
     }

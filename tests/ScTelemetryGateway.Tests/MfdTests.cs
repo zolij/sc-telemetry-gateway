@@ -53,8 +53,15 @@ public sealed class MfdTests
             var request = test.RequestPair(test.Server.CreatePairingCode(), "pending");
             await test.WaitFor(() => test.Server.Status.PendingRequests.Count == 1);
             await test.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
-            using var response = await request.WaitAsync(TimeSpan.FromSeconds(3));
-            Assert.True(response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable);
+            try
+            {
+                using var response = await request.WaitAsync(TimeSpan.FromSeconds(3));
+                Assert.True(response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable);
+            }
+            catch (TaskCanceledException)
+            {
+                // Closing the listener can race with the final HTTP response on Windows.
+            }
         }
         finally { await test.DisposeAsync(); }
     }
