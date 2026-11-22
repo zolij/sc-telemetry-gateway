@@ -85,6 +85,9 @@ internal sealed class TrayContext : ApplicationContext
             "Not affiliated with, endorsed by, sponsored by, or supported by\n" +
             "Cloud Imperium Games.\n" +
             "Star Citizen and related marks belong to their respective owners.\n\n" +
+            "Use at your own risk. Provided \"AS IS\", without warranties.\n" +
+            "Authors and contributors disclaim liability to the fullest\n" +
+            "extent permitted by law. See docs/DISCLAIMER.md.\n\n" +
             "Apache-2.0. Protocol observed in PTU 5.0.202.205.\n" +
             "See LICENSE, NOTICE and docs in the application folder.", ProductName));
         menu.Items.Add("Exit", null, async (_, _) =>
