@@ -5,6 +5,7 @@ namespace ScTelemetryGateway.Windows;
 internal sealed class TrayContext : ApplicationContext
 {
     public const string ProductName = "Star Citizen Telemetry Gateway";
+    private readonly Icon appIcon;
     private readonly NotifyIcon icon;
     private readonly ContextMenuStrip menu;
     private readonly SettingsStore store;
@@ -67,7 +68,8 @@ internal sealed class TrayContext : ApplicationContext
                     "No further reports will be sent. " + ex.Message;
             }
         }
-        icon = new NotifyIcon { Text = ProductName, Icon = SystemIcons.Application, Visible = true };
+        appIcon = new Icon(Path.Combine(AppContext.BaseDirectory, "mfd", "assets", "app-icon.ico"));
+        icon = new NotifyIcon { Text = ProductName, Icon = appIcon, Visible = true };
         menu = new ContextMenuStrip();
         menu.Items.Add("Open dashboard", null, (_, _) => ShowDashboard());
         menu.Items.Add("Settings", null, async (_, _) => await EditSettings());
@@ -398,6 +400,7 @@ internal sealed class TrayContext : ApplicationContext
             icon.Visible = false;
             menu.Dispose();
             icon.Dispose();
+            appIcon.Dispose();
             statusWindow.Dispose();
             stop?.Dispose();
         }

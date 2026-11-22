@@ -1,3 +1,5 @@
+<p align="center"><img src="src/ScTelemetryGateway.Windows/mfd/assets/app-icon.png" alt="Star Citizen Telemetry Gateway icon" width="160"></p>
+
 # Star Citizen Telemetry Gateway
 
 A read-only Windows tray application that turns selected local Star Citizen
