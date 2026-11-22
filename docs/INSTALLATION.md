@@ -14,8 +14,10 @@ no system service or automatic startup with Windows.
 The dashboard opens on launch and the app stays in the notification area when
 the window is closed. Double-click the tray icon to reopen the dashboard.
 Telemetry collection is always paused on launch, including after an update.
-Configure a destination and allowed fields in Settings, then choose Start
-explicitly in the dashboard.
+For a local MFD, use Settings to choose a trusted network interface, select MFD
+fields and enable local MFD access; then start collection and pair your display
+from the dashboard. Local traffic is unencrypted. Remote upload is optional and
+has its own field selection. Neither destination starts automatically.
 
 On the first launch after installing or upgrading to a version with usage
 statistics, a separate notice asks whether to send application usage statistics.
