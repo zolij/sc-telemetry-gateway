@@ -73,7 +73,7 @@ jobs:
           dotnet publish src/ScTelemetryGateway.Windows -c Release -r win-x64 --self-contained true `
             -o artifacts/publish "-p:Version=$env:RELEASE_VERSION" -p:RestoreLockedMode=true
           if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: inputs.signed
         id: app
         with:
@@ -110,7 +110,7 @@ jobs:
         shell: pwsh
         run: |
           ./build/Pack.ps1 -Version $env:RELEASE_VERSION -Channel '${{ steps.policy.outputs.channel }}' -SkipPublish
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: inputs.signed
         id: setup
         with:
@@ -180,7 +180,7 @@ jobs:
           Disclaimer: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/DISCLAIMER.md
           Signing status: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
           "@ | Set-Content artifacts/release-notes.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-installer
           path: artifacts/installer/
