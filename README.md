@@ -13,6 +13,10 @@ setup, local MFD, troubleshooting, and privacy guides.
 by, or supported by Cloud Imperium Games.
 Star Citizen and related marks belong to their respective owners.
 
+**Use at your own risk.** The software is provided "AS IS" without warranties,
+and the authors and contributors disclaim liability to the fullest extent
+permitted by law. See the [disclaimer](docs/DISCLAIMER.md).
+
 ## Compatibility
 
 The application targets **PTU only**; LIVE is unsupported. The PTU installation
@@ -242,6 +246,17 @@ the dashboard reports drops during a run. Reconnect retries preserve batch
 IDs for server-side deduplication, but do not guarantee lossless delivery.
 Forwarding data to a receiver is a separate privacy decision; its operator
 controls retention and access after receipt.
+
+## Security checks
+
+CodeQL scans the C# and JavaScript/TypeScript code on pushes, pull requests and
+a weekly schedule. Dependency review rejects pull requests that introduce
+moderate-or-higher severity vulnerable dependencies. Dependabot checks weekly
+for NuGet, npm and GitHub Actions updates.
+
+To receive alerts for existing dependencies, ensure the repository's dependency
+graph and Dependabot alerts are enabled under GitHub's security settings.
+Dependabot update schedules do not enable those repository-level alerts.
 
 ## Development
 

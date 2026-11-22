@@ -1,5 +1,12 @@
 # Install, update and uninstall
 
+Use the application at your own risk. It is provided "AS IS", without
+warranties, and the authors and contributors disclaim liability to the fullest
+extent permitted by law. You are responsible for your configuration, network
+exposure and use of telemetry. See the full [disclaimer](DISCLAIMER.md); the
+Apache-2.0 license and any rights that cannot be excluded by law remain
+unaffected.
+
 ## Windows installer
 
 Use the `Setup.exe` asset from the project's GitHub Releases page. A preview
