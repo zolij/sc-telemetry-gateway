@@ -32,7 +32,7 @@ public sealed class MfdDeviceStore(string directory)
         lock (gate) return Load().ToArray();
     }
 
-    internal void Add(MfdStoredDevice device)
+    internal Guid[] Add(MfdStoredDevice device)
     {
         Validate(device);
         lock (gate)
@@ -40,7 +40,12 @@ public sealed class MfdDeviceStore(string directory)
             var current = Load();
             if (current.Any(existing => existing.Id == device.Id))
                 throw new InvalidDataException("Duplicate MFD device identifier.");
-            Persist(current.Append(device).ToArray());
+            var replaced = IsBrowserLabel(device.Label)
+                ? current.Where(existing => existing.Label == device.Label).ToArray()
+                : [];
+            var replacedIds = replaced.Select(existing => existing.Id).ToHashSet();
+            Persist(current.Where(existing => !replacedIds.Contains(existing.Id)).Append(device).ToArray());
+            return replaced.Select(existing => existing.Id).ToArray();
         }
     }
 
@@ -75,27 +80,46 @@ public sealed class MfdDeviceStore(string directory)
             devices = [];
             return devices;
         }
+        Document document;
         using (stream)
         {
             if (stream.Length > MaxStoreBytes)
                 throw new InvalidDataException("MFD device store exceeds its size limit.");
-            var document = JsonSerializer.Deserialize<Document>(stream, WireJson.Options)
+            document = JsonSerializer.Deserialize<Document>(stream, WireJson.Options)
                 ?? throw new JsonException("MFD device store cannot be null.");
-            if (document.SchemaVersion != 1 || document.Devices is null)
-                throw new InvalidDataException("Invalid MFD device store schema.");
-            var loaded = new Dictionary<Guid, MfdStoredDevice>();
-            foreach (var item in document.Devices)
-            {
-                if (item is null || item.Label is null || item.TokenHash is null)
-                    throw new InvalidDataException("Invalid MFD device record.");
-                var device = new MfdStoredDevice(item.Id, item.Label, item.TokenHash, item.ApprovedAt);
-                Validate(device);
-                if (!loaded.TryAdd(device.Id, device))
-                    throw new InvalidDataException("Duplicate MFD device identifier.");
-            }
-            devices = loaded.Values.ToArray();
-            return devices;
         }
+        if (document.SchemaVersion != 1 || document.Devices is null)
+            throw new InvalidDataException("Invalid MFD device store schema.");
+        var loaded = new Dictionary<Guid, MfdStoredDevice>();
+        foreach (var item in document.Devices)
+        {
+            if (item is null || item.Label is null || item.TokenHash is null)
+                throw new InvalidDataException("Invalid MFD device record.");
+            var device = new MfdStoredDevice(item.Id, item.Label, item.TokenHash, item.ApprovedAt);
+            Validate(device);
+            if (!loaded.TryAdd(device.Id, device))
+                throw new InvalidDataException("Duplicate MFD device identifier.");
+        }
+        var browserDevices = new Dictionary<string, MfdStoredDevice>(StringComparer.Ordinal);
+        foreach (var device in loaded.Values.Where(device => IsBrowserLabel(device.Label)))
+            if (!browserDevices.TryGetValue(device.Label, out var previous) || device.ApprovedAt >= previous.ApprovedAt)
+                browserDevices[device.Label] = device;
+        var deduplicated = loaded.Values.Where(device =>
+            !IsBrowserLabel(device.Label) || browserDevices[device.Label].Id == device.Id).ToArray();
+        if (deduplicated.Length != loaded.Count)
+            Persist(deduplicated);
+        else
+            devices = deduplicated;
+        return devices!;
+    }
+
+    private static bool IsBrowserLabel(string label)
+    {
+        const string prefix = "Display ";
+        if (!label.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        var id = label[prefix.Length..];
+        return Guid.TryParseExact(id, "D", out var guid) && guid.ToString("D") == id &&
+            id[14] == '4' && id[19] is '8' or '9' or 'a' or 'b';
     }
 
     private void Persist(MfdStoredDevice[] next)

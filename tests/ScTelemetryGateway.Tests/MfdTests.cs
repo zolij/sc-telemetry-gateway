@@ -116,6 +116,89 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public async Task RepairingSameBrowserReplacesPermissionAndDisconnectsOldSession()
+    {
+        await using var test = await MfdTestServer.Start();
+        const string label = "Display 123e4567-e89b-42d3-a456-426614174000";
+        async Task<string> Pair(string deviceLabel)
+        {
+            using var response = await test.RequestPair(test.Server.CreatePairingCode(), deviceLabel);
+            response.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+            return body.RootElement.GetProperty("session_token").GetString()!;
+        }
+
+        var oldToken = await Pair(label);
+        var otherToken = await Pair("Display 123e4567-e89b-42d3-a456-426614174001");
+        using var socket = await test.Connect();
+        await Authenticate(socket, oldToken, test.Token);
+        using var snapshot = JsonDocument.Parse(await ReadSnapshot(socket, test.Token));
+        var newToken = await Pair(label);
+
+        Assert.Equal(2, test.Server.Status.Devices.Count);
+        Assert.Single(test.Server.Status.Devices, device => device.Label == label);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        await WaitForDisconnect(socket, deadline.Token);
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        foreach (var (token, expected) in new[]
+        {
+            (oldToken, HttpStatusCode.Unauthorized),
+            (newToken, HttpStatusCode.OK),
+            (otherToken, HttpStatusCode.OK)
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/mfd/profiles");
+            request.Headers.Authorization = new("Bearer", token);
+            using var response = await http.SendAsync(request, test.Token);
+            Assert.Equal(expected, response.StatusCode);
+        }
+        Assert.Single(new MfdDeviceStore(test.ProfileRoot).List(), device => device.Label == label);
+        Assert.True(test.Server.RevokeDevice(test.Server.Status.Devices.Single(device => device.Label == label).Id));
+        using var revokedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/mfd/profiles");
+        revokedRequest.Headers.Authorization = new("Bearer", newToken);
+        using var revoked = await http.SendAsync(revokedRequest, test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+        Assert.Single(new MfdDeviceStore(test.ProfileRoot).List());
+    }
+
+    [Fact]
+    public void ExistingBrowserDuplicatesKeepNewestPermissionAndOtherLabelsRemainSeparate()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-device-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        const string label = "Display 123e4567-e89b-42d3-a456-426614174000";
+        var newestId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var document = new
+        {
+            SchemaVersion = 1,
+            Devices = new[]
+            {
+                new { Id = newestId, Label = label, TokenHash = MfdDeviceStore.HashToken("new"), ApprovedAt = now },
+                new { Id = Guid.NewGuid(), Label = label, TokenHash = MfdDeviceStore.HashToken("old"), ApprovedAt = now.AddMinutes(-1) },
+                new { Id = Guid.NewGuid(), Label = "Display", TokenHash = MfdDeviceStore.HashToken("a"), ApprovedAt = now },
+                new { Id = Guid.NewGuid(), Label = "Display", TokenHash = MfdDeviceStore.HashToken("b"), ApprovedAt = now }
+            }
+        };
+        File.WriteAllText(Path.Combine(root, "mfd-devices.json"), JsonSerializer.Serialize(document, WireJson.Options));
+        try
+        {
+            var devices = new MfdDeviceStore(root).List();
+            Assert.Equal(3, devices.Length);
+            var browser = Assert.Single(devices, device => device.Label == label);
+            Assert.Equal(newestId, browser.Id);
+            Assert.True(MfdDeviceStore.TokenMatches("new", browser.TokenHash));
+            Assert.Equal(2, devices.Count(device => device.Label == "Display"));
+            Assert.Equal(devices, new MfdDeviceStore(root).List());
+            var store = new MfdDeviceStore(root);
+            Assert.Empty(store.Add(new(Guid.NewGuid(), "Display", MfdDeviceStore.HashToken("c"), now)));
+            Assert.Equal(3, store.List().Count(device => device.Label == "Display"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void CorruptDeviceStoreIsNotSilentlyReplaced()
     {
         var root = Path.Combine(Path.GetTempPath(), "sctg-mfd-device-" + Guid.NewGuid().ToString("N"));

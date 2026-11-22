@@ -276,7 +276,13 @@ public sealed partial class MfdServer : IAsyncDisposable
                     token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
                     var deviceId = Guid.NewGuid();
                     var device = new MfdStoredDevice(deviceId, label, MfdDeviceStore.HashToken(token), DateTimeOffset.UtcNow);
-                    deviceStore.Add(device);
+                    var replacedIds = deviceStore.Add(device);
+                    foreach (var replacedId in replacedIds)
+                    {
+                        approved.TryRemove(replacedId, out _);
+                        foreach (var item in sockets.Where(s => s.Value.DeviceId == replacedId))
+                            item.Key.Abort();
+                    }
                     approved[deviceId] = device;
                 }
             }
