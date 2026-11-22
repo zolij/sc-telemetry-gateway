@@ -59,7 +59,14 @@ internal sealed class TrayContext : ApplicationContext
             store.Save(options, key);
         }
         if (!smokeTest && !options.UsageStatisticsEnabled)
-            usageIdentity.Delete();
+        {
+            try { usageIdentity.Delete(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error = "Usage statistics are disabled, but the local installation ID could not be deleted. " +
+                    "No further reports will be sent. " + ex.Message;
+            }
+        }
         icon = new NotifyIcon { Text = ProductName, Icon = SystemIcons.Application, Visible = true };
         menu = new ContextMenuStrip();
         menu.Items.Add("Open dashboard", null, (_, _) => ShowDashboard());
