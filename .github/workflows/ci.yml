@@ -19,13 +19,13 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       RUN_PROXY_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore tests/ScTelemetryGateway.Tests --locked-mode
       - run: dotnet test tests/ScTelemetryGateway.Tests --no-restore --configuration Release
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Test MFD browser logic
@@ -82,12 +82,12 @@ jobs:
           if ($installer.Count -ne 1) { throw 'Expected exactly one installer.' }
           $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
           ./build/Test-Installer.ps1 -Installer $installer[0].FullName -Version $version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: unsigned-preview-installer
           path: artifacts/installer/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: star-citizen-telemetry-gateway-win-x64
