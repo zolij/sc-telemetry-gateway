@@ -162,9 +162,9 @@ exit restores the normal view. Focus mode is unavailable while editing and is
 not remembered across reloads.
 
 While focus mode is active, the display tries to stay awake. It uses the
-browser's Screen Wake Lock API when available and otherwise plays a tiny local,
-silent video as a best-effort fallback for the HTTP MFD. Some browsers or
-power-saving settings may still turn the screen off; successful playback does
+browser's Screen Wake Lock API when available and otherwise plays a subtle,
+silent local video background as a best-effort fallback for the HTTP MFD.
+Some browsers or power-saving settings may still turn the screen off; successful playback does
 not guarantee wakefulness. A failed or interrupted request is reported in
 focus mode. The attempt ends on exit and is retried when the page becomes
 visible again.
