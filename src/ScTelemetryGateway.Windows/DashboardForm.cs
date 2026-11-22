@@ -13,6 +13,7 @@ internal sealed class DashboardForm : Form
     private readonly Button revoke = new() { Text = "Revoke", AutoSize = true };
     private readonly Label summary = new() { Dock = DockStyle.Fill, AutoSize = false };
     private readonly Label details = new() { Dock = DockStyle.Top, AutoSize = true };
+    private readonly Label mfdGuidance = new() { Dock = DockStyle.Fill };
     private readonly Label code = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "No pairing code" };
     private readonly TextBox url = new() { Dock = DockStyle.Fill, ReadOnly = true, AccessibleName = "MFD address" };
     private readonly ListBox pending = new() { Dock = DockStyle.Fill, AccessibleName = "Pending pairing requests" };
@@ -34,22 +35,22 @@ internal sealed class DashboardForm : Form
     public DashboardForm()
     {
         Text = TrayContext.ProductName;
-        Size = new Size(950, 780);
-        MinimumSize = new Size(760, 630);
+        Size = new Size(950, 820);
+        MinimumSize = new Size(760, 700);
         StartPosition = FormStartPosition.CenterScreen;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 5 };
         layout.RowStyles.Add(new(SizeType.Absolute, 48));
         layout.RowStyles.Add(new(SizeType.Absolute, 48));
-        layout.RowStyles.Add(new(SizeType.Absolute, 165));
         layout.RowStyles.Add(new(SizeType.Percent, 100));
+        layout.RowStyles.Add(new(SizeType.Absolute, 150));
         layout.RowStyles.Add(new(SizeType.Absolute, 32));
-        var title = new Label { Text = "Telemetry gateway", Dock = DockStyle.Fill, AutoSize = false };
+        var title = new Label { Text = "Local MFD dashboard", Dock = DockStyle.Fill, AutoSize = false };
         title.Font = new Font(title.Font.FontFamily, 17, FontStyle.Bold);
         layout.Controls.Add(title, 0, 0);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         actions.Controls.AddRange([start, pause, settings]);
         layout.Controls.Add(actions, 0, 1);
-        var overview = new GroupBox { Text = "Collection status", Dock = DockStyle.Fill, Padding = new Padding(12) };
+        var overview = new GroupBox { Text = "Collection and optional remote upload", Dock = DockStyle.Fill, Padding = new Padding(12) };
         var overviewLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         overviewLayout.RowStyles.Add(new(SizeType.Absolute, 32));
         overviewLayout.RowStyles.Add(new(SizeType.Percent, 100));
@@ -59,12 +60,13 @@ internal sealed class DashboardForm : Form
         detailsPanel.Controls.Add(details);
         overviewLayout.Controls.Add(detailsPanel, 0, 1);
         overview.Controls.Add(overviewLayout);
-        layout.Controls.Add(overview, 0, 2);
+        layout.Controls.Add(overview, 0, 3);
 
-        var pairing = new GroupBox { Text = "Local MFD devices", Dock = DockStyle.Fill, Padding = new Padding(12) };
-        var pairLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6 };
+        var pairing = new GroupBox { Text = "Connect a local display", Dock = DockStyle.Fill, Padding = new Padding(12) };
+        var pairLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 7 };
         pairLayout.ColumnStyles.Add(new(SizeType.Percent, 50));
         pairLayout.ColumnStyles.Add(new(SizeType.Percent, 50));
+        pairLayout.RowStyles.Add(new(SizeType.Absolute, 36));
         pairLayout.RowStyles.Add(new(SizeType.Absolute, 48));
         pairLayout.RowStyles.Add(new(SizeType.Absolute, 32));
         pairLayout.RowStyles.Add(new(SizeType.Absolute, 42));
@@ -76,32 +78,35 @@ internal sealed class DashboardForm : Form
             Text = "Unencrypted HTTP/WS: network observers or attackers can read or change the page, pairing codes, credentials and telemetry. Use only on a trusted network.",
             Dock = DockStyle.Fill, ForeColor = Color.DarkRed
         };
-        pairLayout.Controls.Add(warning, 0, 0);
+        mfdGuidance.Font = new Font(mfdGuidance.Font, FontStyle.Bold);
+        pairLayout.Controls.Add(mfdGuidance, 0, 0);
+        pairLayout.SetColumnSpan(mfdGuidance, 2);
+        pairLayout.Controls.Add(warning, 0, 1);
         pairLayout.SetColumnSpan(warning, 2);
         var address = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
         address.ColumnStyles.Add(new(SizeType.Absolute, 100));
         address.ColumnStyles.Add(new(SizeType.Percent, 100));
         address.Controls.Add(new Label { Text = "Browser URL", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         address.Controls.Add(url, 1, 0);
-        pairLayout.Controls.Add(address, 0, 1);
+        pairLayout.Controls.Add(address, 0, 2);
         pairLayout.SetColumnSpan(address, 2);
         var codeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
         codeRow.Controls.Add(createCode);
         codeRow.Controls.Add(code);
-        pairLayout.Controls.Add(codeRow, 0, 2);
+        pairLayout.Controls.Add(codeRow, 0, 3);
         pairLayout.SetColumnSpan(codeRow, 2);
-        pairLayout.Controls.Add(new Label { Text = "Pending requests", AutoSize = true }, 0, 3);
-        pairLayout.Controls.Add(new Label { Text = "Approved devices", AutoSize = true }, 1, 3);
-        pairLayout.Controls.Add(pending, 0, 4);
-        pairLayout.Controls.Add(devices, 1, 4);
+        pairLayout.Controls.Add(new Label { Text = "Pending requests", AutoSize = true }, 0, 4);
+        pairLayout.Controls.Add(new Label { Text = "Approved devices", AutoSize = true }, 1, 4);
+        pairLayout.Controls.Add(pending, 0, 5);
+        pairLayout.Controls.Add(devices, 1, 5);
         var requestActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
         requestActions.Controls.AddRange([approve, deny]);
         var deviceActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
         deviceActions.Controls.Add(revoke);
-        pairLayout.Controls.Add(requestActions, 0, 5);
-        pairLayout.Controls.Add(deviceActions, 1, 5);
+        pairLayout.Controls.Add(requestActions, 0, 6);
+        pairLayout.Controls.Add(deviceActions, 1, 6);
         pairing.Controls.Add(pairLayout);
-        layout.Controls.Add(pairing, 0, 3);
+        layout.Controls.Add(pairing, 0, 2);
         layout.Controls.Add(new Label { Text = "Closing this window keeps the application in the notification area.", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
         Controls.Add(layout);
 
@@ -140,18 +145,24 @@ internal sealed class DashboardForm : Form
         pause.Enabled = running && !busy;
         settings.Enabled = !busy;
         summary.Text = running ? "Collection running" : "Collection paused - no data is being collected.";
-        details.Text = $"Game: {status?.Game ?? "Stopped"}    Receiver: {status?.Delivery ?? "Stopped"}\n" +
-            $"MFD: {status?.Mfd ?? "Stopped"}    Selected fields: remote {options.Fields.Count}, MFD {options.MfdFields.Count}\n" +
+        details.Text = (error is null ? "" : "Error: " + error + "\n") +
+            $"Game: {status?.Game ?? "Stopped"}    MFD: {status?.Mfd ?? "Stopped"}    MFD fields: {options.MfdFields.Count}\n" +
+            $"Remote upload: {(options.RemoteConfigured ? status?.Delivery ?? "Stopped" : "Not configured")}    Remote fields: {options.Fields.Count}\n" +
             $"Queue: {status?.Queued ?? 0} batches / {status?.QueueBytes ?? 0} bytes    " +
             $"Dropped: {status?.BatchesDropped ?? 0} batches, {status?.EventsDropped ?? 0} events\n" +
             $"Last ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}    Updates: {updateStatus}\n" +
-            $"Usage statistics: {usageStatus}" +
-            (error is null ? "" : "\nError: " + error);
+            $"Usage statistics: {usageStatus}";
         listenerActive = running && status?.Mfd == "Listener active" && mfdStatus?.Listening == true;
+        mfdGuidance.Text = listenerActive ? "Open the URL on your display, then create a pairing code." :
+            !options.MfdEnabled ? "Open Settings to configure and enable the local MFD." :
+            options.MfdFields.Count == 0 ? "Select at least one MFD field in Settings." :
+            !running ? "Start collection to connect a display." :
+            "The local MFD is unavailable. Check collection status below.";
         url.Text = listenerActive ? mfdStatus!.Url ?? "" :
             !options.MfdEnabled ? "Enable local MFD access in Settings." :
+            options.MfdFields.Count == 0 ? "Select MFD fields in Settings." :
             !running ? "Start collection to display the URL." :
-            "MFD is not available yet. Check its status above.";
+            "MFD is not available yet. Check its status below.";
         if (!listenerActive || codeExpires <= DateTimeOffset.UtcNow) ClearPairingCode();
         UpdateItems(pending, listenerActive ? mfdStatus!.PendingRequests.Select(r => new DeviceItem(r.Id, r.Label)) : []);
         UpdateItems(devices, listenerActive ? mfdStatus!.Devices.Select(d => new DeviceItem(d.Id, d.Label)) : []);
