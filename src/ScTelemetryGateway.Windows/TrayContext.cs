@@ -69,6 +69,7 @@ internal sealed class TrayContext : ApplicationContext
             }
         }
         appIcon = new Icon(Path.Combine(AppContext.BaseDirectory, "mfd", "assets", "app-icon.ico"));
+        statusWindow.Icon = appIcon;
         icon = new NotifyIcon { Text = ProductName, Icon = appIcon, Visible = true };
         menu = new ContextMenuStrip();
         menu.Items.Add("Open dashboard", null, (_, _) => ShowDashboard());
