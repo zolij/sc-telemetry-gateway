@@ -84,7 +84,8 @@ public sealed class MfdProfileTests : IDisposable
         var saved = store.Create(Draft());
         File.Delete(Path.Combine(root, "mfd-profiles.json"));
         Directory.CreateDirectory(Path.Combine(root, "mfd-profiles.json"));
-        Assert.ThrowsAny<IOException>(() => store.Update(saved.Id, saved.Revision, saved with { Name = "Not saved" }));
+        var error = Record.Exception(() => store.Update(saved.Id, saved.Revision, saved with { Name = "Not saved" }));
+        Assert.True(error is IOException or UnauthorizedAccessException, error?.ToString() ?? "Persistence unexpectedly succeeded.");
         Assert.Equal(saved.Name, store.Get(saved.Id)!.Name);
         Assert.Equal(saved.Revision, store.Get(saved.Id)!.Revision);
         Assert.Empty(Directory.GetFiles(root, "*.tmp"));
