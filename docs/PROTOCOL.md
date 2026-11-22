@@ -166,7 +166,13 @@ full replaceable snapshot and is published at a target cadence of 4 Hz
 Field entries contain `value`, `updated_at`, `last_known`, and `age_ms`. Invalid numbers
 are represented as unavailable (`null`) values. Missing fields remain absent
 from an otherwise complete snapshot; the `selected_fields` list distinguishes
-unselected from selected-but-unavailable fields. Ages are measured using the
+unselected from selected-but-unavailable fields. The MFD checks numeric field
+presence in the original protobuf payload: omitted numbers are unknown, not
+zero, including numeric leaves inside repeated messages and 64-bit integers.
+An explicitly encoded zero remains zero. Proto3 producers can omit genuine
+zero values too; those cannot be distinguished from unavailable exports.
+Boolean defaults remain `false`; remote batches retain their existing protobuf
+default semantics. Ages are measured using the
 server's monotonic clock at publication; the browser adds elapsed monotonic time
 since receipt. A stream change or pause clears the
 snapshot, and disconnection marks retained values as `last_known`. The browser

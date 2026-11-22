@@ -76,7 +76,12 @@ public sealed class MfdSnapshotStore
         }
     }
 
-    public void Ingest(TelemetryStreamResponse frame)
+    public void Ingest(TelemetryStreamResponse frame) => Ingest(frame, (TelemetryWirePresence?)null);
+
+    public void Ingest(TelemetryStreamResponse frame, ReadOnlyMemory<byte> payload) =>
+        Ingest(frame, TelemetryWirePresence.Parse(payload));
+
+    private void Ingest(TelemetryStreamResponse frame, TelemetryWirePresence? presence)
     {
         lock (gate)
         {
@@ -94,7 +99,8 @@ public sealed class MfdSnapshotStore
                     snapshot.Remove(path);
                 foreach (var field in fields.Where(f => f.Path.StartsWith(prefix, StringComparison.Ordinal)))
                 {
-                    var (value, invalid) = FieldCatalog.Read(frame, field);
+                    var (value, invalid) = presence is null
+                        ? FieldCatalog.Read(frame, field) : FieldCatalog.Read(frame, field, presence);
                     if (value is not null || invalid > 0)
                         snapshot[field.Path] = new(value, now, false, timestamp);
                 }

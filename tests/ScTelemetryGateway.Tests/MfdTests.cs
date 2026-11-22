@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using Sc.Game.Telemetry.V1;
 using ScTelemetryGateway.Core;
+using Google.Protobuf;
 
 namespace ScTelemetryGateway.Tests;
 
@@ -399,6 +400,73 @@ public sealed class MfdTests
             File.Delete(Path.Combine(root, "index.html"));
             Directory.Delete(root);
         }
+    }
+
+    [Fact]
+    public void WireAbsenceClearsNumbersButPreservesBooleanDefaultsAndRemoteZero()
+    {
+        const string fuel = "vehicle.state.flight.instruments.quantum_fuel";
+        const string lights = "vehicle.state.lights_enabled";
+        const string balance = "actor.state.uec_balance";
+        var store = new MfdSnapshotStore([fuel, lights, balance]);
+        var remote = new TelemetryAggregator([fuel], Guid.NewGuid());
+        var frame = new TelemetryStreamResponse
+        {
+            Vehicle = new() { State = new() { Flight = new() { Instruments = new() { QuantumFuel = 75 } } } },
+            Actor = new() { State = new() { UecBalance = long.MaxValue } }
+        };
+        store.Ingest(frame, frame.ToByteArray());
+        Assert.Equal(75, store.Current().Fields[fuel].Value!.GetValue<float>());
+        Assert.Equal(long.MaxValue.ToString(), store.Current().Fields[balance].Value!.GetValue<string>());
+        frame.Vehicle.State.Flight.Instruments.QuantumFuel = 0;
+        frame.Actor.State.UecBalance = 0;
+        var payload = frame.ToByteArray();
+        var parsed = TelemetryStreamResponse.Parser.ParseFrom(payload);
+        store.Ingest(parsed, payload);
+        var snapshot = store.Current();
+        Assert.DoesNotContain(fuel, snapshot.Fields.Keys);
+        Assert.DoesNotContain(balance, snapshot.Fields.Keys);
+        Assert.Contains(fuel, snapshot.SelectedFields);
+        Assert.False(snapshot.Fields[lights].Value!.GetValue<bool>());
+        remote.Ingest(parsed);
+        Assert.Equal(0, remote.CloseWindow(0)!.Snapshot[fuel].Value!.GetValue<float>());
+    }
+
+    [Fact]
+    public void ExplicitWireZeroAndRepeatedNumericPositionsArePreserved()
+    {
+        const string fuel = "vehicle.state.flight.instruments.quantum_fuel";
+        // Explicitly encoded zero: vehicle / state / flight / instruments / quantum_fuel.
+        byte[] payload = [0x1a, 11, 0x12, 9, 0x42, 7, 0x1a, 5, 0x1d, 0, 0, 0, 0];
+        var store = new MfdSnapshotStore([fuel, "weapons.countermeasures.amount"]);
+        store.Ingest(TelemetryStreamResponse.Parser.ParseFrom(payload), payload);
+        Assert.Equal(0, store.Current().Fields[fuel].Value!.GetValue<float>());
+        var frame = new TelemetryStreamResponse { Weapons = new() };
+        frame.Weapons.Countermeasures.Add(new Countermeasures { Amount = 3 });
+        frame.Weapons.Countermeasures.Add(new Countermeasures());
+        frame.Weapons.Countermeasures.Add(new Countermeasures { Amount = 9 });
+        store.Ingest(frame, frame.ToByteArray());
+        Assert.Equal("[3,null,9]", store.Current().Fields["weapons.countermeasures.amount"].Value!.ToJsonString());
+    }
+
+    [Fact]
+    public void WirePresenceMergesSingularMessagesAndIgnoresWrongWireTypes()
+    {
+        const string speed = "vehicle.state.flight.instruments.speed";
+        const string fuel = "vehicle.state.flight.instruments.quantum_fuel";
+        var first = new TelemetryStreamResponse
+        {
+            Vehicle = new() { State = new() { Flight = new() { Instruments = new() { Speed = 42 } } } }
+        };
+        byte[] zero = [0x1a, 11, 0x12, 9, 0x42, 7, 0x1a, 5, 0x1d, 0, 0, 0, 0];
+        var payload = first.ToByteArray().Concat(zero).ToArray();
+        var store = new MfdSnapshotStore([speed, fuel]);
+        store.Ingest(TelemetryStreamResponse.Parser.ParseFrom(payload), payload);
+        Assert.Equal(42, store.Current().Fields[speed].Value!.GetValue<float>());
+        Assert.Equal(0, store.Current().Fields[fuel].Value!.GetValue<float>());
+        byte[] wrongType = [0x1a, 8, 0x12, 6, 0x42, 4, 0x1a, 2, 0x18, 1];
+        store.Ingest(TelemetryStreamResponse.Parser.ParseFrom(wrongType), wrongType);
+        Assert.DoesNotContain(fuel, store.Current().Fields.Keys);
     }
 
     [Fact]
