@@ -146,6 +146,58 @@ public sealed class MfdProfileTests : IDisposable
         }).Validate());
     }
 
+    [Fact]
+    public void PercentageOverridesPersistAndOldProfilesUseAutomaticFormatting()
+    {
+        var draft = Draft();
+        var profile = Store.Create(draft with
+        {
+            Pages = [draft.Pages[0] with { Tiles =
+            [
+                draft.Pages[0].Tiles[0] with { Field = "vehicle.state.shields.level", Format = "percent_fraction" },
+                draft.Pages[0].Tiles[0] with { Id = Guid.NewGuid(), Field = "actor.vitals.health.current", Format = "percent_max" }
+            ] }]
+        });
+        Assert.Equal("percent_fraction", Store.Get(profile.Id)!.Pages[0].Tiles[0].Format);
+        Assert.Equal("percent_max", Store.Get(profile.Id)!.Pages[0].Tiles[1].Format);
+        var oldJson = System.Text.Json.JsonSerializer.Serialize(draft, WireJson.Options).Replace("\"format\":\"auto\",", "");
+        var old = System.Text.Json.JsonSerializer.Deserialize<MfdProfile>(oldJson, WireJson.Options)!;
+        Assert.Equal("auto", old.Pages[0].Tiles[0].Format);
+        old.Validate();
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.shields.level", "percent_fraction", null)]
+    [InlineData("vehicle.state.shields.faces", "percent_fraction", null)]
+    [InlineData("vehicle.state.flight.instruments.hydrogen_fuel", "percent", null)]
+    [InlineData("vehicle.state.flight.instruments.quantum_fuel", "percent", null)]
+    [InlineData("actor.vitals.health.current", "percent_max", "actor.vitals.health.max")]
+    [InlineData("actor.vitals.oxygen.current", "percent_max", "actor.vitals.oxygen.max")]
+    [InlineData("actor.vitals.hunger.current", "percent_max", "actor.vitals.hunger.max")]
+    [InlineData("actor.vitals.thirst.current", "percent_max", "actor.vitals.thirst.max")]
+    [InlineData("actor.vitals.body_temperature.current", "number", "actor.vitals.body_temperature.max")]
+    [InlineData("vehicle.state.health", "number", null)]
+    public void CatalogDistinguishesPercentageScalesFromUnverifiedFields(string path, string format, string? maximum)
+    {
+        var field = MfdCatalogField.From(FieldCatalog.All[path]);
+        Assert.Equal(format, field.DisplayFormat);
+        Assert.Equal(maximum, field.MaximumField);
+    }
+
+    [Theory]
+    [InlineData("actor.state.locomotion", "percent")]
+    [InlineData("actor.state.uec_balance", "percent_fraction")]
+    [InlineData("vehicle.state.flight.instruments.speed", "percent_max")]
+    [InlineData("actor.vitals.heart_rate", "unknown")]
+    public void InvalidPercentageFormatsAreRejected(string field, string format)
+    {
+        var draft = Draft();
+        Assert.Throws<ArgumentException>(() => (draft with
+        {
+            Pages = [draft.Pages[0] with { Tiles = [draft.Pages[0].Tiles[0] with { Field = field, Format = format }] }]
+        }).Validate());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root)) Directory.Delete(root, recursive: true);

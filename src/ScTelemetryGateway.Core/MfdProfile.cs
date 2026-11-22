@@ -19,6 +19,7 @@ public sealed record MfdTile
     public required string Widget { get; init; }
     public required string Size { get; init; }
     public int Decimals { get; init; } = 2;
+    public string Format { get; init; } = "auto";
     public MfdStatusRule[] Rules { get; init; } = [];
 }
 
@@ -70,6 +71,10 @@ public sealed record MfdProfile
                     throw new ArgumentException("Widget is incompatible with the telemetry field.");
                 if (tile.Size is not ("normal" or "wide" or "large") || tile.Decimals is < 0 or > 6)
                     throw new ArgumentException("Invalid tile size or decimal precision.");
+                if (tile.Format is not ("auto" or "number" or "percent_fraction" or "percent" or "percent_max") ||
+                    tile.Format is not ("auto" or "number") && !MfdFieldFormats.IsNumeric(field) ||
+                    tile.Format == "percent_max" && (field.Repeated || MfdFieldFormats.MaximumField(field) is null))
+                    throw new ArgumentException("Display format is incompatible with the telemetry field.");
                 if (tile.Rules is null || tile.Rules.Length > 32 || tile.Widget != "status" && tile.Rules.Length != 0)
                     throw new ArgumentException("Invalid status rules.");
                 var values = new HashSet<string>(StringComparer.Ordinal);
@@ -100,16 +105,40 @@ public sealed record MfdProfile
     }
 }
 
-public sealed record MfdCatalogField(string Path, string Type, bool Repeated, string[] EnumValues)
+public sealed record MfdCatalogField(string Path, string Type, bool Repeated, string[] EnumValues,
+    bool Numeric, string DisplayFormat, string? MaximumField)
 {
     public static MfdCatalogField From(TelemetryField field)
     {
         var descriptor = field.Chain[^1];
         return new(field.Path, descriptor.FieldType.ToString().ToLowerInvariant(), field.Repeated,
             descriptor.FieldType == FieldType.Enum
-                ? descriptor.EnumType.Values.Select(value => value.Name).ToArray() : []);
+                ? descriptor.EnumType.Values.Select(value => value.Name).ToArray() : [],
+            MfdFieldFormats.IsNumeric(field), MfdFieldFormats.Default(field.Path), MfdFieldFormats.MaximumField(field));
     }
 
 }
 
 public sealed record MfdProfileSummary(Guid Id, string Name, long Revision);
+
+public static class MfdFieldFormats
+{
+    public static bool IsNumeric(TelemetryField field) => field.Chain[^1].FieldType is
+        FieldType.Float or FieldType.Double or FieldType.Int32 or FieldType.UInt32 or
+        FieldType.SInt32 or FieldType.Fixed32 or FieldType.SFixed32;
+
+    public static string? MaximumField(TelemetryField field) =>
+        !field.Repeated && field.Chain.Count > 1 && field.Chain[^1].Name == "current" &&
+        field.Chain[^2].MessageType?.Name == "Gauge"
+            ? field.Path[..^"current".Length] + "max" : null;
+
+    public static string Default(string path) => path switch
+    {
+        "vehicle.state.shields.level" or "vehicle.state.shields.faces" => "percent_fraction",
+        "vehicle.state.flight.instruments.hydrogen_fuel" or
+        "vehicle.state.flight.instruments.quantum_fuel" => "percent",
+        "actor.vitals.health.current" or "actor.vitals.oxygen.current" or
+        "actor.vitals.hunger.current" or "actor.vitals.thirst.current" => "percent_max",
+        _ => "number"
+    };
+}

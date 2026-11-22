@@ -1,0 +1,43 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const source = fs.readFileSync(path.join(__dirname, "../../src/ScTelemetryGateway.Windows/mfd/assets/presentation.js"), "utf8");
+const presentation = vm.runInNewContext(source + "\nMfdPresentation;", {
+  Intl: { NumberFormat: class extends Intl.NumberFormat {
+    constructor(locale, options) { super(locale ?? "en-US", options); }
+  } }
+});
+
+test("fraction, already-percent and current/max values produce the same percentage", () => {
+  assert.equal(presentation.format(0.75, 2, "percent_fraction"), "75%");
+  assert.equal(presentation.format(75, 2, "percent"), "75%");
+  assert.equal(presentation.format(150, 2, "percent_max", 200), "75%");
+  assert.equal(presentation.format(0.75555, 2, "percent_fraction"), "75.56%");
+  assert.equal(presentation.format(0, 2, "percent_fraction"), "0%");
+  assert.equal(presentation.format(1, 2, "percent_fraction"), "100%");
+  assert.equal(presentation.format(1.2, 2, "percent_fraction"), "120%");
+});
+
+test("missing, invalid and mismatched maxima never produce a false percentage", () => {
+  for (const maximum of [null, undefined, 0, -1, NaN, Infinity, "100"])
+    assert.equal(presentation.format(75, 2, "percent_max", maximum), "Unavailable");
+  for (const value of [null, undefined, NaN, Infinity])
+    assert.equal(presentation.format(value, 2, "percent_fraction"), "Unavailable");
+  assert.equal(presentation.format(1, 2, "percent_max", Number.MIN_VALUE), "Unavailable");
+});
+
+test("lists format each percentage without inventing missing values", () => {
+  assert.equal(presentation.format([0.25, 0.5, null, 1], 0, "percent_fraction"), "25% / 50% / Unavailable / 100%");
+  assert.equal(presentation.format([], 2, "percent_fraction"), "None");
+});
+
+test("raw override preserves numbers, large integer strings, booleans and enum labels", () => {
+  assert.equal(presentation.format(0.75, 2, "number"), "0.75");
+  assert.equal(presentation.format(135.255, 2), "135.26");
+  assert.equal(presentation.format("9223372036854775807", 2), "9223372036854775807");
+  assert.equal(presentation.format(false, 2), "No");
+  assert.equal(presentation.format("VEHICLE_MASTER_MODE_SCM", 2), "Scm");
+});

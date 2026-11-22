@@ -28,22 +28,10 @@ const MfdWorkspace = (() => {
     const hex = [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
-  function readable(text) {
-    return text.replace(/^(VEHICLE_COMPONENT_DEPLOYMENT_STATE|VEHICLE_MASTER_MODE|ACTOR_LOCOMOTION_STATE|ACTOR_CREW_ROLE|DOOR_OPEN_STATE|DOOR_LOCK_STATE|ANNUNCIATOR_STATE|VEHICLE_TYPE|COUNTERMEASURE_TYPE)_/, "")
-      .replace(/_/g, " ").toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
-  }
+  const readable = MfdPresentation.readable;
   function label(path) {
     return path.split(".").filter(part => !["state", "flight", "instruments", "actor", "vehicle"].includes(part))
       .map(readable).join(" / ").slice(0, 80);
-  }
-  function format(value, decimals) {
-    if (value === null || value === undefined) return "Unavailable";
-    if (Array.isArray(value)) return value.length ? value.map(item => format(item, decimals)).join(" / ") : "None";
-    if (typeof value === "number") return Number.isFinite(value)
-      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: decimals }).format(value) : "Unavailable";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (typeof value === "string") return value ? (/^[A-Z][A-Z0-9_]*$/.test(value) ? readable(value) : value) : "Unavailable";
-    return "Unavailable";
   }
   const profile = () => draft ?? saved;
   const page = () => profile()?.pages.find(item => item.id === pageId);
@@ -178,6 +166,12 @@ const MfdWorkspace = (() => {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
     for (const { tile, card, value, meta } of cards.values()) {
       const field = snapshot?.fields?.[tile.field];
+      const definition = catalog.find(item => item.path === tile.field);
+      const mode = !tile.format || tile.format === "auto" ? definition?.display_format ?? "number" : tile.format;
+      const maximum = snapshot?.fields?.[definition?.maximum_field];
+      const maximumValue = maximum && maximum.updated_at === field?.updated_at && maximum.last_known === field?.last_known
+        ? maximum.value : null;
+      const needsMaximum = mode === "percent_max" && field?.value != null && !MfdPresentation.validMaximum(maximumValue);
       card.dataset.color = "neutral";
       if (!selected.has(tile.field) || !field) {
         delete value.dataset.signature;
@@ -192,21 +186,23 @@ const MfdWorkspace = (() => {
       const rule = tile.widget === "status" && field.value !== null
         ? tile.rules.find(item => item.value === String(field.value)) : null;
       if (tile.widget === "list" && Array.isArray(field.value)) {
-        const signature = JSON.stringify(field.value);
+        const signature = JSON.stringify([field.value, mode, tile.decimals]);
         if (value.dataset.signature !== signature) {
           value.replaceChildren();
-          for (const item of field.value) value.append(node("div", "list-value", format(item, tile.decimals)));
+          for (const item of field.value) value.append(node("div", "list-value", MfdPresentation.format(item, tile.decimals, mode)));
           if (!field.value.length) value.textContent = "None";
           value.dataset.signature = signature;
         }
       } else {
-        value.textContent = rule?.label ?? format(field.value, tile.decimals);
+        value.textContent = rule?.label ?? MfdPresentation.format(field.value, tile.decimals, mode, maximumValue);
         delete value.dataset.signature;
       }
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;
       meta.textContent = state + " / " + ageText(age);
+      if (needsMaximum && !rule)
+        meta.textContent += " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
-        field.value === null ? "unavailable" : !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
+        field.value === null || needsMaximum && !rule ? "unavailable" : !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
     }
   }
 
@@ -369,7 +365,7 @@ const MfdWorkspace = (() => {
       button.addEventListener("click", () => {
         if (busy) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
-        openTile({ id: uuid(), field: field.path, label: label(field.path), widget: field.repeated ? "list" : "value", size: "normal", decimals: 2, rules: [] }, true);
+        openTile({ id: uuid(), field: field.path, label: label(field.path), widget: field.repeated ? "list" : "value", size: "normal", decimals: 2, format: "auto", rules: [] }, true);
       });
       section.append(button);
     }
@@ -382,6 +378,19 @@ const MfdWorkspace = (() => {
     for (const option of $("tile-widget").options) option.disabled = repeated ? option.value !== "list" : option.value === "list";
     if ($("tile-widget").selectedOptions[0].disabled) $("tile-widget").value = repeated ? "list" : "value";
     $("status-settings").hidden = $("tile-widget").value !== "status";
+    for (const option of $("tile-format").options)
+      option.disabled = !!field && (
+        !["auto", "number"].includes(option.value) && !field.numeric ||
+        option.value === "percent_max" && !field.maximum_field
+      );
+    if ($("tile-format").selectedOptions[0].disabled) $("tile-format").value = "auto";
+    const chosen = $("tile-format").value;
+    const mode = chosen === "auto" ? field?.display_format ?? "number" : chosen;
+    $("format-note").textContent = mode === "percent_max"
+      ? "Percentage needs a positive, matching " + (field?.maximum_field ?? "maximum field") + ". Enable that field in PC settings too."
+      : mode === "percent_fraction" ? "A raw value of 0.75 is displayed as 75%."
+      : mode === "percent" ? "A raw value of 75 is displayed as 75%."
+      : "Values are displayed without percentage scaling. Status rules always match raw values.";
   }
   function addRule(rule = { value: "", label: "", color: "neutral" }) {
     if ($("status-rules").childElementCount >= 32) { $("tile-message").textContent = "At most 32 status rules are allowed."; return; }
@@ -410,6 +419,7 @@ const MfdWorkspace = (() => {
     $("tile-field").value = tile.field;
     $("tile-label").value = tile.label; $("tile-widget").value = tile.widget;
     $("tile-size").value = tile.size; $("tile-decimals").value = tile.decimals;
+    $("tile-format").value = tile.format ?? "auto";
     $("status-rules").replaceChildren();
     for (const rule of tile.rules) addRule(rule);
     $("tile-message").textContent = "";
@@ -434,14 +444,18 @@ const MfdWorkspace = (() => {
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
-        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "rules"]) || !text(tile.field, 1024) || !text(tile.label, 80) ||
+        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules"]) || !text(tile.field, 1024) || !text(tile.label, 80) ||
             !["value", "status", "list"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
+            !["auto", "number", "percent_fraction", "percent", "percent_max"].includes(tile.format === undefined ? "auto" : tile.format) ||
             !Number.isInteger(tile.decimals) || tile.decimals < 0 || tile.decimals > 6 || !Array.isArray(tile.rules) ||
             tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length)
           throw new Error("Invalid tile settings.");
         identity(tile.id);
         const field = catalog.find(field => field.path === tile.field);
         if (field && field.repeated !== (tile.widget === "list")) throw new Error("Widget is incompatible with its field.");
+        if (field && tile.format && !["auto", "number"].includes(tile.format) && (
+          !field.numeric || tile.format === "percent_max" && !field.maximum_field
+        )) throw new Error("Display format is incompatible with its field.");
         const values = new Set();
         for (const rule of tile.rules) {
           if (!keys(rule, ["value", "label", "color"]) || !text(rule.value, 128) || !text(rule.label, 80) ||
@@ -556,6 +570,7 @@ const MfdWorkspace = (() => {
     $("field-search").addEventListener("input", renderLibrary);
     $("tile-field").addEventListener("change", widgetOptions);
     $("tile-widget").addEventListener("change", widgetOptions);
+    $("tile-format").addEventListener("change", widgetOptions);
     $("add-rule").addEventListener("click", () => addRule());
     $("cancel-tile").addEventListener("click", () => $("tile-dialog").close());
     $("tile-form").addEventListener("submit", event => {
@@ -564,7 +579,7 @@ const MfdWorkspace = (() => {
         const tile = {
           id: tileId ?? $("tile-dialog").dataset.newId, field: $("tile-field").value,
           label: $("tile-label").value.trim(), widget: $("tile-widget").value,
-          size: $("tile-size").value, decimals: Number($("tile-decimals").value),
+          size: $("tile-size").value, decimals: Number($("tile-decimals").value), format: $("tile-format").value,
           rules: $("tile-widget").value === "status" ? [...$("status-rules").children].map(row => ({
             value: row.querySelector('[data-rule="value"]').value,
             label: row.querySelector('[data-rule="label"]').value.trim(), color: row.querySelector("select").value

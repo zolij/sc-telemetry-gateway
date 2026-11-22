@@ -63,7 +63,7 @@
       </div>
       <div class="workspace-body">
         <section class="display-surface" aria-label="Custom instruments">
-          <div class="view-heading"><div><span id="display-mode" class="section-index">LIVE INSTRUMENTS</span><h2 id="page-title">Your flight deck</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
+          <div class="view-heading"><div><span id="display-mode" class="section-index">LIVE INSTRUMENTS</span><h2 id="page-title">Your flight deck</h2></div><span class="view-note">FIELD-AWARE FORMATS<br>RAW VALUES AVAILABLE</span></div>
           <div id="empty-display" class="empty-display"><span class="empty-mark" aria-hidden="true">+</span><h3>Create your first MFD.</h3><p>No presets. Choose the data that matters to you.</p></div>
           <div id="custom-cards" class="instrument-grid"></div>
         </section>
@@ -85,7 +85,15 @@
           <label>DISPLAY TYPE<select id="tile-widget"><option value="value">Value</option><option value="status">Status indicator</option><option value="list">List</option></select></label>
           <label>SIZE<select id="tile-size"><option value="normal">Normal / 1 x 1</option><option value="wide">Wide / 2 x 1</option><option value="large">Large / 2 x 2</option></select></label>
           <label>DECIMAL PLACES<input id="tile-decimals" type="number" min="0" max="6" value="2" required></label>
+          <label>VALUE FORMAT<select id="tile-format">
+            <option value="auto">Automatic / field meaning</option>
+            <option value="number">Raw value / no percentage</option>
+            <option value="percent_fraction">Percentage / 0-1 ratio</option>
+            <option value="percent">Percentage / 0-100 value</option>
+            <option value="percent_max">Percentage / current divided by max</option>
+          </select></label>
         </div>
+        <p id="format-note" class="library-note"></p>
         <div id="status-settings" hidden>
           <p class="library-note">Exact raw values, e.g. true, false or VEHICLE_MASTER_MODE_SCM. Unknown values keep their own text.</p>
           <div id="status-rules"></div><button id="add-rule" type="button">ADD STATUS RULE</button>
@@ -95,6 +103,7 @@
       </form>
     </dialog>
   </main>
+  <script src="/assets/presentation.js"></script>
   <script src="/assets/workspace.js"></script>
   <script src="/assets/app.js"></script>
 </body>
