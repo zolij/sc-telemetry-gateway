@@ -49,9 +49,15 @@
         <button id="save-copy" type="button" data-action>SAVE AS NEW PROFILE</button>
       </div>
       <nav id="page-navigation" class="page-navigation" aria-label="Profile pages"></nav>
+      <p id="page-trigger-summary" class="trigger-summary"></p>
       <div id="editor-toolbar" class="editor-toolbar" hidden>
         <label>PROFILE NAME<input id="profile-name" maxlength="80" required></label>
         <label>PAGE NAME<input id="page-name" maxlength="80" required></label>
+        <fieldset class="page-triggers">
+          <legend>AUTO-SWITCH TO THIS PAGE</legend>
+          <p id="trigger-note" class="library-note"></p>
+          <div id="trigger-options" class="trigger-options"></div>
+        </fieldset>
         <div class="toolbar-actions">
           <button id="add-page" type="button" data-action>ADD PAGE</button>
           <button id="page-before" type="button" data-action>PAGE LEFT</button>
@@ -104,6 +110,7 @@
     </dialog>
   </main>
   <script src="/assets/presentation.js"></script>
+  <script src="/assets/triggers.js"></script>
   <script src="/assets/workspace.js"></script>
   <script src="/assets/app.js"></script>
 </body>

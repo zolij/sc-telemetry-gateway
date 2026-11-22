@@ -37,15 +37,17 @@ function connect() {
   clearTimeout(reconnectTimer);
   const current = new WebSocket("ws://" + window.location.host + "/mfd/ws");
   socket = current;
-  current.addEventListener("open", () => current.send(JSON.stringify({
-    type: "mfd.auth", schema_version: 1, session_token: token
-  })));
+  current.addEventListener("open", () => {
+    MfdWorkspace.resetEvents();
+    current.send(JSON.stringify({ type: "mfd.auth", schema_version: 1, session_token: token }));
+  });
   current.addEventListener("message", event => {
     try {
       const message = JSON.parse(event.data);
       if (message.type !== "mfd.snapshot" || message.schema_version !== 1) throw new Error("Unsupported snapshot");
       snapshot = message;
       receivedAt = performance.now();
+      MfdWorkspace.receive(message);
       paint();
     } catch {
       current.close(1008, "Invalid snapshot");

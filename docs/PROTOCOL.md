@@ -217,6 +217,17 @@ approved displays, even when event telemetry is not selected. It uses the same
 authentication and origin checks as the profile API and does not subscribe to
 data or expose game-control RPCs.
 
+Browsers apply page triggers only to the active saved profile. They baseline
+the retained history on each WebSocket connection, then consume each new
+per-stream event sequence once. A new game stream resets the cursor; initial
+events in that new stream can trigger a page when the display is already
+connected. Events consumed while editing, busy, inactive or disconnected do
+not replay when switching resumes. If multiple new events match, the last
+matching event chooses the page. Manual selection does not reset the cursor.
+The editor requests confirmation before moving an assigned event to another
+page, and cancelling leaves both pages unchanged. Moves are draft changes
+until saved; no game commands or subscription changes are sent.
+
 The browser has no built-in layouts. Named, multi-page profiles are separate
 from the telemetry snapshot and the gateway's field allowlist. Profile editing
 does not change subscriptions, enable fields or send game commands.

@@ -96,6 +96,18 @@ Each tile can override this with **Raw value**, either percentage scale, or
 **current divided by max** for a gauge. Overrides are saved/exported with the
 profile; status rules still match the original raw values.
 
+In **Edit**, use **Auto-switch to this page** to select one or more known game
+events. An event can belong to only one page within a profile; assigning it
+elsewhere asks for confirmation before moving it from the previous page.
+Changes take effect after **Save to PC**, and triggers are included in exports.
+Enable `events.events.type` in PC MFD settings and restart collection to receive
+events; the editor warns when this is not enabled.
+
+Only the active saved profile switches pages, and only on new events. Initial
+connection/reconnection does not replay history. Automatic switching pauses
+while editing, without catching up afterwards; if several matching events
+arrive together, the last one wins. Manual page selection remains available.
+
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under
 `%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are

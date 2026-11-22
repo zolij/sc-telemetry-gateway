@@ -9,6 +9,8 @@ const MfdWorkspace = (() => {
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
   let preferenceWarning = "";
+  let triggerEvents = [];
+  const eventCursor = MfdPageTriggers.createCursor();
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -142,6 +144,7 @@ const MfdWorkspace = (() => {
       $("profile-name").value = draft.name;
       $("page-name").value = page().name;
     }
+    renderTriggers();
     $("empty-display").hidden = !!page()?.tiles.length;
     $("empty-display").querySelector("h3").textContent = !current ? "Create your first MFD." : draft ? "Choose your instruments." : "This page is a blank canvas.";
     $("empty-display").querySelector("p").textContent = !current ? "No presets. Choose the data that matters to you." :
@@ -162,6 +165,67 @@ const MfdWorkspace = (() => {
     controls();
     repaint?.();
   }
+
+  function renderTriggers() {
+    const configured = page()?.trigger_events ?? [];
+    const selected = catalog.some(field => field.path === "events.events.type");
+    const anyTriggers = profile()?.pages.some(item => item.trigger_events?.length);
+    $("page-trigger-summary").textContent = !page() ? "" : configured.length
+      ? "AUTO-SWITCH TO THIS PAGE / " + configured.map(readable).join(" / ")
+      : "THIS PAGE / Manual selection";
+    if (anyTriggers && !selected)
+      $("page-trigger-summary").textContent += " / Enable events.events.type in PC settings to activate triggers.";
+    $("trigger-note").textContent = !selected
+      ? "Enable events.events.type in PC settings and restart collection to activate triggers. You can configure them now."
+      : "Choose one or more events. Each event belongs to one page per profile. Automatic switching pauses while editing.";
+    $("trigger-options").replaceChildren();
+    if (!draft) return;
+    if (!triggerEvents.length) {
+      $("trigger-options").append(node("p", "library-note", "Event catalogue unavailable. Reconnect before configuring triggers."));
+      return;
+    }
+    for (const type of triggerEvents) {
+      const owner = draft.pages.find(item => item.trigger_events?.includes(type));
+      const option = node("label", "trigger-option");
+      const checkbox = node("input");
+      checkbox.type = "checkbox";
+      checkbox.dataset.event = type;
+      checkbox.checked = configured.includes(type);
+      checkbox.disabled = busy;
+      checkbox.setAttribute("aria-label", readable(type));
+      const description = node("span", "trigger-description");
+      description.append(node("strong", "", readable(type)), node("span", "",
+        owner ? owner.id === pageId ? "Assigned to this page" : "Assigned to " + owner.name + " / move with confirmation" : "Not assigned"));
+      checkbox.addEventListener("change", () => {
+        if (busy || !draft) return;
+        let accepted = true;
+        if (checkbox.checked)
+          accepted = MfdPageTriggers.assign(draft.pages, pageId, type, (oldPage, newPage) =>
+            window.confirm('Move "' + readable(type) + '" from "' + oldPage.name + '" to "' + newPage.name +
+              '"? The old page will lose this trigger. Save to PC to publish the change.'));
+        else page().trigger_events = (page().trigger_events ?? []).filter(event => event !== type);
+        renderTriggers();
+        controls();
+        $("trigger-options").querySelector('[data-event="' + CSS.escape(type) + '"]')?.focus();
+        notice(accepted ? "Page triggers updated in the draft. Save to PC to activate them." : "Trigger unchanged.");
+      });
+      option.append(checkbox, description);
+      $("trigger-options").append(option);
+    }
+  }
+
+  function receive(snapshot) {
+    const match = eventCursor.target(snapshot, saved?.pages ?? [],
+      !!saved && !draft && !busy && snapshot.connection_status === "connected");
+    if (!match || match.page.id === pageId) return;
+    viewVersion++;
+    pageId = match.page.id;
+    render();
+    remember();
+    notice('Switched to "' + match.page.name + '" after ' + readable(match.event.type) + ".");
+  }
+
+  function resetEvents() { eventCursor.reset(); }
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
@@ -254,7 +318,9 @@ const MfdWorkspace = (() => {
   }
   async function start() {
     await run(async () => {
-      catalog = (await api("fields")).data;
+      const [fields, events] = await Promise.all([api("fields"), api("events")]);
+      catalog = fields.data;
+      triggerEvents = events.data;
       await refresh(true);
       if (!saved && preference?.profile && summaries.some(item => item.id === preference.profile))
         await selectProfile(preference.profile);
@@ -267,6 +333,8 @@ const MfdWorkspace = (() => {
     saved = draft = null;
     pageId = null;
     summaries = catalog = [];
+    triggerEvents = [];
+    resetEvents();
     etag = null;
     $("conflict-actions").hidden = true;
     $("tile-dialog").close();
@@ -446,7 +514,7 @@ const MfdWorkspace = (() => {
       ids.add(id.toLowerCase());
     };
     for (const item of value.pages) {
-      if (!keys(item, ["id", "name", "tiles"]) || !text(item.name, 80) || !Array.isArray(item.tiles) || item.tiles.length > limits.tiles)
+      if (!keys(item, ["id", "name", "tiles", "trigger_events"]) || !text(item.name, 80) || !Array.isArray(item.tiles) || item.tiles.length > limits.tiles)
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
@@ -470,6 +538,7 @@ const MfdWorkspace = (() => {
         }
       }
     }
+    MfdPageTriggers.validate(value.pages, triggerEvents);
     if (new TextEncoder().encode(JSON.stringify(value)).length > limits.bytes) throw new Error("Profiles must not exceed 512 KiB.");
   }
 
@@ -558,6 +627,7 @@ const MfdWorkspace = (() => {
       $("page-title").textContent = page().name;
       const index = draft.pages.findIndex(item => item.id === pageId);
       $("page-navigation").children[index].textContent = String(index + 1).padStart(2, "0") + " / " + page().name;
+      renderTriggers();
     });
     $("add-page").addEventListener("click", () => run(() => {
       const next = { id: uuid(), name: "Page " + (draft.pages.length + 1), tiles: [] };
@@ -628,5 +698,5 @@ const MfdWorkspace = (() => {
     }, 5000);
     render();
   }
-  return { init, start, reset, canLeave, paint };
+  return { init, start, reset, canLeave, paint, receive, resetEvents };
 })();
