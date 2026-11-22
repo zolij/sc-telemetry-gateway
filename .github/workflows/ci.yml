@@ -82,12 +82,12 @@ jobs:
           if ($installer.Count -ne 1) { throw 'Expected exactly one installer.' }
           $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
           ./build/Test-Installer.ps1 -Installer $installer[0].FullName -Version $version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: unsigned-preview-installer
           path: artifacts/installer/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: star-citizen-telemetry-gateway-win-x64
