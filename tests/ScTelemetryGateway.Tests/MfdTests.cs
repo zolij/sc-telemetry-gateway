@@ -467,6 +467,7 @@ public sealed class MfdTests
         var assets = Path.Combine(root, "assets");
         Directory.CreateDirectory(assets);
         await File.WriteAllTextAsync(Path.Combine(assets, "app-icon.png"), "synthetic icon");
+        await File.WriteAllTextAsync(Path.Combine(assets, "keep-awake.mp4"), "synthetic video");
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -482,11 +483,15 @@ public sealed class MfdTests
             using var icon = await client.GetAsync($"http://127.0.0.1:{port}/assets/app-icon.png", timeout.Token);
             Assert.Equal("image/png", icon.Content.Headers.ContentType?.MediaType);
             Assert.Equal("synthetic icon", await icon.Content.ReadAsStringAsync(timeout.Token));
+            using var video = await client.GetAsync($"http://127.0.0.1:{port}/assets/keep-awake.mp4", timeout.Token);
+            Assert.Equal("video/mp4", video.Content.Headers.ContentType?.MediaType);
+            Assert.Equal("synthetic video", await video.Content.ReadAsStringAsync(timeout.Token));
         }
         finally
         {
             File.Delete(Path.Combine(root, "index.html"));
             File.Delete(Path.Combine(assets, "app-icon.png"));
+            File.Delete(Path.Combine(assets, "keep-awake.mp4"));
             Directory.Delete(assets);
             Directory.Delete(root);
         }
