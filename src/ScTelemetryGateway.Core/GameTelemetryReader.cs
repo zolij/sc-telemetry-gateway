@@ -8,7 +8,7 @@ public sealed class GameTelemetryReader(int port)
 {
     public async Task RunAsync(TelemetryAggregator aggregator, Action<string> status,
         CancellationToken cancellationToken, Action? flushDisconnected = null)
-        => await RunAsync([frame => aggregator.Ingest(frame)],
+        => await RunAsync([aggregator.Ingest],
             status, cancellationToken, () =>
             {
                 aggregator.Disconnected();

@@ -1,3 +1,7 @@
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("ScTelemetryGateway.Tests")]
+
 namespace ScTelemetryGateway.Core;
 
 public sealed record GatewayStatus(string Game, string Delivery, string Mfd, int Queued, int QueueBytes,
@@ -10,24 +14,17 @@ public sealed class GatewayRuntime
     private DateTimeOffset? lastAck;
     private long eventsDropped;
     private readonly BatchQueue queue = new();
+    private readonly Func<BatchQueue, CancellationToken, Task>? runSender;
     private MfdServer? mfdServer;
     public MfdServer? MfdServer => mfdServer;
+
+    public GatewayRuntime() { }
+
+    internal GatewayRuntime(Func<BatchQueue, CancellationToken, Task> runSender) => this.runSender = runSender;
 
     public GatewayStatus Status
     {
         get { lock (gate) return new(game, delivery, mfd, queue.Count, queue.Bytes, queue.Dropped, eventsDropped, lastAck); }
-    }
-
-    private async Task ObserveRemote(Task senderTask, CancellationTokenSource remoteStop)
-    {
-        try { await senderTask; }
-        catch (ReceiverRejectedException ex)
-        {
-            lock (gate) delivery = ex.Message;
-            queue.Clear();
-            await remoteStop.CancelAsync();
-        }
-        catch (OperationCanceledException) { }
     }
 
     public async Task RunAsync(GatewayOptions options, string key, CancellationToken cancellationToken,
@@ -42,13 +39,17 @@ public sealed class GatewayRuntime
         var mfdSnapshot = options.MfdEnabled ? new MfdSnapshotStore(options.MfdFields) : null;
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var remoteStop = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        var remoteActive = remoteEnabled;
         void Flush()
         {
-            if (remoteAggregator is null) return;
-            var batch = remoteAggregator.CloseWindow(queue.Dropped);
-            if (batch is null) return;
-            queue.Enqueue(batch);
-            lock (gate) eventsDropped = batch.Loss.EventsDropped;
+            lock (gate)
+            {
+                if (!remoteActive || remoteAggregator is null) return;
+                var batch = remoteAggregator.CloseWindow(queue.Dropped);
+                if (batch is null) return;
+                queue.Enqueue(batch);
+                eventsDropped = batch.Loss.EventsDropped;
+            }
         }
         var reader = new GameTelemetryReader(options.GamePort);
         var sender = remoteEnabled ? new WebSocketDelivery(new Uri(options.Endpoint), key, queue,
@@ -57,32 +58,58 @@ public sealed class GatewayRuntime
             () => { lock (gate) lastAck = DateTimeOffset.UtcNow; }) : null;
         async Task Aggregate()
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.IntervalSeconds));
-            while (await timer.WaitForNextTickAsync(remoteStop.Token)) Flush();
+            try
+            {
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.IntervalSeconds));
+                while (await timer.WaitForNextTickAsync(remoteStop.Token)) Flush();
+            }
+            catch (OperationCanceledException) when (remoteStop.IsCancellationRequested && options.MfdEnabled)
+            {
+                await Task.Delay(Timeout.Infinite, stop.Token);
+            }
+        }
+        async Task ObserveRemote(Task senderTask)
+        {
+            try { await senderTask; }
+            catch (ReceiverRejectedException ex)
+            {
+                lock (gate)
+                {
+                    remoteActive = false;
+                    delivery = ex.Message;
+                    queue.Clear();
+                }
+                await remoteStop.CancelAsync();
+                await Task.Delay(Timeout.Infinite, stop.Token);
+            }
         }
         var tasks = new List<Task>();
         var sinks = new List<Action<Sc.Game.Telemetry.V1.TelemetryStreamResponse>>();
         if (remoteAggregator is not null)
-            sinks.Add(remoteAggregator.Ingest);
+            sinks.Add(frame => { lock (gate) { if (remoteActive) remoteAggregator.Ingest(frame); } });
         if (mfdAggregator is not null)
             sinks.Add(mfdAggregator.Ingest);
         if (mfdSnapshot is not null)
             sinks.Add(mfdSnapshot.Ingest);
         var readerTask = reader.RunAsync(sinks, value => { lock (gate) game = value; }, stop.Token, () =>
         {
-            remoteAggregator?.Disconnected();
+            lock (gate) { if (remoteActive) remoteAggregator?.Disconnected(); }
             mfdAggregator?.Disconnected();
             mfdSnapshot?.Disconnected();
             Flush();
-        }, mfdSnapshot is null ? null : mfdSnapshot.StartStream);
+        }, () =>
+        {
+            lock (gate) { if (remoteActive) remoteAggregator?.StartStream(); }
+            mfdSnapshot?.StartStream();
+        });
         tasks.Add(readerTask);
         if (remoteEnabled)
         {
-            var senderTask = sender!.RunAsync(remoteStop.Token);
+            var senderTask = runSender is null ? sender!.RunAsync(remoteStop.Token) : runSender(queue, remoteStop.Token);
             if (options.MfdEnabled)
             {
-                var aggregateTask = Aggregate();
-                _ = ObserveRemote(senderTask, remoteStop);
+                tasks.Add(Aggregate());
+                tasks.Add(ObserveRemote(senderTask));
             }
             else
             {
@@ -121,7 +148,7 @@ public sealed class GatewayRuntime
                 queue.Clear();
                 mfdSnapshot?.SetPaused();
                 if (mfdServer is not null)
-                    mfdServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    await mfdServer.DisposeAsync();
                 lock (gate) { game = "Stopped"; delivery = "Stopped"; mfd = "Stopped"; }
             }
         }
