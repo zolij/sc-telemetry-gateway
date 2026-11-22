@@ -93,7 +93,9 @@ async function authorize(request, env) {
   const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
   if (!keySets.has(issuer)) keySets.set(issuer, createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)));
   try {
-    await jwtVerify(token, keySets.get(issuer), { issuer, audience: env.ACCESS_AUDIENCE, algorithms: ['RS256'] });
+    await jwtVerify(token, keySets.get(issuer), {
+      issuer, audience: env.ACCESS_AUDIENCE, algorithms: ['RS256'], requiredClaims: ['exp'],
+    });
     return true;
   } catch (error) {
     if (error.code?.startsWith('ERR_JWT') || error.code?.startsWith('ERR_JWS') ||
