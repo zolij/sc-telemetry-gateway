@@ -317,6 +317,195 @@ public sealed class DeliveryTests
         await app.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task AggregatorOverloadResetsStateOnReconnect()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var state = new ReconnectingGameState();
+        await using var app = await StartReconnectingGame(state, timeout.Token);
+        var address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+        var store = new TelemetryAggregator(["actor.vitals.heart_rate", "vehicle.state.flight.instruments.speed"], Guid.NewGuid());
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var frames = 0;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var task = new GameTelemetryReader(address.Port).RunAsync(store, status =>
+        {
+            if (status != "Game connected") return;
+            if (Interlocked.Increment(ref frames) == 1) first.TrySetResult();
+            else second.TrySetResult();
+        }, stop.Token);
+        try
+        {
+            await first.Task.WaitAsync(timeout.Token);
+            var before = store.CloseWindow(0)!;
+            state.FirstRelease.TrySetResult();
+            await second.Task.WaitAsync(timeout.Token);
+            var after = store.CloseWindow(0)!;
+            Assert.NotEqual(before.StreamId, after.StreamId);
+            Assert.DoesNotContain("actor.vitals.heart_rate", after.Snapshot.Keys);
+            Assert.Contains("vehicle.state.flight.instruments.speed", after.Snapshot.Keys);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await Stop(task, stop.Token);
+        }
+    }
+
+    [Fact]
+    public async Task ReceiverRejectionDisablesRemoteAcrossGameReconnectsButKeepsMfdRunning()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var state = new ReconnectingGameState();
+        await using var game = await StartReconnectingGame(state, timeout.Token);
+        var gameAddress = new Uri(game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+        var sender = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runtime = new GatewayRuntime((_, token) => sender.Task.WaitAsync(token));
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var task = runtime.RunAsync(RuntimeOptions(gameAddress.Port), "synthetic", stop.Token, Directory.GetCurrentDirectory());
+        try
+        {
+            await WaitUntil(() => runtime.Status.Mfd == "Listener active" && runtime.Status.Queued > 0, timeout.Token);
+            sender.SetException(new ReceiverRejectedException("Rejected for test"));
+            await WaitUntil(() => runtime.Status.Delivery == "Rejected for test", timeout.Token);
+            Assert.Equal(0, runtime.Status.Queued);
+            state.FirstRelease.TrySetResult();
+            await state.SecondStarted.Task.WaitAsync(timeout.Token);
+            await WaitUntil(() => runtime.Status.Game == "Game connected", timeout.Token);
+            state.SecondRelease.TrySetResult();
+            await state.ThirdStarted.Task.WaitAsync(timeout.Token);
+            await Task.Delay(TimeSpan.FromSeconds(2), timeout.Token);
+            Assert.False(task.IsCompleted);
+            Assert.Equal("Listener active", runtime.Status.Mfd);
+            Assert.Equal("Rejected for test", runtime.Status.Delivery);
+            Assert.Equal(0, runtime.Status.Queued);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await Stop(task, stop.Token);
+        }
+        Assert.Equal("Stopped", runtime.Status.Mfd);
+        Assert.Equal(0, runtime.Status.Queued);
+    }
+
+    [Fact]
+    public async Task CombinedRuntimeObservesUnexpectedSenderFaultAndCleansUp()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var state = new ReconnectingGameState();
+        await using var game = await StartReconnectingGame(state, timeout.Token);
+        var gameAddress = new Uri(game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+        var sender = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runtime = new GatewayRuntime((_, token) => sender.Task.WaitAsync(token));
+        var task = runtime.RunAsync(RuntimeOptions(gameAddress.Port), "synthetic", timeout.Token, Directory.GetCurrentDirectory());
+        await WaitUntil(() => runtime.Status.Mfd == "Listener active", timeout.Token);
+        sender.SetException(new InvalidOperationException("Unexpected sender failure"));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => task.WaitAsync(timeout.Token));
+        Assert.Equal("Unexpected sender failure", error.Message);
+        Assert.Equal("Stopped", runtime.Status.Mfd);
+        Assert.Equal(0, runtime.Status.Queued);
+    }
+
+    [Fact]
+    public async Task CombinedRuntimeJoinsSenderBeforeCleanup()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var state = new ReconnectingGameState();
+        await using var game = await StartReconnectingGame(state, timeout.Token);
+        var gameAddress = new Uri(game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+        var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runtime = new GatewayRuntime(async (_, token) =>
+        {
+            try { await Task.Delay(Timeout.Infinite, token); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                stopping.TrySetResult();
+                await release.Task;
+            }
+        });
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var task = runtime.RunAsync(RuntimeOptions(gameAddress.Port), "synthetic", stop.Token, Directory.GetCurrentDirectory());
+        try
+        {
+            await WaitUntil(() => runtime.Status.Mfd == "Listener active", timeout.Token);
+            await stop.CancelAsync();
+            await stopping.Task.WaitAsync(timeout.Token);
+            Assert.False(task.IsCompleted);
+            Assert.Equal("Listener active", runtime.Status.Mfd);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await stop.CancelAsync();
+            await Stop(task, stop.Token);
+        }
+        Assert.Equal("Stopped", runtime.Status.Mfd);
+    }
+
+    private static GatewayOptions RuntimeOptions(int gamePort)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var mfdPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        return new GatewayOptions
+        {
+            GamePort = gamePort, Endpoint = "wss://receiver.example/", IntervalSeconds = 1,
+            Fields = ["actor.vitals.heart_rate", "vehicle.state.flight.instruments.speed"],
+            MfdEnabled = true, MfdAddress = "127.0.0.1", MfdPort = mfdPort,
+            MfdFields = ["actor.vitals.heart_rate"]
+        };
+    }
+
+    private static async Task WaitUntil(Func<bool> condition, CancellationToken token)
+    {
+        while (!condition()) await Task.Delay(20, token);
+    }
+
+    private static async Task<WebApplication> StartReconnectingGame(ReconnectingGameState state, CancellationToken token)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0, l => l.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        builder.Services.AddSingleton(state);
+        var app = builder.Build();
+        app.MapGrpcService<ReconnectingGame>();
+        await app.StartAsync(token);
+        return app;
+    }
+
+    public sealed class ReconnectingGameState
+    {
+        public int Calls;
+        public TaskCompletionSource FirstRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ThirdStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public sealed class ReconnectingGame(ReconnectingGameState state) : GameTelemetryService.GameTelemetryServiceBase
+    {
+        public override async Task TelemetryStream(TelemetryStreamRequest request,
+            IServerStreamWriter<TelemetryStreamResponse> responseStream, ServerCallContext context)
+        {
+            var call = Interlocked.Increment(ref state.Calls);
+            if (call == 2) state.SecondStarted.TrySetResult();
+            if (call >= 3) state.ThirdStarted.TrySetResult();
+            await responseStream.WriteAsync(call == 1
+                ? new() { Actor = new() { Vitals = new() { HeartRate = 72 } } }
+                : new() { Vehicle = new() { State = new() { Flight = new() { Instruments = new() { Speed = 42 } } } } });
+            try
+            {
+                await (call == 1 ? state.FirstRelease.Task : call == 2 ? state.SecondRelease.Task : Task.Delay(Timeout.Infinite, context.CancellationToken))
+                    .WaitAsync(context.CancellationToken);
+            }
+            catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested) { }
+        }
+    }
+
     private static async Task<WebApplication> StartGame(CancellationToken token)
     {
         var builder = WebApplication.CreateSlimBuilder();

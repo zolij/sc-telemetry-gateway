@@ -6,14 +6,14 @@ internal sealed class TrayContext : ApplicationContext
 {
     public const string ProductName = "Star Citizen Telemetry Gateway";
     private readonly NotifyIcon icon;
-    private readonly SettingsStore store = new();
+    private readonly ContextMenuStrip menu;
+    private readonly SettingsStore store;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 500 };
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60000 };
     private readonly CancellationTokenSource lifetime = new();
     private readonly ToolStripMenuItem start;
     private readonly ToolStripMenuItem pause;
-    private readonly Form statusWindow = new() { Text = ProductName, Size = new Size(640, 300), StartPosition = FormStartPosition.CenterScreen };
-    private readonly Label statusLabel = new() { Dock = DockStyle.Fill, Padding = new Padding(16) };
+    private readonly DashboardForm statusWindow = new();
     private GatewayOptions options;
     private string key;
     private GatewayRuntime? runtime;
@@ -25,15 +25,16 @@ internal sealed class TrayContext : ApplicationContext
     private string updateStatus = "Not checked";
     private readonly ToolStripMenuItem checkUpdates;
 
-    public TrayContext(bool smokeTest = false)
+    public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null)
     {
+        store = settingsStore ?? new SettingsStore();
         (options, key) = store.Load();
         icon = new NotifyIcon { Text = ProductName, Icon = SystemIcons.Application, Visible = true };
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Status", null, (_, _) => { statusWindow.Show(); statusWindow.Activate(); });
+        menu = new ContextMenuStrip();
+        menu.Items.Add("Open dashboard", null, (_, _) => ShowDashboard());
         menu.Items.Add("Settings", null, async (_, _) => await EditSettings());
         start = new("Start", null, (_, _) => Start());
-        pause = new("Pause and clear buffer", null, async (_, _) => await Stop());
+        pause = new("Pause and clear buffer", null, async (_, _) => await Pause());
         menu.Items.Add(start);
         menu.Items.Add(pause);
         checkUpdates = new("Check for updates...", null, async (_, _) => await CheckUpdates(true));
@@ -54,11 +55,34 @@ internal sealed class TrayContext : ApplicationContext
             ExitThread();
         });
         icon.ContextMenuStrip = menu;
-        icon.DoubleClick += (_, _) => { statusWindow.Show(); statusWindow.Activate(); };
-        statusWindow.Controls.Add(statusLabel);
-        statusWindow.FormClosing += (_, e) =>
+        icon.DoubleClick += (_, _) => ShowDashboard();
+        statusWindow.StartRequested += (_, _) => Start();
+        statusWindow.PauseRequested += async (_, _) => await Pause();
+        statusWindow.SettingsRequested += async (_, _) => await EditSettings();
+        statusWindow.PairingCodeRequested += (_, _) =>
         {
-            if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; statusWindow.Hide(); }
+            if (runtime?.Status.Mfd != "Listener active" || runtime.MfdServer is null) return;
+            statusWindow.ShowPairingCode(runtime.MfdServer.CreatePairingCode());
+        };
+        statusWindow.ApproveRequested += (_, _) =>
+        {
+            if (statusWindow.SelectedRequest is { } id && runtime?.MfdServer?.ApproveRequest(id) != true)
+                MessageBox.Show(statusWindow, "The request is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            statusWindow.ClearPairingCode();
+            RefreshStatus();
+        };
+        statusWindow.DenyRequested += (_, _) =>
+        {
+            if (statusWindow.SelectedRequest is { } id && runtime?.MfdServer?.DenyRequest(id) != true)
+                MessageBox.Show(statusWindow, "The request is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            statusWindow.ClearPairingCode();
+            RefreshStatus();
+        };
+        statusWindow.RevokeRequested += (_, _) =>
+        {
+            if (statusWindow.SelectedDevice is { } id && runtime?.MfdServer?.RevokeDevice(id) != true)
+                MessageBox.Show(statusWindow, "The device is no longer available.", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            RefreshStatus();
         };
         timer.Tick += (_, _) => RefreshStatus();
         timer.Start();
@@ -69,9 +93,9 @@ internal sealed class TrayContext : ApplicationContext
         };
         if (!smokeTest) updateTimer.Start();
         RefreshStatus();
+        statusWindow.Show();
         if (smokeTest)
         {
-            statusWindow.Show();
             using var settings = new SettingsForm(options, key);
             settings.Show();
             settings.Refresh();
@@ -82,18 +106,28 @@ internal sealed class TrayContext : ApplicationContext
         }
     }
 
+    private void ShowDashboard()
+    {
+        statusWindow.Show();
+        if (statusWindow.WindowState == FormWindowState.Minimized)
+            statusWindow.WindowState = FormWindowState.Normal;
+        statusWindow.Activate();
+    }
+
     private void Start()
     {
         if (running is not null || busy) return;
         try
         {
             options.Validate();
-            if (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl))
+            if (options.RemoteConfigured && (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl)))
                 throw new ArgumentException("Configure an API key in Settings first.");
             error = null;
             runtime = new();
             stop = new();
-            running = Observe(runtime.RunAsync(options, key, stop.Token));
+            var activeRuntime = runtime;
+            var token = stop.Token;
+            running = Observe(Task.Run(() => activeRuntime.RunAsync(options, key, token)));
         }
         catch (ArgumentException ex) { MessageBox.Show(ex.Message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         RefreshStatus();
@@ -121,14 +155,23 @@ internal sealed class TrayContext : ApplicationContext
         RefreshStatus();
     }
 
+    private async Task Pause()
+    {
+        if (busy) return;
+        busy = true;
+        RefreshStatus();
+        try { await Stop(); }
+        finally { busy = false; RefreshStatus(); }
+    }
+
     private async Task EditSettings()
     {
         if (busy || updateBusy) return;
         busy = true;
         try
         {
-            using var form = new SettingsForm(options, key);
-            if (form.ShowDialog() != DialogResult.OK) return;
+            using var form = new SettingsForm(options, key, running is not null);
+            if (form.ShowDialog(statusWindow.Visible ? statusWindow : null) != DialogResult.OK) return;
             await Stop();
             try
             {
@@ -159,13 +202,8 @@ internal sealed class TrayContext : ApplicationContext
         start.Enabled = running is null && !busy;
         pause.Enabled = running is not null && !busy;
         checkUpdates.Enabled = !busy && !updateBusy;
-        var status = runtime?.Status;
-        statusLabel.Text = (running is null ? "Collection paused. No data is being uploaded." : "Collection running.") +
-            $"\n\nGame: {status?.Game ?? "Stopped"}\nReceiver: {status?.Delivery ?? "Stopped"}" +
-            $"\nQueued: {status?.Queued ?? 0} batches / {status?.QueueBytes ?? 0} bytes" +
-            $"\nDropped: {status?.BatchesDropped ?? 0} batches, {status?.EventsDropped ?? 0} events" +
-            $"\nLast ACK (UTC): {status?.LastAcknowledged?.ToString("u") ?? "None"}" +
-            $"\nSelected fields: {options.Fields.Count}\nUpdates: {updateStatus}" + (error is null ? "" : "\n\nError: " + error);
+        statusWindow.UpdateView(running is not null, busy || updateBusy, options, runtime?.Status,
+            runtime?.MfdServer?.Status, updateStatus, error);
     }
 
     private async Task CheckUpdates(bool interactive)
@@ -250,7 +288,7 @@ internal sealed class TrayContext : ApplicationContext
             updateTimer.Dispose();
             lifetime.Cancel();
             icon.Visible = false;
-            icon.ContextMenuStrip?.Dispose();
+            menu.Dispose();
             icon.Dispose();
             statusWindow.Dispose();
             stop?.Dispose();

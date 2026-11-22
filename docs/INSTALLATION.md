@@ -11,9 +11,11 @@ user under `%LOCALAPPDATA%\Spaceling.StarCitizenTelemetryGateway`, creates a Sta
 menu shortcut and an uninstall entry, and does not require elevation. There is
 no system service or automatic startup with Windows.
 
-The app stays in the notification area. Telemetry collection is always paused
-on launch, including after an update. Configure a WSS receiver, API key and
-allowed fields, then choose Start explicitly.
+The dashboard opens on launch and the app stays in the notification area when
+the window is closed. Double-click the tray icon to reopen the dashboard.
+Telemetry collection is always paused on launch, including after an update.
+Configure a destination and allowed fields in Settings, then choose Start
+explicitly in the dashboard.
 
 ### Upgrading from 0.2.0-preview.1
 

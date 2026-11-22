@@ -42,10 +42,12 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
    server.game.telemetry.enabled 1
    ```
 
-3. Open **Settings** from the tray icon. Configure the same game port, your
-   receiver's full WSS URL and its API key. Select only the fields you need.
-4. Choose **Start** explicitly. Closing the status window leaves the tray running.
-   Use **Pause and clear buffer** or **Exit** to stop collection and upload.
+3. Open **Settings** in the dashboard. Under **Game & receiver**, configure the
+   game port and, if using a receiver, its WSS URL and API key. Select only the
+   fields you need under **Remote fields** or **MFD fields**.
+4. Choose **Start collection** explicitly in the dashboard. Closing the
+   dashboard leaves the tray running; double-click the tray icon to reopen it.
+   Use **Pause and clear buffer** or the tray **Exit** to stop collection.
 
 The app neither starts with Windows nor resumes collection automatically.
 An empty field selection never uploads telemetry. Applying settings stops the
@@ -58,6 +60,27 @@ the separately DPAPI-encrypted key is `api-key.bin`. Do not share either file.
 Loss of the Windows user profile/key material may make the key unrecoverable;
 enter it again instead of disabling protection. Corrupt settings are reported,
 not silently replaced. No telemetry values are written to disk.
+
+## Local phone/tablet MFD
+
+The bundled MFD is disabled by default. To use it, select **Enable local MFD
+access** in Settings, choose an eligible IPv4 address and port, and select an
+independent MFD field allowlist. Start collection and open the displayed URL on
+a phone or tablet on the same trusted network.
+
+Create a two-minute pairing code in the dashboard and have the browser submit it
+with a device label. Select the pending request in the dashboard and explicitly
+approve or deny it. Approved devices can be revoked independently there. The HTTP and WebSocket interface
+is **not encrypted** and may expose telemetry to an observer or active attacker
+on the network. It does not use WSS, secure-context-only PWA features or remote
+upload credentials. Use it only on a trusted network; configure the Windows
+Firewall prompt yourself and do not open router forwarding.
+
+The display has Flight, Systems and Crew views. Each shows key selected values;
+expand “More” for other fields in that view. Fields not selected in the MFD
+settings are labelled as such, unavailable values are not replaced with zeros,
+and stale or last-known data is marked. Values are shown without assumed units
+or scales.
 
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates
