@@ -10,7 +10,7 @@ custom_domain = true
 [[d1_databases]]
 binding = "DB"
 database_name = "sc-telemetry-usage"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "f50cc359-fb5c-4835-b582-4becc07fa01a"
 
 [[ratelimits]]
 name = "INGEST_LIMITER"
@@ -21,5 +21,5 @@ simple = { limit = 30, period = 60 }
 crons = ["0 * * * *"]
 
 [vars]
-ACCESS_TEAM_DOMAIN = "REPLACE_WITH_TEAM.cloudflareaccess.com"
-ACCESS_AUDIENCE = "REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE"
+ACCESS_TEAM_DOMAIN = "zolij.cloudflareaccess.com"
+ACCESS_AUDIENCE = "9a5cfb99e4689f595b95488de6cabf5b2544389722830d80ce6aaf4f1c30f920"
