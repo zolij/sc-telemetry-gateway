@@ -319,10 +319,13 @@ public sealed class MfdTests
             request.Headers.IfMatch.Add(new("\"1\""));
             return await http.SendAsync(request, test.Token);
         }
-        using var saved = await Save();
-        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
-        using var conflict = await Save();
-        Assert.Equal(HttpStatusCode.PreconditionFailed, conflict.StatusCode);
+        var edits = await Task.WhenAll(Save(), Save());
+        try
+        {
+            Assert.Single(edits, response => response.StatusCode == HttpStatusCode.OK);
+            Assert.Single(edits, response => response.StatusCode == HttpStatusCode.PreconditionFailed);
+        }
+        finally { foreach (var response in edits) response.Dispose(); }
         using var missingRevision = await http.DeleteAsync("/api/mfd/profiles/" + profile.Id, test.Token);
         Assert.Equal((HttpStatusCode)428, missingRevision.StatusCode);
         http.DefaultRequestHeaders.Authorization = new("Bearer", firstToken);
@@ -344,9 +347,33 @@ public sealed class MfdTests
         http.DefaultRequestHeaders.Add("Origin", test.Origin);
         using var invalid = await http.PostAsync("/api/mfd/profiles", new StringContent("{broken"), test.Token);
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var missingSchema = await http.PostAsync("/api/mfd/profiles",
+            new StringContent(JsonSerializer.Serialize(MfdProfileTests.Draft(), WireJson.Options).Replace("\"schema_version\":1,", "")),
+            test.Token);
+        Assert.Equal(HttpStatusCode.BadRequest, missingSchema.StatusCode);
+        var validJson = JsonSerializer.Serialize(MfdProfileTests.Draft(), WireJson.Options);
+        using var atLimit = await http.PostAsync("/api/mfd/profiles",
+            new StringContent(validJson + new string(' ', MfdProfile.MaxRequestBytes - Encoding.UTF8.GetByteCount(validJson))), test.Token);
+        Assert.Equal(HttpStatusCode.Created, atLimit.StatusCode);
         using var oversized = await http.PostAsync("/api/mfd/profiles",
             new StringContent(new string('x', MfdProfile.MaxRequestBytes + 1)), test.Token);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, oversized.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChunkedProfileOverflowIsRejectedWithoutWaitingForTheRemainingBody()
+    {
+        await using var test = await MfdTestServer.Start();
+        var token = await test.Pair();
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, test.Port, test.Token);
+        var stream = client.GetStream();
+        var length = MfdProfile.MaxRequestBytes + 1;
+        var data = $"POST /api/mfd/profiles HTTP/1.1\r\nHost: 127.0.0.1:{test.Port}\r\nOrigin: {test.Origin}\r\nAuthorization: Bearer {token}\r\nTransfer-Encoding: chunked\r\nContent-Type: application/json\r\n\r\n{length:X}\r\n" + new string('x', length) + "\r\n";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(data), test.Token);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        using var reader = new StreamReader(stream);
+        Assert.Contains("413", await reader.ReadLineAsync(deadline.Token));
     }
 
     [Fact]

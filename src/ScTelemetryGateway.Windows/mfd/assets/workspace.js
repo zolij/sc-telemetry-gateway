@@ -74,6 +74,7 @@ const MfdWorkspace = (() => {
     for (const button of document.querySelectorAll("#dashboard [data-action]")) button.disabled = busy;
     $("profile-select").disabled = busy;
     for (const id of ["edit-profile", "copy-profile", "delete-profile"]) $(id).disabled = busy || !saved || editing;
+    $("copy-profile").disabled ||= summaries.length >= limits.profiles;
     $("export-profile").disabled = busy || !profile();
     $("new-profile").disabled = busy || editing || summaries.length >= limits.profiles;
     $("import-profile").disabled = busy || editing || summaries.length >= limits.profiles;
@@ -460,7 +461,7 @@ const MfdWorkspace = (() => {
     const exported = clone(profile());
     delete exported.id; delete exported.revision;
     validate(exported);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(exported)], { type: "application/json" }));
     const link = node("a");
     link.href = url; link.download = "mfd-profile.json";
     link.click();
@@ -481,8 +482,7 @@ const MfdWorkspace = (() => {
       draft = { schema_version: 1, name: "My MFD", pages: [{ id: uuid(), name: "Page 1", tiles: [] }] };
       saved = null; pageId = draft.pages[0].id;
       render(); notice("Build your display, then SAVE TO PC.");
-      $("profile-name").focus(); $("profile-name").select();
-    }));
+    }).then(() => { if (draft) { $("profile-name").focus(); $("profile-name").select(); } }));
     $("edit-profile").addEventListener("click", () => run(async () => {
       catalog = (await api("fields")).data;
       saved = (await api("profiles/" + saved.id)).data;
@@ -492,12 +492,16 @@ const MfdWorkspace = (() => {
     $("save-profile").addEventListener("click", () => run(() => save()));
     $("save-copy").addEventListener("click", () => run(() => save(true)));
     $("reload-profile").addEventListener("click", () => {
-      if (canLeave()) run(() => selectProfile(saved?.id ?? ""));
+      if (canLeave()) run(async () => {
+        await refresh(true);
+        await selectProfile(summaries.some(item => item.id === saved?.id) ? saved.id : "");
+      });
     });
     $("cancel-edit").addEventListener("click", () => {
       if (!canLeave()) return;
       run(async () => {
         draft = null; $("conflict-actions").hidden = true;
+        render();
         await refresh(true); render(); notice("Draft discarded.");
       });
     });
@@ -514,7 +518,13 @@ const MfdWorkspace = (() => {
       });
     });
     $("profile-name").addEventListener("input", event => { if (draft) draft.name = event.target.value; });
-    $("page-name").addEventListener("input", event => { if (draft) page().name = event.target.value; });
+    $("page-name").addEventListener("input", event => {
+      if (!draft) return;
+      page().name = event.target.value;
+      $("page-title").textContent = page().name;
+      const index = draft.pages.findIndex(item => item.id === pageId);
+      $("page-navigation").children[index].textContent = String(index + 1).padStart(2, "0") + " / " + page().name;
+    });
     $("add-page").addEventListener("click", () => run(() => {
       const next = { id: uuid(), name: "Page " + (draft.pages.length + 1), tiles: [] };
       draft.pages.push(next); pageId = next.id; render();

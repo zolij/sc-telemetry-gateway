@@ -67,6 +67,43 @@ public sealed class MfdProfileTests : IDisposable
     }
 
     [Fact]
+    public void StoreByteLimitAcceptsTheBoundaryAndRejectsOneMoreByte()
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "mfd-profiles.json");
+        const string empty = "{\"schema_version\":1,\"profiles\":[]}";
+        File.WriteAllText(path, empty + new string(' ', MfdProfile.MaxStoreBytes - empty.Length));
+        Assert.Empty(Store.List());
+        File.AppendAllText(path, " ");
+        Assert.Throws<InvalidDataException>(() => Store.List());
+        Assert.Equal(MfdProfile.MaxStoreBytes + 1L, new FileInfo(path).Length);
+    }
+
+    [Fact]
+    public void ListsAndStatusRulesPreserveTheirConfigurationAndUnknownVersionsFail()
+    {
+        var draft = Draft();
+        var tile = draft.Pages[0].Tiles[0];
+        var configured = draft with
+        {
+            Pages = [draft.Pages[0] with { Tiles =
+            [
+                tile with { Widget = "status", Rules = [new() { Value = "72", Label = "Normal", Color = "green" }] },
+                tile with { Id = Guid.NewGuid(), Field = "events.events.type", Widget = "list" }
+            ] }]
+        };
+        var saved = Store.Create(configured);
+        Assert.Equal("Normal", Store.Get(saved.Id)!.Pages[0].Tiles[0].Rules[0].Label);
+        Assert.Equal("list", Store.Get(saved.Id)!.Pages[0].Tiles[1].Widget);
+        Assert.Throws<ArgumentException>(() => (configured with { SchemaVersion = 2 }).Validate());
+        Assert.Throws<ArgumentException>(() => (configured with { Pages = [configured.Pages[0] with
+        {
+            Tiles = [tile with { Widget = "status", Rules =
+                [new() { Value = "72", Label = "Normal", Color = "arbitrary-css" }] }]
+        }] }).Validate());
+    }
+
+    [Fact]
     public async Task ConcurrentCreationCannotExceedTheProfileLimit()
     {
         var store = Store;

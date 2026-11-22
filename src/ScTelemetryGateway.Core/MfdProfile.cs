@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Google.Protobuf.Reflection;
 
 namespace ScTelemetryGateway.Core;
@@ -30,6 +31,7 @@ public sealed record MfdPage
 
 public sealed record MfdProfile
 {
+    [JsonRequired]
     public int SchemaVersion { get; init; } = 1;
     public Guid Id { get; init; }
     public long Revision { get; init; }

@@ -30,19 +30,21 @@ public sealed partial class MfdServer
         }
         var authorization = context.Request.Headers.Authorization.ToString();
         var approvedToken = false;
+        var unavailable = false;
         lock (gate)
         {
-            if (stopping)
-            {
-                context.Response.StatusCode = 503;
-                return;
-            }
-            if (authorization.StartsWith("Bearer ", StringComparison.Ordinal) && authorization.Length == 71)
+            unavailable = stopping;
+            if (!stopping && authorization.StartsWith("Bearer ", StringComparison.Ordinal) && authorization.Length == 71)
             {
                 var tokenBytes = Encoding.UTF8.GetBytes(authorization[7..]);
                 approvedToken = approved.Values.Any(device =>
                     CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(device.Token), tokenBytes));
             }
+        }
+        if (unavailable)
+        {
+            await ProfileError(context, 503, "listener_stopping", "The gateway is shutting down.");
+            return;
         }
         if (!approvedToken)
         {
@@ -56,6 +58,11 @@ public sealed partial class MfdServer
         {
             var routeId = context.Request.RouteValues["id"]?.ToString();
             var id = routeId is null ? Guid.Empty : Guid.Parse(routeId);
+            if (routeId is not null && id == Guid.Empty)
+            {
+                await ProfileError(context, 400, "invalid_profile_id", "A nonempty profile identifier is required.");
+                return;
+            }
             if (HttpMethods.IsGet(context.Request.Method))
             {
                 if (context.Request.Path == "/api/mfd/fields")

@@ -84,12 +84,14 @@ public sealed class MfdProfileStore(string directory)
     private Dictionary<Guid, MfdProfile> Load()
     {
         if (profiles is not null) return profiles;
-        if (!File.Exists(path))
+        FileStream stream;
+        try { stream = File.OpenRead(path); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             profiles = [];
             return profiles;
         }
-        using var stream = File.OpenRead(path);
+        using var file = stream;
         if (stream.Length > MfdProfile.MaxStoreBytes) throw new InvalidDataException("Profile store exceeds its size limit.");
         var document = JsonSerializer.Deserialize<Document>(stream, WireJson.Options)
             ?? throw new JsonException("Profile store cannot be null.");
