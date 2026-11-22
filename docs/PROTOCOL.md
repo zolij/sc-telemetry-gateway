@@ -161,7 +161,7 @@ The browser receives `mfd.snapshot` schema v1 text messages. Each message is a
 full replaceable snapshot and is published at a target cadence of 4 Hz
 (250 ms). The message contains `session_id`, `stream_id`, `sequence`,
 `connection_status`, `published_at`, `last_frame_at`, `last_frame_age_ms`,
-`selected_fields`, `events_dropped`, and the available selected `fields`.
+`selected_fields`, `events`, `events_dropped`, and the available selected `fields`.
 
 Field entries contain `value`, `updated_at`, `last_known`, and `age_ms`. Invalid numbers
 are represented as unavailable (`null`) values. Missing fields remain absent
@@ -197,6 +197,11 @@ tracks the last event update; the browser labels this tile as history rather
 than stale live data. `events_dropped` counts older events removed by this cap,
 and the browser displays overflow warnings. Stream restarts and pauses clear
 both the history and counter; disconnection retains them as last-known data.
+The additive `events` array exposes the same retained history as
+`{sequence, received_at, type}` records. Event sequence numbers increase for
+each occurrence, including identical event types, and reset with `stream_id`.
+They remain stable across repeated snapshots. If `events.events.type` is not
+selected, this array is empty and event data is not exposed.
 
 ### Custom MFD profiles
 

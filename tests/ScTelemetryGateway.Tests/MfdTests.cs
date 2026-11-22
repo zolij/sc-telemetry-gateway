@@ -590,6 +590,25 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public void EventIdentitiesSurviveSnapshotRepeatsAndRestartWithTheGameStream()
+    {
+        var store = new MfdSnapshotStore(["events.events.type"]);
+        var frame = new TelemetryStreamResponse { Events = new() };
+        frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorEnterSeat });
+        frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorEnterSeat });
+        store.Ingest(frame);
+        var first = store.Current();
+        Assert.Equal(new long[] { 1, 2 }, first.Events.Select(item => item.Sequence));
+        Assert.Equal(first.Events, store.Current().Events);
+        store.StartStream();
+        Assert.Empty(store.Current().Events);
+        store.Ingest(frame);
+        var restarted = store.Current();
+        Assert.NotEqual(first.StreamId, restarted.StreamId);
+        Assert.Equal(new long[] { 1, 2 }, restarted.Events.Select(item => item.Sequence));
+    }
+
+    [Fact]
     public void EventHistoryReportsOverflowAndResetsWithTheStream()
     {
         const string eventType = "events.events.type";
@@ -603,6 +622,8 @@ public sealed class MfdTests
         Assert.Equal(100, history.Fields[eventType].Value!.AsArray().Count);
         Assert.Equal("GAME_EVENT_TYPE_ACTOR_DEAD", history.Fields[eventType].Value!.AsArray()[0]!.GetValue<string>());
         Assert.Equal(1, history.EventsDropped);
+        Assert.Equal(2, history.Events[0].Sequence);
+        Assert.Equal(101, history.Events[^1].Sequence);
         store.Disconnected();
         Assert.True(store.Current().Fields[eventType].LastKnown);
         Assert.Equal(1, store.Current().EventsDropped);
@@ -616,6 +637,7 @@ public sealed class MfdTests
         var unselected = new MfdSnapshotStore([]);
         unselected.Ingest(frame);
         Assert.Empty(unselected.Current().Fields);
+        Assert.Empty(unselected.Current().Events);
         Assert.Equal(0, unselected.Current().EventsDropped);
     }
 
