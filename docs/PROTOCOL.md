@@ -161,7 +161,7 @@ The browser receives `mfd.snapshot` schema v1 text messages. Each message is a
 full replaceable snapshot and is published at a target cadence of 4 Hz
 (250 ms). The message contains `session_id`, `stream_id`, `sequence`,
 `connection_status`, `published_at`, `last_frame_at`, `last_frame_age_ms`,
-`selected_fields`, and the available selected `fields`.
+`selected_fields`, `events_dropped`, and the available selected `fields`.
 
 Field entries contain `value`, `updated_at`, `last_known`, and `age_ms`. Invalid numbers
 are represented as unavailable (`null`) values. Missing fields remain absent
@@ -190,8 +190,13 @@ and browser session storage. Shutdown cancels pending requests and connections.
 
 Each display has its own sender with at most one replaceable pending snapshot.
 A send exceeding 5 seconds disconnects only that display; slow displays cannot
-block updates to other clients. Selected event fields contain the values from
-the latest received event section, not an accumulated event history.
+block updates to other clients. When selected, `events.events.type` contains
+the latest 100 events in the current game stream, oldest first, including
+duplicates. Empty event sections do not erase history. Its field timestamp
+tracks the last event update; the browser labels this tile as history rather
+than stale live data. `events_dropped` counts older events removed by this cap,
+and the browser displays overflow warnings. Stream restarts and pauses clear
+both the history and counter; disconnection retains them as last-known data.
 
 ### Custom MFD profiles
 

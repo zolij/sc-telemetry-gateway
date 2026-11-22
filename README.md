@@ -111,8 +111,11 @@ tiles per page are supported, subject to a 512 KiB profile/import limit and a
 The field library includes enabled fields even before game values arrive.
 Fields no longer selected in gateway MFD settings are marked as such; missing
 values are never replaced with zeros. Stale, offline and last-known values
-remain visibly marked. Lists show the latest received repeated values, not an
-accumulated event history. The layout adapts to tablet and monitor widths.
+remain visibly marked. Most lists show the latest received repeated values.
+The event list retains the current stream's last 100 events, including
+duplicates, and reports how many older events were dropped. Restarting the
+game stream or pausing clears this history. The layout adapts to tablet and
+monitor widths.
 
 Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates

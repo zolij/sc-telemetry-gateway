@@ -83,9 +83,7 @@ public sealed class TelemetryAggregator
                         events.Dequeue();
                         eventsDropped++;
                     }
-                    events.Enqueue(new(++eventSequence, now,
-                        GameEvent.Descriptor.FindFieldByNumber(1).EnumType.FindValueByNumber((int)item.Type)?.Name ??
-                        ((int)item.Type).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                    events.Enqueue(new(++eventSequence, now, FieldCatalog.EventType(item)));
                 }
             }
             if (frame.Actor?.State?.Locomotion == ActorLocomotionState.OnFoot ||

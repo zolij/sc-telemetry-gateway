@@ -171,6 +171,7 @@ const MfdWorkspace = (() => {
       const maximum = selected.has(definition?.maximum_field) ? snapshot?.fields?.[definition.maximum_field] : null;
       const maximumValue = MfdPresentation.maximumValue(field, maximum);
       const needsMaximum = mode === "percent_max" && field?.value != null && !MfdPresentation.validMaximum(maximumValue);
+      const history = tile.field === "events.events.type";
       card.dataset.color = "neutral";
       if (!selected.has(tile.field) || !field) {
         delete value.dataset.signature;
@@ -181,7 +182,7 @@ const MfdWorkspace = (() => {
       }
       const age = Number.isFinite(field.age_ms) ? field.age_ms + elapsed : NaN;
       const state = !online ? "OFFLINE / LAST KNOWN" : field.last_known ? "LAST KNOWN" : field.value === null ? "UNAVAILABLE" :
-        !Number.isFinite(age) ? "AGE UNKNOWN" : age >= 2000 ? "STALE" : "LIVE";
+        history ? "HISTORY" : !Number.isFinite(age) ? "AGE UNKNOWN" : age >= 2000 ? "STALE" : "LIVE";
       const rule = tile.widget === "status" && field.value !== null
         ? tile.rules.find(item => item.value === String(field.value)) : null;
       if (tile.widget === "list" && Array.isArray(field.value)) {
@@ -198,11 +199,15 @@ const MfdWorkspace = (() => {
       }
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;
       meta.textContent = state + " / " + ageText(age);
+      if (history && snapshot.events_dropped > 0) {
+        meta.textContent += " / " + snapshot.events_dropped + " EARLIER EVENTS DROPPED";
+        card.dataset.color = "amber";
+      }
       if (needsMaximum && !rule)
         meta.textContent = "PERCENTAGE UNAVAILABLE / " + meta.textContent +
           " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
-        field.value === null || needsMaximum && !rule ? "unavailable" : !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
+        field.value === null || needsMaximum && !rule ? "unavailable" : !history && (!Number.isFinite(age) || age >= 2000) ? "stale" : "live";
     }
   }
 

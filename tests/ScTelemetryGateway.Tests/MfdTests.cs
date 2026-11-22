@@ -564,7 +564,7 @@ public sealed class MfdTests
     }
 
     [Fact]
-    public void SnapshotIncludesSelectedEventTypesAndReplacesTheEventSection()
+    public void SnapshotRetainsDuplicateEventHistoryAcrossEmptySections()
     {
         const string eventType = "events.events.type";
         var store = new MfdSnapshotStore([eventType]);
@@ -572,10 +572,42 @@ public sealed class MfdTests
         frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorLeaveSeat });
         store.Ingest(frame);
         Assert.Equal("[\"GAME_EVENT_TYPE_ACTOR_LEAVE_SEAT\"]", store.Current().Fields[eventType].Value!.ToJsonString());
+        store.Ingest(frame);
+        Assert.Equal(2, store.Current().Fields[eventType].Value!.AsArray().Count);
         store.Ingest(new() { Actor = new() });
         Assert.True(store.Current().Fields.ContainsKey(eventType));
         store.Ingest(new() { Events = new() });
-        Assert.Equal("[]", store.Current().Fields[eventType].Value!.ToJsonString());
+        Assert.Equal(2, store.Current().Fields[eventType].Value!.AsArray().Count);
+    }
+
+    [Fact]
+    public void EventHistoryReportsOverflowAndResetsWithTheStream()
+    {
+        const string eventType = "events.events.type";
+        var store = new MfdSnapshotStore([eventType]);
+        var frame = new TelemetryStreamResponse { Events = new() };
+        frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorSpawn });
+        for (var i = 0; i < MfdSnapshotStore.MaxEvents; i++)
+            frame.Events.Events.Add(new GameEvent { Type = GameEvent.Types.GameEventType.ActorDead });
+        store.Ingest(frame);
+        var history = store.Current();
+        Assert.Equal(100, history.Fields[eventType].Value!.AsArray().Count);
+        Assert.Equal("GAME_EVENT_TYPE_ACTOR_DEAD", history.Fields[eventType].Value!.AsArray()[0]!.GetValue<string>());
+        Assert.Equal(1, history.EventsDropped);
+        store.Disconnected();
+        Assert.True(store.Current().Fields[eventType].LastKnown);
+        Assert.Equal(1, store.Current().EventsDropped);
+        store.StartStream();
+        Assert.Empty(store.Current().Fields);
+        Assert.Equal(0, store.Current().EventsDropped);
+        store.Ingest(frame);
+        store.SetPaused();
+        Assert.Empty(store.Current().Fields);
+        Assert.Equal(0, store.Current().EventsDropped);
+        var unselected = new MfdSnapshotStore([]);
+        unselected.Ingest(frame);
+        Assert.Empty(unselected.Current().Fields);
+        Assert.Equal(0, unselected.Current().EventsDropped);
     }
 
     [Fact]

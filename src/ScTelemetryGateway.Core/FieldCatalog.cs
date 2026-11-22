@@ -84,10 +84,16 @@ public static class FieldCatalog
         if (field.FieldType == FieldType.Enum)
         {
             var number = Convert.ToInt32(value, CultureInfo.InvariantCulture);
-            return (JsonValue.Create(field.EnumType.FindValueByNumber(number)?.Name ?? number.ToString(CultureInfo.InvariantCulture)), 0);
+            return (JsonValue.Create(EnumName(field, number)), 0);
         }
         if (value is long or ulong)
             return (JsonValue.Create(Convert.ToString(value, CultureInfo.InvariantCulture)), 0);
         return (System.Text.Json.JsonSerializer.SerializeToNode(value), 0);
     }
+
+    internal static string EventType(GameEvent item) =>
+        EnumName(GameEvent.Descriptor.FindFieldByNumber(1), (int)item.Type);
+
+    private static string EnumName(FieldDescriptor field, int number) =>
+        field.EnumType.FindValueByNumber(number)?.Name ?? number.ToString(CultureInfo.InvariantCulture);
 }

@@ -12,12 +12,14 @@ public sealed record MfdSnapshot(
 {
     public string Type => "mfd.snapshot";
     public int SchemaVersion => 1;
+    public long EventsDropped { get; init; }
 }
 
 public sealed class MfdSnapshotStore
 {
     public const int MaxMessageBytes = 1024 * 1024;
     public const int MaxClients = 8;
+    public const int MaxEvents = 100;
 
     private readonly object gate = new();
     private readonly TelemetryField[] fields;
@@ -30,6 +32,8 @@ public sealed class MfdSnapshotStore
     private DateTimeOffset? lastFrameAt;
     private long? lastFrameTimestamp;
     private long sequence;
+    private readonly Queue<string> events = new();
+    private long eventsDropped;
 
     public MfdSnapshotStore(IEnumerable<string> selected, TimeProvider? clock = null)
     {
@@ -45,6 +49,8 @@ public sealed class MfdSnapshotStore
         {
             streamId = Guid.NewGuid();
             snapshot.Clear();
+            events.Clear();
+            eventsDropped = 0;
             lastFrameAt = null;
             lastFrameTimestamp = null;
             connectionStatus = "connected";
@@ -57,6 +63,8 @@ public sealed class MfdSnapshotStore
         lock (gate)
         {
             snapshot.Clear();
+            events.Clear();
+            eventsDropped = 0;
             lastFrameAt = null;
             lastFrameTimestamp = null;
             connectionStatus = "paused";
@@ -95,6 +103,26 @@ public sealed class MfdSnapshotStore
                 if (!section.Accessor.HasValue(frame))
                     continue;
                 var prefix = section.Name + ".";
+                if (section.Name == "events")
+                {
+                    const string path = "events.events.type";
+                    if (fields.Any(field => field.Path == path))
+                    {
+                        foreach (var item in frame.Events.Events)
+                        {
+                            if (events.Count == MaxEvents)
+                            {
+                                events.Dequeue();
+                                eventsDropped++;
+                            }
+                            events.Enqueue(FieldCatalog.EventType(item));
+                        }
+                        if (frame.Events.Events.Count > 0 || !snapshot.ContainsKey(path))
+                            snapshot[path] = new(new JsonArray(events.Select(value => JsonValue.Create(value)).ToArray()),
+                                now, false, timestamp);
+                    }
+                    continue;
+                }
                 foreach (var path in snapshot.Keys.Where(p => p.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
                     snapshot.Remove(path);
                 foreach (var field in fields.Where(f => f.Path.StartsWith(prefix, StringComparison.Ordinal)))
@@ -128,7 +156,7 @@ public sealed class MfdSnapshotStore
                 ? Math.Max(0, clock.GetElapsedTime(last, timestamp).TotalMilliseconds)
                 : (double?)null;
             return new(sessionId, streamId, sequence, connectionStatus, now, lastFrameAt, frameAge,
-                fields.Select(field => field.Path).ToArray(), copy);
+                fields.Select(field => field.Path).ToArray(), copy) { EventsDropped = eventsDropped };
         }
     }
 }

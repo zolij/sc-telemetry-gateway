@@ -28,6 +28,7 @@ function paint() {
   $("connection").textContent = status;
   $("connection").parentElement.className = "link-status " + (status === "LIVE" ? "live" : status === "OFFLINE" || status === "PAUSED" ? "offline" : "");
   $("frame-age").textContent = Number.isFinite(frameAge) ? "FRAME " + ageText(frameAge).toUpperCase() : "NO FRAME";
+  if (snapshot?.events_dropped > 0) $("frame-age").textContent += " / EVENTS DROPPED: " + snapshot.events_dropped;
   MfdWorkspace.paint(snapshot, online, elapsed, ageText);
 }
 
