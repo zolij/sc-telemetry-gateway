@@ -127,17 +127,21 @@ h1 span { color: var(--accent); }
 .form-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 .status-rule { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-block: 12px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 footer { display: flex; justify-content: space-between; gap: 15px; padding: 24px 0; color: #8ca18e; line-height: 1.5; }
+/* Chromium only keeps the display awake for a sufficiently large, visible video. */
 .wake-video {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  height: 1px;
-  opacity: 0.01;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  object-fit: fill;
+  z-index: 0;
   pointer-events: none;
 }
 body.focus-mode { background: #101815; }
 .focus-mode .console {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
