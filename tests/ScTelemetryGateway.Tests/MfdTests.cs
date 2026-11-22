@@ -213,6 +213,7 @@ public sealed class MfdTests
 
     private sealed class MfdTestServer : IAsyncDisposable
     {
+        private readonly string profileRoot = Path.Combine(Path.GetTempPath(), "sctg-mfd-api-" + Guid.NewGuid().ToString("N"));
         private readonly CancellationTokenSource deadline = new(TimeSpan.FromSeconds(30));
         private readonly HttpClient http = new();
         private bool disposed;
@@ -229,7 +230,7 @@ public sealed class MfdTests
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
             Store = new(fields);
-            Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath());
+            Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(), new MfdProfileStore(profileRoot));
             http.DefaultRequestHeaders.Add("Origin", Origin);
         }
 
@@ -279,7 +280,73 @@ public sealed class MfdTests
             await Server.DisposeAsync();
             http.Dispose();
             deadline.Dispose();
+            if (Directory.Exists(profileRoot)) Directory.Delete(profileRoot, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task ProfileApiRequiresApprovalSharesProfilesAndRejectsConcurrentEdits()
+    {
+        await using var test = await MfdTestServer.Start(["actor.vitals.heart_rate"]);
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        using var denied = await http.GetAsync("/api/mfd/profiles", test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        var firstToken = await test.Pair();
+        var firstDevice = test.Server.Status.Devices.Single().Id;
+        http.DefaultRequestHeaders.Authorization = new("Bearer", firstToken);
+        using var catalog = await http.GetAsync("/api/mfd/fields", test.Token);
+        var fields = await catalog.Content.ReadFromJsonAsync<MfdCatalogField[]>(WireJson.Options, test.Token);
+        Assert.Equal("actor.vitals.heart_rate", Assert.Single(fields!).Path);
+        using var created = await http.PostAsJsonAsync("/api/mfd/profiles", MfdProfileTests.Draft(), WireJson.Options, test.Token);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var profile = (await created.Content.ReadFromJsonAsync<MfdProfile>(WireJson.Options, test.Token))!;
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var shared = await http.GetAsync("/api/mfd/profiles/" + profile.Id, test.Token);
+        Assert.Equal(HttpStatusCode.OK, shared.StatusCode);
+        using var list = await http.GetAsync("/api/mfd/profiles", test.Token);
+        var etag = list.Headers.ETag!;
+        using var unchanged = new HttpRequestMessage(HttpMethod.Get, "/api/mfd/profiles");
+        unchanged.Headers.IfNoneMatch.Add(etag);
+        using var cached = await http.SendAsync(unchanged, test.Token);
+        Assert.Equal(HttpStatusCode.NotModified, cached.StatusCode);
+        async Task<HttpResponseMessage> Save()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Put, "/api/mfd/profiles/" + profile.Id)
+            {
+                Content = JsonContent.Create(profile with { Name = "Shared update" }, options: WireJson.Options)
+            };
+            request.Headers.IfMatch.Add(new("\"1\""));
+            return await http.SendAsync(request, test.Token);
+        }
+        using var saved = await Save();
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        using var conflict = await Save();
+        Assert.Equal(HttpStatusCode.PreconditionFailed, conflict.StatusCode);
+        using var missingRevision = await http.DeleteAsync("/api/mfd/profiles/" + profile.Id, test.Token);
+        Assert.Equal((HttpStatusCode)428, missingRevision.StatusCode);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", firstToken);
+        Assert.True(test.Server.RevokeDevice(firstDevice));
+        using var revoked = await http.GetAsync("/api/mfd/profiles", test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProfileApiRejectsInvalidBodiesAndForeignOrigins()
+    {
+        await using var test = await MfdTestServer.Start();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        http.DefaultRequestHeaders.Add("Origin", "http://foreign.invalid");
+        using var foreign = await http.GetAsync("/api/mfd/profiles", test.Token);
+        Assert.Equal(HttpStatusCode.Forbidden, foreign.StatusCode);
+        http.DefaultRequestHeaders.Remove("Origin");
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        using var invalid = await http.PostAsync("/api/mfd/profiles", new StringContent("{broken"), test.Token);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var oversized = await http.PostAsync("/api/mfd/profiles",
+            new StringContent(new string('x', MfdProfile.MaxRequestBytes + 1)), test.Token);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, oversized.StatusCode);
     }
 
     [Fact]

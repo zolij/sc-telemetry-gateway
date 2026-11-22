@@ -17,6 +17,12 @@ public sealed class MfdProfileStore(string directory)
         lock (gate) return Copy(Load().Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
+    public MfdProfileSummary[] Summaries()
+    {
+        lock (gate) return Load().Values.OrderBy(p => p.Id)
+            .Select(p => new MfdProfileSummary(p.Id, p.Name, p.Revision)).ToArray();
+    }
+
     public MfdProfile? Get(Guid id)
     {
         lock (gate) return Load().TryGetValue(id, out var profile) ? Copy(profile) : null;

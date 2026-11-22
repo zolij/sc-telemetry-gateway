@@ -37,6 +37,8 @@ public sealed class MfdSnapshotStore
         this.clock = clock ?? TimeProvider.System;
     }
 
+    public IReadOnlyList<string> SelectedFields => fields.Select(item => item.Path).ToArray();
+
     public void StartStream()
     {
         lock (gate)

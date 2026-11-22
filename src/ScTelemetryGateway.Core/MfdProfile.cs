@@ -107,4 +107,7 @@ public sealed record MfdCatalogField(string Path, string Type, bool Repeated, st
             descriptor.FieldType == FieldType.Enum
                 ? descriptor.EnumType.Values.Select(value => value.Name).ToArray() : []);
     }
+
 }
+
+public sealed record MfdProfileSummary(Guid Id, string Name, long Revision);
