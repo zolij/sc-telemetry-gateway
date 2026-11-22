@@ -113,15 +113,19 @@ $("unpair-button").addEventListener("click", () => {
 MfdFocus.init();
 MfdWorkspace.init(() => token, paint);
 setInterval(paint, 250);
+const pairingCode = new URLSearchParams(window.location.hash.slice(1)).get("pair");
+if (pairingCode) {
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  token = null;
+  localStorage.removeItem("mfd-session-token");
+}
 if (token) {
   pairing.hidden = true;
   dashboard.hidden = false;
   connect();
   MfdWorkspace.start();
 }
-const pairingCode = new URLSearchParams(window.location.hash.slice(1)).get("pair");
-if (!token && pairingCode) {
-  history.replaceState(null, "", window.location.pathname + window.location.search);
+if (pairingCode) {
   $("pair-code").value = pairingCode;
   pairWithCode(pairingCode);
 }

@@ -307,6 +307,12 @@ const MfdWorkspace = (() => {
         }
       }
     }
+    if (!saved && !draft) {
+      const preferred = summaries.find(item => item.id === preference?.profile);
+      const onlyProfile = summaries.length === 1 ? summaries[0] : null;
+      const next = preferred ?? onlyProfile;
+      if (next) await selectProfile(next.id);
+    }
     controls();
   }
   async function selectProfile(id) {
@@ -325,8 +331,6 @@ const MfdWorkspace = (() => {
       catalog = fields.data;
       triggerEvents = events.data;
       await refresh(true);
-      if (!saved && preference?.profile && summaries.some(item => item.id === preference.profile))
-        await selectProfile(preference.profile);
       renderLibrary();
       render();
     });

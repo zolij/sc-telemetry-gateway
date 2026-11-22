@@ -16,7 +16,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture() {
+async function fixture({ preference = { profile: "ship", page: "flight" } } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -49,7 +49,7 @@ async function fixture() {
   const workspace = vm.runInNewContext(source + "\nMfdWorkspace;", {
     document: { getElementById: getElement, createElement: element, querySelector: getElement, querySelectorAll: () => [] },
     window: { addEventListener() {}, confirm: () => true },
-    localStorage: { getItem: () => JSON.stringify({ profile: "ship", page: "flight" }), setItem() {} },
+    localStorage: { getItem: () => preference ? JSON.stringify(preference) : null, setItem() {} },
     MfdFocus: { update() {} }, AbortSignal, TextEncoder,
     Option: function (text, value) { return Object.assign(element(), { textContent: text, value }); },
     setInterval: callback => { poll = callback; },
@@ -95,6 +95,12 @@ async function fixture() {
     }
   };
 }
+
+test("the only saved profile is selected automatically when there is no saved preference", async () => {
+  const view = await fixture({ preference: null });
+  assert.equal(view.element("profile-select").value, "ship");
+  assert.equal(view.element("page-title").textContent, "Flight");
+});
 
 test("a failed active-profile fetch is retried on 304 and updates the layout and trigger mappings", async () => {
   const view = await fixture();
