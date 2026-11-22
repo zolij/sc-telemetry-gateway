@@ -282,10 +282,11 @@ const MfdWorkspace = (() => {
     const version = viewVersion;
     const result = await api("profiles", { headers: !force && etag ? { "If-None-Match": etag } : {} });
     if (version !== viewVersion) return;
-    if (result.unchanged) return;
-    summaries = result.data;
-    etag = result.etag;
-    renderProfiles();
+    if (!result.unchanged) {
+      summaries = result.data;
+      etag = result.etag;
+      renderProfiles();
+    }
     if (saved) {
       const latest = summaries.find(item => item.id === saved.id);
       if (!latest || latest.revision !== saved.revision) {

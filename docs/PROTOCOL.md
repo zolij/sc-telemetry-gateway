@@ -271,7 +271,10 @@ also fit the 512 KiB profile limit; rejection leaves the previous file intact.
 An outdated/deleted profile returns 412; a missing precondition
 returns 428. No last-writer-wins or automatic overwrite is supported.
 The summary list has a content ETag and accepts `If-None-Match`, returning 304
-when unchanged. Browsers poll it independently of telemetry, preserve editing
+when unchanged. A 304 confirms only the cached summaries, not that the active
+profile revision has been applied. Browsers reconcile that revision on every
+poll, retrying failed or superseded profile fetches even when the list is unchanged.
+Browsers poll it independently of telemetry, preserve editing
 drafts on remote changes, and keep active profile/page selection per browser.
 
 Example saved profile:
