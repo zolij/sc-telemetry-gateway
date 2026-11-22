@@ -293,12 +293,18 @@ public sealed class MfdTests
         http.DefaultRequestHeaders.Add("Origin", test.Origin);
         using var denied = await http.GetAsync("/api/mfd/profiles", test.Token);
         Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        using var deniedEvents = await http.GetAsync("/api/mfd/events", test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, deniedEvents.StatusCode);
         var firstToken = await test.Pair();
         var firstDevice = test.Server.Status.Devices.Single().Id;
         http.DefaultRequestHeaders.Authorization = new("Bearer", firstToken);
         using var catalog = await http.GetAsync("/api/mfd/fields", test.Token);
         var fields = await catalog.Content.ReadFromJsonAsync<MfdCatalogField[]>(WireJson.Options, test.Token);
         Assert.Equal("actor.vitals.heart_rate", Assert.Single(fields!).Path);
+        using var eventCatalog = await http.GetAsync("/api/mfd/events", test.Token);
+        var eventTypes = await eventCatalog.Content.ReadFromJsonAsync<string[]>(WireJson.Options, test.Token);
+        Assert.Contains("GAME_EVENT_TYPE_ACTOR_ENTER_SEAT", eventTypes!);
+        Assert.DoesNotContain("GAME_EVENT_TYPE_UNSPECIFIED", eventTypes!);
         using var created = await http.PostAsJsonAsync("/api/mfd/profiles", MfdProfileTests.Draft(), WireJson.Options, test.Token);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var profile = (await created.Content.ReadFromJsonAsync<MfdProfile>(WireJson.Options, test.Token))!;

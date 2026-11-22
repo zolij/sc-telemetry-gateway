@@ -18,6 +18,38 @@ public sealed class MfdProfileTests : IDisposable
     };
 
     [Fact]
+    public void PageTriggersPersistAndLegacyProfilesDefaultToManualPages()
+    {
+        var draft = Draft();
+        string[] triggers = ["GAME_EVENT_TYPE_ACTOR_ENTER_SEAT", "GAME_EVENT_TYPE_ACTOR_RESPAWN"];
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { TriggerEvents = triggers }] });
+        triggers[0] = "GAME_EVENT_TYPE_ACTOR_DEAD";
+        Assert.Equal("GAME_EVENT_TYPE_ACTOR_ENTER_SEAT", Store.Get(saved.Id)!.Pages[0].TriggerEvents[0]);
+        Assert.Equal(2, Store.Get(saved.Id)!.Pages[0].TriggerEvents.Length);
+        var legacyJson = System.Text.Json.JsonSerializer.Serialize(draft, WireJson.Options).Replace(",\"trigger_events\":[]", "");
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<MfdProfile>(legacyJson, WireJson.Options)!;
+        legacy.Validate();
+        Assert.Empty(legacy.Pages[0].TriggerEvents);
+    }
+
+    [Fact]
+    public void PageTriggersRejectUnknownAndDuplicateEventsButAreUniqueOnlyWithinAProfile()
+    {
+        var draft = Draft();
+        var page = draft.Pages[0] with { TriggerEvents = ["GAME_EVENT_TYPE_ACTOR_ENTER_SEAT"] };
+        Store.Create(draft with { Pages = [page] });
+        Store.Create(draft with { Pages = [page] });
+        Assert.Throws<ArgumentException>(() => (draft with {
+            Pages = [page, page with { Id = Guid.NewGuid(), Tiles = [] }]
+        }).Validate());
+        foreach (var invalid in new string[][] {
+            ["GAME_EVENT_TYPE_ACTOR_ENTER_SEAT", "GAME_EVENT_TYPE_ACTOR_ENTER_SEAT"],
+            ["GAME_EVENT_TYPE_UNSPECIFIED"], ["unknown"], null!
+        })
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [page with { TriggerEvents = invalid }] }).Validate());
+    }
+
+    [Fact]
     public void ProfilesSurviveReopeningAndRejectStaleWritesAndDeletes()
     {
         var first = Store.Create(Draft());

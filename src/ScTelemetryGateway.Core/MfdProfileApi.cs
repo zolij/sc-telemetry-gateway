@@ -13,6 +13,7 @@ public sealed partial class MfdServer
     private void MapProfileApi(WebApplication application)
     {
         application.MapGet("/api/mfd/fields", ProfileApiAsync);
+        application.MapGet("/api/mfd/events", ProfileApiAsync);
         application.MapGet("/api/mfd/profiles", ProfileApiAsync);
         application.MapPost("/api/mfd/profiles", ProfileApiAsync);
         application.MapMethods("/api/mfd/profiles/{id:guid}",
@@ -70,6 +71,8 @@ public sealed partial class MfdServer
                     var catalog = snapshot.SelectedFields.Select(path => MfdCatalogField.From(FieldCatalog.All[path]));
                     await context.Response.WriteAsJsonAsync(catalog, WireJson.Options, deadline.Token);
                 }
+                else if (context.Request.Path == "/api/mfd/events")
+                    await context.Response.WriteAsJsonAsync(MfdProfile.TriggerEvents, WireJson.Options, deadline.Token);
                 else if (id == Guid.Empty)
                 {
                     var summaries = profiles.Summaries();

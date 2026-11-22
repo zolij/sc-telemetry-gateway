@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Google.Protobuf.Reflection;
+using Sc.Game.Telemetry.V1;
 
 namespace ScTelemetryGateway.Core;
 
@@ -28,6 +29,7 @@ public sealed record MfdPage
     public required Guid Id { get; init; }
     public required string Name { get; init; }
     public required MfdTile[] Tiles { get; init; }
+    public string[] TriggerEvents { get; init; } = [];
 }
 
 public sealed record MfdProfile
@@ -44,6 +46,9 @@ public sealed record MfdProfile
     public const int MaxTiles = 64;
     public const int MaxRequestBytes = 512 * 1024;
     public const int MaxStoreBytes = 16 * 1024 * 1024;
+    public static IReadOnlyList<string> TriggerEvents { get; } = Array.AsReadOnly(
+        GameEvent.Descriptor.FindFieldByNumber(1).EnumType.Values
+            .Where(value => value.Number != 0).Select(value => value.Name).ToArray());
 
     public void Validate()
     {
@@ -52,11 +57,21 @@ public sealed record MfdProfile
         if (Pages is null || Pages.Length is < 1 or > MaxPages)
             throw new ArgumentException($"Profiles must contain between 1 and {MaxPages} pages.");
         var ids = new HashSet<Guid>();
+        var triggers = new HashSet<string>(StringComparer.Ordinal);
         foreach (var page in Pages)
         {
             if (page is null) throw new ArgumentException("Pages cannot be null.");
             Identity(page.Id, ids);
             Text(page.Name, 80, "Page name");
+            if (page.TriggerEvents is null)
+                throw new ArgumentException("Page trigger events cannot be null.");
+            foreach (var trigger in page.TriggerEvents)
+            {
+                if (trigger is null || !TriggerEvents.Contains(trigger, StringComparer.Ordinal))
+                    throw new ArgumentException("Unknown page trigger event.");
+                if (!triggers.Add(trigger))
+                    throw new ArgumentException("An event can trigger only one page in a profile.");
+            }
             if (page.Tiles is null || page.Tiles.Length > MaxTiles)
                 throw new ArgumentException($"Pages may contain at most {MaxTiles} tiles.");
             foreach (var tile in page.Tiles)

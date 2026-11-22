@@ -200,6 +200,18 @@ both the history and counter; disconnection retains them as last-known data.
 
 ### Custom MFD profiles
 
+Pages may contain an optional `trigger_events` array of known game-event names;
+old profiles without it remain manual pages. Multiple events can target one
+page, but an event may appear only once within a profile. Different profiles
+can reuse the same events. Unknown, unspecified, null and duplicate trigger
+configurations are rejected. Triggers persist and travel with profile
+imports/exports, independently of telemetry field selection.
+
+`GET /api/mfd/events` returns the known, nonzero protobuf game-event names to
+approved displays, even when event telemetry is not selected. It uses the same
+authentication and origin checks as the profile API and does not subscribe to
+data or expose game-control RPCs.
+
 The browser has no built-in layouts. Named, multi-page profiles are separate
 from the telemetry snapshot and the gateway's field allowlist. Profile editing
 does not change subscriptions, enable fields or send game commands.
