@@ -266,7 +266,9 @@ listed. Existing field-value entries and the 4 Hz snapshot cadence are unchanged
 Profile GET, POST and PUT responses use a strong revision ETag such as `"2"`.
 PUT and DELETE require `If-Match: "2"`; PUT also requires the same profile
 `id` and `revision` in the body. Revision checking and persistence are
-serialized. An outdated/deleted profile returns 412; a missing precondition
+serialized. The final saved document, including its incremented revision, must
+also fit the 512 KiB profile limit; rejection leaves the previous file intact.
+An outdated/deleted profile returns 412; a missing precondition
 returns 428. No last-writer-wins or automatic overwrite is supported.
 The summary list has a content ETag and accepts `If-None-Match`, returning 304
 when unchanged. Browsers poll it independently of telemetry, preserve editing

@@ -1,4 +1,5 @@
 using ScTelemetryGateway.Core;
+using System.Text.Json;
 
 namespace ScTelemetryGateway.Tests;
 
@@ -87,6 +88,59 @@ public sealed class MfdProfileTests : IDisposable
         Assert.Equal(saved.Name, store.Get(saved.Id)!.Name);
         Assert.Equal(saved.Revision, store.Get(saved.Id)!.Revision);
         Assert.Empty(Directory.GetFiles(root, "*.tmp"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void RevisionGrowthCannotPersistAProfileAboveTheReloadableByteLimit(bool oversizedAfterUpdate)
+    {
+        var store = Store;
+        var saved = store.Create(Draft());
+        while (saved.Revision < 9) saved = store.Update(saved.Id, saved.Revision, saved);
+        var tile = saved.Pages[0].Tiles[0] with { Label = "x" };
+        var draft = saved with
+        {
+            Pages = Enumerable.Range(0, MfdProfile.MaxPages).Select(_ => saved.Pages[0] with
+            {
+                Id = Guid.NewGuid(),
+                Tiles = Enumerable.Range(0, MfdProfile.MaxTiles).Select(_ => tile with { Id = Guid.NewGuid() }).ToArray()
+            }).ToArray()
+        };
+        var remaining = MfdProfile.MaxRequestBytes - JsonSerializer.SerializeToUtf8Bytes(draft, WireJson.Options).Length;
+        foreach (var page in draft.Pages)
+            for (var index = 0; index < page.Tiles.Length; index++)
+            {
+                var escaped = Math.Min(79, remaining / 6);
+                var label = "x" + new string('\u00e9', escaped);
+                remaining -= escaped * 6;
+                var ascii = Math.Min(80 - label.Length, remaining);
+                label += new string('x', ascii);
+                remaining -= ascii;
+                page.Tiles[index] = page.Tiles[index] with { Label = label };
+            }
+        Assert.Equal(0, remaining);
+        if (!oversizedAfterUpdate) draft = draft with { Name = draft.Name[..^1] };
+        Assert.Equal(MfdProfile.MaxRequestBytes - (oversizedAfterUpdate ? 0 : 1),
+            JsonSerializer.SerializeToUtf8Bytes(draft, WireJson.Options).Length);
+        draft.Validate();
+        var path = Path.Combine(root, "mfd-profiles.json");
+        var previousBytes = File.ReadAllBytes(path);
+        if (oversizedAfterUpdate)
+        {
+            Assert.Throws<ArgumentException>(() => store.Update(saved.Id, saved.Revision, draft));
+            Assert.Equal(previousBytes, File.ReadAllBytes(path));
+            Assert.Equal(9, store.Get(saved.Id)!.Revision);
+            Assert.Equal(9, Store.Get(saved.Id)!.Revision);
+        }
+        else
+        {
+            var updated = store.Update(saved.Id, saved.Revision, draft);
+            Assert.Equal(10, updated.Revision);
+            Assert.Equal(MfdProfile.MaxRequestBytes, JsonSerializer.SerializeToUtf8Bytes(updated, WireJson.Options).Length);
+            Store.Get(saved.Id)!.Validate();
+            Assert.Equal(10, Store.Get(saved.Id)!.Revision);
+        }
     }
 
     [Fact]

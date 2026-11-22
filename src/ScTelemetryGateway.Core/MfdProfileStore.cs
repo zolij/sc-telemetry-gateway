@@ -45,6 +45,7 @@ public sealed class MfdProfileStore(string directory)
                     Tiles = page.Tiles.Select(tile => tile with { Id = Guid.NewGuid() }).ToArray()
                 }).ToArray()
             };
+            profile.Validate();
             var next = new Dictionary<Guid, MfdProfile>(current) { [profile.Id] = Copy(profile) };
             Persist(next);
             return Copy(profile);
@@ -62,6 +63,7 @@ public sealed class MfdProfileStore(string directory)
             if (draft.Id != id || draft.Revision != expectedRevision)
                 throw new ArgumentException("Profile identity and revision must match the saved profile.");
             var profile = Copy(draft) with { Revision = checked(existing.Revision + 1) };
+            profile.Validate();
             var next = new Dictionary<Guid, MfdProfile>(current) { [id] = profile };
             Persist(next);
             return Copy(profile);

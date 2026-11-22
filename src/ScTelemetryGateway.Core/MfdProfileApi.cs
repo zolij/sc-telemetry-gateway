@@ -141,7 +141,7 @@ public sealed partial class MfdServer
         {
             await ProfileError(context, 400, "invalid_profile", ex.Message);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
             logger?.LogError(ex, "MFD profile storage failed");
             await ProfileError(context, 503, "storage_failed", "Profiles could not be read or saved on the PC. Check the gateway log and storage.");

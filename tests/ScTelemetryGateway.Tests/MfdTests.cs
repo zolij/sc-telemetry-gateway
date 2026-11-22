@@ -223,6 +223,7 @@ public sealed class MfdTests
         public CancellationToken Token => deadline.Token;
         public MfdServer Server { get; }
         public MfdSnapshotStore Store { get; }
+        public string ProfileRoot => profileRoot;
 
         private MfdTestServer(IEnumerable<string> fields)
         {
@@ -381,6 +382,38 @@ public sealed class MfdTests
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         using var reader = new StreamReader(stream);
         Assert.Contains("413", await reader.ReadLineAsync(deadline.Token));
+    }
+
+    [Theory]
+    [InlineData("schema")]
+    [InlineData("oversize")]
+    [InlineData("profile")]
+    public async Task InvalidProfileStoresReturnStructuredStorageErrorsWithoutChangingTheFile(string failure)
+    {
+        await using var test = await MfdTestServer.Start();
+        var document = failure switch
+        {
+            "schema" => "{\"schema_version\":2,\"profiles\":[]}",
+            "oversize" => new string(' ', MfdProfile.MaxStoreBytes + 1),
+            "profile" => JsonSerializer.Serialize(new
+            {
+                SchemaVersion = 1,
+                Profiles = new[] { MfdProfileTests.Draft() with { Id = Guid.NewGuid(), Revision = 1, Name = "" } }
+            }, WireJson.Options),
+            _ => throw new ArgumentException("Unknown storage failure.", nameof(failure))
+        };
+        Directory.CreateDirectory(test.ProfileRoot);
+        var path = Path.Combine(test.ProfileRoot, "mfd-profiles.json");
+        await File.WriteAllTextAsync(path, document, test.Token);
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var response = await http.GetAsync("/api/mfd/profiles", test.Token);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+        Assert.Equal("storage_failed", error.RootElement.GetProperty("error").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(error.RootElement.GetProperty("message").GetString()));
+        Assert.Equal(document, await File.ReadAllTextAsync(path, test.Token));
     }
 
     [Fact]
