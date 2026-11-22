@@ -21,13 +21,11 @@
     <div class="security-note">LAN HTTP IS UNENCRYPTED <span>·</span> USE ONLY ON A TRUSTED NETWORK</div>
 
     <section id="pairing" class="pairing" aria-labelledby="pair-title">
-      <div class="pairing-intro"><span class="section-index">01 / DEVICE ACCESS</span><h2 id="pair-title">Connect your<br><em>display.</em></h2><p>Enter the code from the gateway on your PC. Your request must be approved there before telemetry is shared.</p></div>
+      <div class="pairing-intro"><span class="section-index">01 / DEVICE ACCESS</span><h2 id="pair-title">Connect your<br><em>display.</em></h2><p>Scan the QR code shown on the gateway, or enter its one-use code below. Pairing grants this display access immediately.</p></div>
       <form id="pair-form" class="pair-form">
-        <label for="device-label">DEVICE LABEL</label>
-        <input id="device-label" maxlength="48" autocomplete="off" value="Phone or tablet" required>
         <label for="pair-code">PAIRING CODE</label>
         <input id="pair-code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required placeholder="000000">
-        <button id="pair-button" type="submit">REQUEST ACCESS <span aria-hidden="true">↗</span></button>
+        <button id="pair-button" type="submit">CONNECT DISPLAY <span aria-hidden="true">↗</span></button>
         <p id="pair-message" role="status"></p>
       </form>
     </section>

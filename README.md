@@ -51,8 +51,9 @@ guaranteed. See [NOTICE](NOTICE) for provenance.
    **MFD fields**, select the values to share. Check the game port under
    **Game**, then apply the settings.
 4. Choose **Start collection** explicitly. Open the dashboard's browser URL on
-   a phone or tablet on the same network. Create a pairing code, enter it and a
-   device label in the browser, then approve the pending request on the PC.
+   a phone or tablet on the same network. Create a pairing code and scan its QR
+   code with the phone camera, or enter the one-use code in the browser. Scanning
+   or entering the code immediately authorizes the display.
 5. Create an MFD profile in the browser and add the instruments you need.
    Closing the dashboard leaves the tray running; double-click the tray icon to
    reopen it. Use **Pause and clear buffer** or the tray **Exit** to stop collection.
@@ -81,10 +82,11 @@ not silently replaced. No telemetry values are written to disk.
 
 ## Local phone/tablet MFD
 
-Pairing codes are single-use and expire after two minutes. Select a pending
-request in the dashboard to approve or deny it; approved devices can be revoked
-independently there. The unencrypted local interface does not use WSS,
-secure-context-only PWA features or remote upload credentials.
+Pairing codes are single-use and expire after two minutes. Scanning the QR code
+automatically pairs the display; entering the code manually is also supported.
+Approved devices can be revoked in the dashboard. The unencrypted local
+interface does not use WSS, secure-context-only PWA features or remote upload
+credentials.
 
 The display starts empty, with no built-in layouts. Select **New profile** to
 build your own MFD with named pages. In **Edit**, search the shared-field library

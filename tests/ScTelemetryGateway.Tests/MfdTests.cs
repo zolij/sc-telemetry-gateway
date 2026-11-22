@@ -27,44 +27,27 @@ public sealed class MfdTests
     }
 
     [Fact]
-    public async Task OnePairingCodeAllowsOnlyOneConcurrentRequest()
+    public async Task OnePairingCodeImmediatelyApprovesOnlyOneConcurrentRequest()
     {
         await using var test = await MfdTestServer.Start();
         var code = test.Server.CreatePairingCode();
         var requests = Enumerable.Range(0, 20).Select(i => test.RequestPair(code, $"client-{i}")).ToArray();
-        await test.WaitFor(() => test.Server.Status.PendingRequests.Count == 1);
-        await Task.Delay(200, test.Token);
-        Assert.Single(test.Server.Status.PendingRequests);
-        test.Server.ApproveRequest(test.Server.Status.PendingRequests.Single().Id);
         var responses = await Task.WhenAll(requests).WaitAsync(test.Token);
         try
         {
             Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
             Assert.Equal(19, responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized));
+            Assert.Single(test.Server.Status.Devices);
         }
         finally { foreach (var response in responses) response.Dispose(); }
     }
 
     [Fact]
-    public async Task ShutdownCompletesPendingPairingPromptly()
+    public async Task PairingUrlCarriesTheOneUseCodeInItsFragment()
     {
-        var test = await MfdTestServer.Start();
-        try
-        {
-            var request = test.RequestPair(test.Server.CreatePairingCode(), "pending");
-            await test.WaitFor(() => test.Server.Status.PendingRequests.Count == 1);
-            await test.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
-            try
-            {
-                using var response = await request.WaitAsync(TimeSpan.FromSeconds(3));
-                Assert.True(response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable);
-            }
-            catch (TaskCanceledException)
-            {
-                // Closing the listener can race with the final HTTP response on Windows.
-            }
-        }
-        finally { await test.DisposeAsync(); }
+        await using var test = await MfdTestServer.Start();
+        var code = test.Server.CreatePairingCode();
+        Assert.Equal(test.Origin + "/#pair=" + code, test.Server.CreatePairingUrl(code));
     }
 
     [Fact]
@@ -88,21 +71,6 @@ public sealed class MfdTests
         var buffer = new byte[1024];
         var reply = await revoked.ReceiveAsync(buffer, test.Token);
         Assert.Equal(WebSocketMessageType.Close, reply.MessageType);
-    }
-
-    [Fact]
-    public async Task AbortedPairingRequestIsRemovedWithoutApproval()
-    {
-        await using var test = await MfdTestServer.Start();
-        using var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("Origin", test.Origin);
-        using var stop = CancellationTokenSource.CreateLinkedTokenSource(test.Token);
-        var response = client.PostAsJsonAsync(test.Origin + "/api/pair/request",
-            new { schema_version = 1, type = "mfd.pair.request", code = test.Server.CreatePairingCode(), device_label = "cancelled" }, stop.Token);
-        await test.WaitFor(() => test.Server.Status.PendingRequests.Count == 1);
-        await stop.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => response);
-        await test.WaitFor(() => test.Server.Status.PendingRequests.Count == 0);
     }
 
     [Fact]
@@ -249,10 +217,7 @@ public sealed class MfdTests
 
         public async Task<string> Pair()
         {
-            var responseTask = RequestPair(Server.CreatePairingCode(), "synthetic");
-            await WaitFor(() => Server.Status.PendingRequests.Count == 1);
-            Assert.True(Server.ApproveRequest(Server.Status.PendingRequests.Single().Id));
-            using var response = await responseTask.WaitAsync(Token);
+            using var response = await RequestPair(Server.CreatePairingCode(), "synthetic").WaitAsync(Token);
             response.EnsureSuccessStatusCode();
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Token));
             return body.RootElement.GetProperty("session_token").GetString()!;
@@ -268,11 +233,6 @@ public sealed class MfdTests
                 return socket;
             }
             catch { socket.Dispose(); throw; }
-        }
-
-        public async Task WaitFor(Func<bool> condition)
-        {
-            while (!condition()) await Task.Delay(10, Token);
         }
 
         public async ValueTask DisposeAsync()
