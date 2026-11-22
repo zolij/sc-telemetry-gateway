@@ -1,0 +1,21 @@
+name = "sc-telemetry-usage"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sc-telemetry-usage"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[ratelimits]]
+name = "INGEST_LIMITER"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+ACCESS_TEAM_DOMAIN = "REPLACE_WITH_TEAM.cloudflareaccess.com"
+ACCESS_AUDIENCE = "REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE"
