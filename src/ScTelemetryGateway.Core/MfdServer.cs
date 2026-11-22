@@ -6,10 +6,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace ScTelemetryGateway.Core;
 
@@ -36,8 +38,11 @@ public sealed class MfdServer : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, ApprovedDevice> approved = new();
     private readonly ConcurrentDictionary<Guid, PairRequest> pending = new();
     private readonly ConcurrentDictionary<WebSocket, MfdWebSocketState> sockets = new();
-    private readonly object sendGate = new();
     private readonly CryptoRandomPairCode pairCode = new();
+    private readonly CancellationTokenSource shutdown = new();
+    private int sessionCount;
+    private bool stopping;
+    private ILogger<MfdServer>? logger;
     private WebApplication? app;
     private string? lastError;
     private CancellationTokenSource? publisher;
@@ -103,14 +108,14 @@ public sealed class MfdServer : IAsyncDisposable
 
     public bool RevokeDevice(Guid deviceId)
     {
-        if (!approved.TryRemove(deviceId, out _))
-            return false;
-        foreach (var item in sockets.Where(s => s.Value.DeviceId == deviceId))
+        lock (gate)
         {
-            sockets.TryRemove(item.Key, out _);
-            _ = item.Key.CloseAsync(WebSocketCloseStatus.NormalClosure, "revoked", CancellationToken.None);
+            if (!approved.TryRemove(deviceId, out _))
+                return false;
+            foreach (var item in sockets.Where(s => s.Value.DeviceId == deviceId))
+                item.Key.Abort();
+            return true;
         }
-        return true;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -125,6 +130,7 @@ public sealed class MfdServer : IAsyncDisposable
         builder.Services.AddRouting();
         builder.Services.AddSingleton(this);
         app = builder.Build();
+        logger = app.Services.GetRequiredService<ILogger<MfdServer>>();
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
         app.MapMethods("/", [HttpMethods.Get, HttpMethods.Head], ServeIndex);
         app.MapMethods("/mfd", [HttpMethods.Get, HttpMethods.Head], ServeIndex);
@@ -166,28 +172,27 @@ public sealed class MfdServer : IAsyncDisposable
                 continue;
             foreach (var item in sockets)
             {
-                if (item.Value.DeviceId is null) continue;
-                _ = SendLatestAsync(item.Key, json, cancellationToken);
+                lock (gate)
+                {
+                    if (item.Value.DeviceId is not { } id || !approved.ContainsKey(id)) continue;
+                    item.Value.Snapshots.Writer.TryWrite(json);
+                }
             }
         }
     }
 
-    private async Task SendLatestAsync(WebSocket socket, byte[] json, CancellationToken cancellationToken)
+    private static async Task SendSnapshotsAsync(WebSocket socket, MfdWebSocketState state,
+        byte[] initial, CancellationToken cancellationToken)
     {
-        if (socket.State != WebSocketState.Open) return;
-        lock (sendGate)
+        async Task Send(byte[] json)
         {
-            if (socket.State != WebSocketState.Open) return;
-            try
-            {
-                socket.SendAsync(json, WebSocketMessageType.Text, true, cancellationToken).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                sockets.TryRemove(socket, out _);
-            }
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            await socket.SendAsync(json, WebSocketMessageType.Text, true, deadline.Token);
         }
-        await Task.CompletedTask;
+        await Send(initial);
+        await foreach (var json in state.Snapshots.Reader.ReadAllAsync(cancellationToken))
+            await Send(json);
     }
 
     private async Task ServeIndex(HttpContext context)
@@ -239,44 +244,65 @@ public sealed class MfdServer : IAsyncDisposable
             context.Response.StatusCode = 413;
             return;
         }
-        string json;
-        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, false, leaveOpen: false))
-            json = await reader.ReadToEndAsync().ConfigureAwait(false);
-        if (Encoding.UTF8.GetByteCount(json) > MaxRequestBytes)
-        {
-            context.Response.StatusCode = 413;
-            return;
-        }
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token, context.RequestAborted);
+        PairRequest? request = null;
         try
         {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (root.GetProperty("schema_version").GetInt32() != 1 ||
-                root.GetProperty("type").GetString() != "mfd.pair.request")
-                throw new JsonException();
-            var code = root.GetProperty("code").GetString();
-            var label = root.GetProperty("device_label").GetString()?.Trim();
-            if (string.IsNullOrEmpty(code) || label is null || label.Length is < 1 or > 48)
-                throw new JsonException();
-            if (!pairCode.TryConsume(code))
+            var body = new byte[MaxRequestBytes + 1];
+            var count = 0;
+            while (count < body.Length)
             {
-                context.Response.StatusCode = 401;
-                await context.Response.WriteAsJsonAsync(new { error = "pairing_code_invalid" });
+                var read = await context.Request.Body.ReadAsync(body.AsMemory(count), lifetime.Token);
+                if (read == 0) break;
+                count += read;
+            }
+            if (count > MaxRequestBytes)
+            {
+                context.Response.StatusCode = 413;
                 return;
             }
+            using var document = JsonDocument.Parse(body.AsMemory(0, count));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("schema_version", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 1 ||
+                !root.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || type.GetString() != "mfd.pair.request" ||
+                !root.TryGetProperty("code", out var codeElement) || codeElement.ValueKind != JsonValueKind.String ||
+                !root.TryGetProperty("device_label", out var labelElement) || labelElement.ValueKind != JsonValueKind.String)
+                throw new JsonException();
+            var code = codeElement.GetString();
+            var label = labelElement.GetString()?.Trim();
+            if (string.IsNullOrEmpty(code) || label is null || label.Length is < 1 or > 48)
+                throw new JsonException();
             lock (gate)
             {
+                if (stopping)
+                {
+                    context.Response.StatusCode = 503;
+                    return;
+                }
                 CleanupExpired();
                 if (pending.Count >= MaxPairRequests)
                 {
                     context.Response.StatusCode = 429;
                     return;
                 }
+                if (!pairCode.TryConsume(code))
+                {
+                    context.Response.StatusCode = 401;
+                }
+                else
+                {
+                    var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    request = new PairRequest(Guid.NewGuid(), label, completion, DateTimeOffset.UtcNow.AddMinutes(2));
+                    pending[request.Id] = request;
+                }
             }
-            var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var request = new PairRequest(Guid.NewGuid(), label, completion, DateTimeOffset.UtcNow.AddMinutes(2));
-            pending[request.Id] = request;
-            var token = await completion.Task.WaitAsync(TimeSpan.FromMinutes(2));
+            if (request is null)
+            {
+                await context.Response.WriteAsJsonAsync(new { error = "pairing_code_invalid" }, lifetime.Token);
+                return;
+            }
+            var token = await request.Completion.Task.WaitAsync(TimeSpan.FromMinutes(2), lifetime.Token);
             if (token is null)
             {
                 context.Response.StatusCode = 403;
@@ -298,6 +324,15 @@ public sealed class MfdServer : IAsyncDisposable
         {
             context.Response.StatusCode = 408;
         }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            context.Response.StatusCode = 503;
+        }
+        finally
+        {
+            if (request is not null)
+                lock (gate) pending.TryRemove(request.Id, out _);
+        }
     }
 
     private async Task WebSocketAsync(HttpContext context)
@@ -308,49 +343,108 @@ public sealed class MfdServer : IAsyncDisposable
             context.Response.StatusCode = 403;
             return;
         }
-        if (sockets.Count >= MfdSnapshotStore.MaxClients)
+        lock (gate)
         {
-            context.Response.StatusCode = 429;
-            return;
+            if (stopping || sessionCount >= MfdSnapshotStore.MaxClients)
+            {
+                context.Response.StatusCode = stopping ? 503 : 429;
+                return;
+            }
+            sessionCount++;
         }
-        var socket = await context.WebSockets.AcceptWebSocketAsync();
-        var state = new MfdWebSocketState();
-        sockets[socket] = state;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(UnauthenticatedTimeoutSeconds));
+        WebSocket? socket = null;
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token, context.RequestAborted);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(UnauthenticatedTimeoutSeconds));
+        Task? sender = null;
+        Task? receiver = null;
         try
         {
-            var buffer = new byte[MaxAuthBytes];
-            var received = await socket.ReceiveAsync(buffer, timeout.Token);
-            if (received.MessageType != WebSocketMessageType.Text || !received.EndOfMessage)
-                throw new WebSocketException("Invalid authentication message.");
-            using var document = JsonDocument.Parse(buffer.AsMemory(0, received.Count));
+            socket = await context.WebSockets.AcceptWebSocketAsync();
+            var state = new MfdWebSocketState();
+            lock (gate)
+            {
+                if (stopping) throw new OperationCanceledException(shutdown.Token);
+                sockets[socket] = state;
+            }
+            var buffer = new byte[MaxAuthBytes + 1];
+            var count = 0;
+            WebSocketReceiveResult received;
+            do
+            {
+                received = await socket.ReceiveAsync(new ArraySegment<byte>(buffer, count, buffer.Length - count), timeout.Token);
+                count += received.Count;
+                if (received.MessageType != WebSocketMessageType.Text || count > MaxAuthBytes)
+                    throw new WebSocketException("Invalid authentication message.");
+            } while (!received.EndOfMessage);
+            using var document = JsonDocument.Parse(buffer.AsMemory(0, count));
             var root = document.RootElement;
-            if (root.GetProperty("type").GetString() != "mfd.auth" ||
-                root.GetProperty("schema_version").GetInt32() != 1)
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || type.GetString() != "mfd.auth" ||
+                !root.TryGetProperty("schema_version", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 1 ||
+                !root.TryGetProperty("session_token", out var tokenElement) || tokenElement.ValueKind != JsonValueKind.String)
                 throw new WebSocketException("Invalid authentication schema.");
-            var token = root.GetProperty("session_token").GetString();
-            var device = approved.Values.FirstOrDefault(d =>
-                CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(d.Token), Encoding.UTF8.GetBytes(token ?? "")));
-            if (device is null)
-                throw new WebSocketException("Not approved.");
-            state.DeviceId = device.Id;
+            var token = Encoding.UTF8.GetBytes(tokenElement.GetString() ?? "");
+            lock (gate)
+            {
+                var device = approved.Values.FirstOrDefault(d =>
+                    CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(d.Token), token));
+                if (stopping || device is null)
+                    throw new WebSocketException("Not approved.");
+                state.DeviceId = device.Id;
+            }
             var initial = JsonSerializer.SerializeToUtf8Bytes(snapshot.Current(), WireJson.Options);
-            await socket.SendAsync(initial, WebSocketMessageType.Text, true, CancellationToken.None);
-            var readBuffer = new byte[128];
-            while (socket.State == WebSocketState.Open)
-                await socket.ReceiveAsync(readBuffer, CancellationToken.None);
+            sender = SendSnapshotsAsync(socket, state, initial, lifetime.Token);
+            receiver = ReceiveUntilClosedAsync(socket, lifetime.Token);
+            await await Task.WhenAny(sender, receiver);
         }
-        catch
+        catch (Exception ex) when (ex is WebSocketException or JsonException or OperationCanceledException or IOException)
         {
-            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "authentication_failed", CancellationToken.None);
+            if (!lifetime.IsCancellationRequested)
+                logger?.LogWarning("MFD connection ended: {FailureType}", ex.GetType().Name);
+            if (sender is null && socket?.State is (WebSocketState.Open or WebSocketState.CloseReceived))
+            {
+                try
+                {
+                    await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "authentication_failed", timeout.Token);
+                }
+                catch (Exception closeError) when (closeError is WebSocketException or OperationCanceledException or IOException)
+                {
+                    logger?.LogDebug("MFD authentication close: {FailureType}", closeError.GetType().Name);
+                    socket.Abort();
+                }
+            }
         }
         finally
         {
-            sockets.TryRemove(socket, out _);
-            socket.Dispose();
+            lifetime.Cancel();
+            socket?.Abort();
+            try
+            {
+                await Task.WhenAll(new[] { sender, receiver }.OfType<Task>());
+            }
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or IOException)
+            {
+                logger?.LogDebug("MFD connection cleanup: {FailureType}", ex.GetType().Name);
+            }
+            finally
+            {
+                lock (gate)
+                {
+                    if (socket is not null) sockets.TryRemove(socket, out _);
+                    sessionCount--;
+                }
+                socket?.Dispose();
+            }
         }
+    }
+
+    private static async Task ReceiveUntilClosedAsync(WebSocket socket, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[128];
+        while (socket.State == WebSocketState.Open)
+            if ((await socket.ReceiveAsync(buffer, cancellationToken)).MessageType == WebSocketMessageType.Close)
+                return;
     }
 
     private bool OriginAllowed(HttpContext context)
@@ -372,18 +466,25 @@ public sealed class MfdServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        pairCode.Revoke();
-        foreach (var device in approved.Keys.ToArray()) RevokeDevice(device);
-        approved.Clear();
-        pending.Clear();
+        lock (gate)
+        {
+            stopping = true;
+            pairCode.Revoke();
+            approved.Clear();
+            foreach (var request in pending.Values) request.Completion.TrySetResult(null);
+            pending.Clear();
+            foreach (var socket in sockets.Keys) socket.Abort();
+        }
+        await shutdown.CancelAsync();
         publisher?.Cancel();
         if (publisherTask is not null)
         {
             try { await publisherTask; } catch (OperationCanceledException) { }
         }
         if (app is not null) await app.StopAsync();
-        app?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (app is not null) await app.DisposeAsync();
         publisher?.Dispose();
+        shutdown.Dispose();
     }
 
     private static string GetMime(string path) => Path.GetExtension(path).ToLowerInvariant() switch
@@ -399,37 +500,51 @@ public sealed class MfdServer : IAsyncDisposable
     private sealed record PairRequest(Guid Id, string Label,
         TaskCompletionSource<string?> Completion, DateTimeOffset ExpiresAt);
     private sealed record ApprovedDevice(Guid Id, string Label, string Token, DateTimeOffset ApprovedAt);
-    private sealed class MfdWebSocketState { public Guid? DeviceId { get; set; } }
+    private sealed class MfdWebSocketState
+    {
+        public Guid? DeviceId { get; set; }
+        public Channel<byte[]> Snapshots { get; } = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1)
+        {
+            SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest
+        });
+    }
     private sealed class CryptoRandomPairCode
     {
+        private readonly object gate = new();
         private string? active;
         private DateTimeOffset expires;
         private int attempts;
 
         public string Create()
         {
-            Revoke();
-            var number = RandomNumberGenerator.GetInt32(1_000_000);
-            active = number.ToString("D6", CultureInfo.InvariantCulture);
-            expires = DateTimeOffset.UtcNow.AddSeconds(PairingCodeLifetimeSeconds);
-            attempts = 0;
-            return active;
+            lock (gate)
+            {
+                Revoke();
+                var number = RandomNumberGenerator.GetInt32(1_000_000);
+                active = number.ToString("D6", CultureInfo.InvariantCulture);
+                expires = DateTimeOffset.UtcNow.AddSeconds(PairingCodeLifetimeSeconds);
+                attempts = 0;
+                return active;
+            }
         }
 
         public bool TryConsume(string code)
         {
-            if (active is null || expires <= DateTimeOffset.UtcNow) return false;
-            attempts++;
-            if (attempts > 5) { Revoke(); return false; }
-            if (code.Length != 6 || !code.All(char.IsAsciiDigit))
-                return false;
-            if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.ASCII.GetBytes(code), Encoding.ASCII.GetBytes(active)))
-                return false;
-            Revoke();
-            return true;
+            lock (gate)
+            {
+                if (active is null || expires <= DateTimeOffset.UtcNow) return false;
+                attempts++;
+                if (attempts > 5) { Revoke(); return false; }
+                if (code.Length != 6 || !code.All(char.IsAsciiDigit))
+                    return false;
+                if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(code), Encoding.ASCII.GetBytes(active)))
+                    return false;
+                Revoke();
+                return true;
+            }
         }
 
-        public void Revoke() { active = null; expires = default; attempts = 0; }
+        public void Revoke() { lock (gate) { active = null; expires = default; attempts = 0; } }
     }
 }

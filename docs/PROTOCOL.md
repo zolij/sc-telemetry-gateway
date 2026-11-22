@@ -139,6 +139,8 @@ retry with exponential backoff and jitter (base 1..60 seconds). Handshake
 Other 3xx/4xx, including 401/403, stop delivery with a visible error; 403 may also
 mean a proxy/WAF policy, not only an incorrect key. Close codes 1003/1007/1008/1009
 stop delivery (as does protocol close 1002). No tight reconnect loop or automatic downgrade to plaintext.
+When local MFD and remote upload are both enabled, permanent remote rejection
+clears the remote queue and disables remote ingestion while the MFD continues.
 
 The client uses WebSocket ping/pong (20-second interval, 10-second pong timeout).
 This is transport liveness, not an empty telemetry batch or a remote-command
@@ -173,5 +175,14 @@ marks data stale after 2 seconds and labels disconnected and paused separately.
 HTTP and WebSocket access are not confidential or authenticated by TLS.
 Untrusted LAN clients must not be able to reach the interface. The gateway
 requires explicit pairing and approval. It supports at most 8 active approved
-browser sessions. Pairing codes expire after 2 minutes and credentials are
-held only in running-service memory and browser session storage.
+browser sessions; unauthenticated connections also reserve a slot. Fragmented
+authentication messages are limited to 512 bytes and a 10-second deadline,
+including a failed-authentication close handshake. Pairing request bodies are
+limited to 4096 bytes, including chunked requests. Pairing codes are single-use,
+expire after 2 minutes, and credentials are held only in running-service memory
+and browser session storage. Shutdown cancels pending requests and connections.
+
+Each display has its own sender with at most one replaceable pending snapshot.
+A send exceeding 5 seconds disconnects only that display; slow displays cannot
+block updates to other clients. Selected event fields contain the values from
+the latest received event section, not an accumulated event history.
