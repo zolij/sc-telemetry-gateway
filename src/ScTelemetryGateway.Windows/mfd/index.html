@@ -10,7 +10,7 @@
 <body>
   <main class="console">
     <header class="masthead">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><div><span class="eyebrow">STAR CITIZEN TELEMETRY GATEWAY</span><h1>FLIGHT <span>DISPLAY</span></h1></div></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><div><span class="eyebrow">STAR CITIZEN TELEMETRY GATEWAY</span><h1>YOUR <span>FLIGHT DECK</span></h1></div></div>
       <div class="link-status"><span class="status-dot" aria-hidden="true"></span><span id="connection" role="status">NOT PAIRED</span></div>
     </header>
 
@@ -29,30 +29,73 @@
     </section>
 
     <section id="dashboard" hidden aria-label="Telemetry display">
-      <div class="display-bar"><span id="view-kicker">01 / FLIGHT</span><span id="frame-age">NO FRAME</span><button id="unpair-button" class="text-button" type="button">PAIR AGAIN</button></div>
-      <nav class="navigation" aria-label="Display views">
-        <button type="button" class="nav-button active" data-view="flight" aria-pressed="true"><span>01</span> FLIGHT</button>
-        <button type="button" class="nav-button" data-view="systems" aria-pressed="false"><span>02</span> SYSTEMS</button>
-        <button type="button" class="nav-button" data-view="crew" aria-pressed="false"><span>03</span> CREW</button>
-      </nav>
-      <div id="view-flight" class="view" aria-label="Flight instruments">
-        <div class="view-heading"><div><span class="section-index">LIVE INSTRUMENTS</span><h2>Flight overview</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
-        <div id="flight-cards" class="instrument-grid flight-grid"></div>
-        <details class="additional"><summary>MORE FLIGHT DATA <span aria-hidden="true">+</span></summary><div id="flight-extra" class="extra-grid"></div></details>
+      <div class="display-bar"><span id="view-kicker">CUSTOM MFD / READ ONLY TELEMETRY</span><span id="frame-age">NO FRAME</span><button id="unpair-button" class="text-button" type="button">PAIR AGAIN</button></div>
+      <div class="workspace-toolbar">
+        <label class="profile-picker">DISPLAY PROFILE<select id="profile-select" aria-label="Display profile"><option value="">Choose a profile</option></select></label>
+        <div class="toolbar-actions">
+          <button id="new-profile" type="button" data-action>NEW PROFILE</button>
+          <button id="edit-profile" type="button" data-action>EDIT</button>
+          <button id="copy-profile" type="button" data-action>DUPLICATE</button>
+          <button id="delete-profile" type="button" data-action>DELETE</button>
+          <button id="export-profile" type="button" data-action>EXPORT</button>
+          <button id="import-profile" type="button" data-action>IMPORT</button>
+          <input id="import-file" type="file" accept=".json,application/json" hidden>
+        </div>
       </div>
-      <div id="view-systems" class="view" aria-label="Vehicle systems" hidden>
-        <div class="view-heading"><div><span class="section-index">VEHICLE STATUS</span><h2>Systems overview</h2></div><span class="view-note">READ ONLY<br>NO GAME CONTROLS</span></div>
-        <div id="systems-cards" class="instrument-grid"></div>
-        <details class="additional"><summary>MORE SYSTEM DATA <span aria-hidden="true">+</span></summary><div id="systems-extra" class="extra-grid"></div></details>
+      <p id="workspace-message" class="workspace-message" role="status" aria-live="polite"></p>
+      <div id="conflict-actions" class="conflict-actions" hidden>
+        <span>YOUR DRAFT IS SAFE</span>
+        <button id="reload-profile" type="button" data-action>RELOAD FROM PC</button>
+        <button id="save-copy" type="button" data-action>SAVE AS NEW PROFILE</button>
       </div>
-      <div id="view-crew" class="view" aria-label="Crew and environment" hidden>
-        <div class="view-heading"><div><span class="section-index">CREW &amp; ENVIRONMENT</span><h2>Occupant overview</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
-        <div id="crew-cards" class="instrument-grid"></div>
-        <details class="additional"><summary>MORE CREW DATA <span aria-hidden="true">+</span></summary><div id="crew-extra" class="extra-grid"></div></details>
+      <nav id="page-navigation" class="page-navigation" aria-label="Profile pages"></nav>
+      <div id="editor-toolbar" class="editor-toolbar" hidden>
+        <label>PROFILE NAME<input id="profile-name" maxlength="80" required></label>
+        <label>PAGE NAME<input id="page-name" maxlength="80" required></label>
+        <div class="toolbar-actions">
+          <button id="add-page" type="button" data-action>ADD PAGE</button>
+          <button id="page-before" type="button" data-action>PAGE LEFT</button>
+          <button id="page-after" type="button" data-action>PAGE RIGHT</button>
+          <button id="delete-page" type="button" data-action>DELETE PAGE</button>
+          <button id="save-profile" class="accent-button" type="button" data-action>SAVE TO PC</button>
+          <button id="cancel-edit" type="button" data-action>CANCEL</button>
+        </div>
+      </div>
+      <div class="workspace-body">
+        <section class="display-surface" aria-label="Custom instruments">
+          <div class="view-heading"><div><span id="display-mode" class="section-index">LIVE INSTRUMENTS</span><h2 id="page-title">Your flight deck</h2></div><span class="view-note">VALUES AS REPORTED<br>NO ASSUMED UNITS</span></div>
+          <div id="empty-display" class="empty-display"><span class="empty-mark" aria-hidden="true">+</span><h3>Create your first MFD.</h3><p>No presets. Choose the data that matters to you.</p></div>
+          <div id="custom-cards" class="instrument-grid"></div>
+        </section>
+        <aside id="field-library" class="field-library" hidden aria-label="Add telemetry tiles">
+          <span class="section-index">DATA LIBRARY</span><h2>Add an instrument</h2>
+          <label for="field-search">SEARCH SHARED FIELDS</label><input id="field-search" type="search" placeholder="Speed, shields, oxygen...">
+          <p class="library-note">Only fields enabled on the PC are available. No game data yet? You can still build your layout.</p>
+          <div id="field-results"></div>
+        </aside>
       </div>
       <footer><span>LOCAL DISPLAY / READ ONLY</span><span>SELECT DATA IN GATEWAY SETTINGS</span></footer>
     </section>
+    <dialog id="tile-dialog" class="tile-dialog">
+      <form id="tile-form">
+        <span class="section-index">INSTRUMENT SETTINGS</span><h2>Configure tile</h2>
+        <label for="tile-field">TELEMETRY FIELD</label><select id="tile-field" required></select>
+        <label for="tile-label">LABEL</label><input id="tile-label" maxlength="80" required>
+        <div class="form-columns">
+          <label>DISPLAY TYPE<select id="tile-widget"><option value="value">Value</option><option value="status">Status indicator</option><option value="list">List</option></select></label>
+          <label>SIZE<select id="tile-size"><option value="normal">Normal / 1 x 1</option><option value="wide">Wide / 2 x 1</option><option value="large">Large / 2 x 2</option></select></label>
+          <label>DECIMAL PLACES<input id="tile-decimals" type="number" min="0" max="6" value="2" required></label>
+        </div>
+        <div id="status-settings" hidden>
+          <p class="library-note">Exact raw values, e.g. true, false or VEHICLE_MASTER_MODE_SCM. Unknown values keep their own text.</p>
+          <div id="status-rules"></div><button id="add-rule" type="button">ADD STATUS RULE</button>
+        </div>
+        <p id="tile-message" role="alert"></p>
+        <div class="toolbar-actions"><button type="submit" class="accent-button">APPLY TILE</button><button id="cancel-tile" type="button">CANCEL</button></div>
+      </form>
+    </dialog>
   </main>
+  <script src="/assets/workspace.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>
