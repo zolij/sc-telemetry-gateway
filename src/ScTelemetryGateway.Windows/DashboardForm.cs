@@ -196,6 +196,6 @@ internal sealed class DashboardForm : Form
 
     private sealed record DeviceItem(Guid Id, string Label)
     {
-        public override string ToString() => $"{Label} ({Id.ToString("N")[..6]})";
+        public override string ToString() => Label;
     }
 }

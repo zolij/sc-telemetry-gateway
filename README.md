@@ -89,9 +89,10 @@ written to disk.
 Pairing codes are single-use and expire after two minutes. Scanning the QR code
 automatically pairs the display; entering the code manually is also supported.
 The browser retains its pairing token across browser and gateway restarts;
-approved devices can be revoked in the dashboard. The unencrypted local
-interface does not use WSS, secure-context-only PWA features or remote upload
-credentials.
+each browser also receives a stable generated identifier shown in the approved
+device list. Approved devices can be revoked in the dashboard. The unencrypted
+local interface does not use WSS, secure-context-only PWA features or remote
+upload credentials.
 
 The display starts empty, with no built-in layouts. Select **New profile** to
 build your own MFD with named pages. In **Edit**, search the shared-field library

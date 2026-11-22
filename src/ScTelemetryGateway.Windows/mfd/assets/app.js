@@ -68,7 +68,7 @@ async function pairWithCode(code) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "mfd.pair.request", schema_version: 1,
-        code, device_label: "Display"
+        code, device_label: "Display " + MfdDeviceIdentity.getOrCreate()
       })
     });
     if (response.status === 401) throw new Error("Pairing code is invalid or expired. Create a new code on the PC.");
