@@ -194,6 +194,10 @@ display label. The browser stores its token and identifier in local storage,
 scoped to the gateway origin; the PC persists approved device records and
 SHA-256 token hashes in `mfd-devices.json`. Grants survive collection and
 application restarts until revoked; revocation disconnects active sockets.
+Re-pairing a generated browser identifier replaces its previous token and
+disconnects its old sockets. When loading existing duplicate records for a
+generated identifier, only the most recently approved permission is retained.
+Other display labels are not treated as unique identifiers.
 These mechanisms do not protect the unencrypted connection.
 
 Each display has its own sender with at most one replaceable pending snapshot.

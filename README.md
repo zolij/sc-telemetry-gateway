@@ -115,7 +115,10 @@ local interface does not use WSS, secure-context-only PWA features or remote
 upload credentials. The generated identifier belongs to the browser's
 storage for this gateway origin, not to the physical device; clearing that
 storage resets it. Scanning a new QR code attempts a fresh pairing even if a
-previous token is stored.
+previous token is stored. Re-pairing the same browser replaces its earlier
+permission and disconnects its old sessions. On gateway startup, duplicate
+records for the same generated identifier are reduced to the most recent
+permission; if the browser no longer has that token, pair it again.
 
 The display starts empty, with no built-in layouts. Select **New profile** to
 build your own MFD with named pages. In **Edit**, search the shared-field library
