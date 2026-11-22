@@ -20,7 +20,7 @@ jobs:
       RUN_PROXY_TESTS: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore tests/ScTelemetryGateway.Tests --locked-mode
