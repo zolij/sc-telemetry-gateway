@@ -26,6 +26,10 @@ protobuf response payloads with local monotonic receive timestamps; no actions
 were sent by the recorder. These figures describe **this one session**, not
 guaranteed behavior or universal value ranges. The raw capture is not included
 in the repository because telemetry can contain player and vehicle data.
+The local JSONL recording has a `start` record, one `frame` record per payload
+(`elapsed_ns` and base64-encoded `payload`), and an `end` record with duration,
+frame count and completion status. Each payload decodes as a
+`TelemetryStreamResponse`, without the gRPC transport framing.
 
 - The stream delivered 5,792 frames. The first and last arrived at 0.004 and
   299.966 seconds after capture start. Inter-frame intervals had a median of
