@@ -86,16 +86,12 @@ The seated recording contained 4,268 frames over 221.11 seconds, all with actor
 locomotion `SEATED`, `vehicle` and `weapons`. Actions were sent sequentially
 with about two seconds of stream observation after each.
 
-After the user manually left the seat, a 78.48-second on-foot recording
-contained 1,515 frames, all with actor locomotion `ON_FOOT`; only the `actor`
-section was observed. All 34 emotes, `mobiglas`, `toggle_flashlight` and
-`v_starmap` returned `OK` without `hold_ms`. All response messages were empty.
-Neither recording contained an `events` section. The previously observed
-500 ms `v_invoke_ping` hold was a separate test, not part of these two runs.
-
-In a separate on-foot test, `visor_wipe` returned `OK` with an empty message.
-The next 38 frames contained `actor` with `ON_FOOT` locomotion and no other
-sections. This test did not establish a visible animation.
+After the user manually left the seat, all 34 emotes and all four player
+actions (`mobiglas`, `toggle_flashlight`, `v_starmap` and `visor_wipe`)
+returned `OK` without `hold_ms`. The on-foot observations included 1,553 frames,
+all with actor locomotion `ON_FOOT` and no other sections. All response messages
+were empty. No `events` section was observed. The previously observed 500 ms
+`v_invoke_ping` hold was a separate test.
 
 Notable decoded changes during the seated actions' observation windows were:
 
