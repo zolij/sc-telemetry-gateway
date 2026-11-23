@@ -145,3 +145,154 @@ In this reconstructed telemetry schema `VehicleMasterModeState` exposes a
 master mode, but there is no separate operator-mode state field. The action
 API does not establish that an action and a similarly named telemetry field
 represent the same state.
+
+## Observed action catalogue (not part of the proto)
+
+The following is a snapshot from `ListTriggerableActions` on PTU
+`5.0.202.10025`, captured on 2026-11-23. It contains 112 actions in 11
+categories. This is a runtime observation, **not an enum or allowlist defined
+by the descriptor**, and may change with the build or game context. Query the
+running game rather than relying on this snapshot. Only `v_invoke_ping` was
+reported as `holdable: true`; all other entries were reported as `false`.
+
+```text
+lights_controller (3)
+  v_lights
+  v_lights_off
+  v_lights_on
+
+player (4)
+  mobiglas
+  toggle_flashlight
+  v_starmap
+  visor_wipe
+
+player_emotes (34)
+  emote_agree
+  emote_angry
+  emote_atease
+  emote_attention
+  emote_blah
+  emote_bored
+  emote_bow
+  emote_burp
+  emote_cheer
+  emote_chicken
+  emote_clap
+  emote_come
+  emote_cry
+  emote_dance
+  emote_disagree
+  emote_failure
+  emote_flex
+  emote_flirt
+  emote_gasp
+  emote_gloat
+  emote_greet
+  emote_laugh
+  emote_launch
+  emote_point
+  emote_rude
+  emote_salute
+  emote_sit
+  emote_sleep
+  emote_smell
+  emote_taunt
+  emote_threaten
+  emote_wait
+  emote_wave
+  emote_whistle
+
+seat_general (17)
+  v_eject
+  v_emergency_exit
+  v_enter_remote_turret_1
+  v_enter_remote_turret_2
+  v_enter_remote_turret_3
+  v_light_amplification_off
+  v_light_amplification_on
+  v_light_amplification_toggle
+  v_operator_mode_cycle_back
+  v_operator_mode_cycle_forward
+  v_set_flight_mode
+  v_set_guns_mode
+  v_set_mining_mode
+  v_set_quantum_mode
+  v_set_refuel_mode
+  v_set_salvage_mode
+  v_set_scan_mode
+
+spaceship_docking (1)
+  v_toggle_docking_request
+
+spaceship_general (11)
+  v_close_all_doors
+  v_flightready
+  v_lock_all_doors
+  v_lock_all_ports
+  v_open_all_doors
+  v_self_destruct
+  v_toggle_all_doorlocks
+  v_toggle_all_doors
+  v_toggle_all_portlocks
+  v_unlock_all_doors
+  v_unlock_all_ports
+
+spaceship_movement (27)
+  v_atc_request
+  v_toggle_landing_system
+  v_deploy_landing_system
+  v_retract_landing_system
+  v_flight_advanced_hud_off
+  v_flight_advanced_hud_on
+  v_flight_advanced_hud_toggle
+  v_ifcs_toggle_gforce_safety
+  v_ifcs_gsafe_on
+  v_ifcs_gsafe_off
+  v_ifcs_proximity_assist_off
+  v_ifcs_proximity_assist_on
+  v_ifcs_proximity_assist_toggle
+  v_ifcs_reset_gmeter_max
+  v_ifcs_toggle_esp
+  v_ifcs_vector_decoupling_off
+  v_ifcs_vector_decoupling_on
+  v_ifcs_vector_decoupling_toggle
+  v_master_mode_cycle
+  v_master_mode_set_nav
+  v_master_mode_set_scm
+  v_transform_cycle
+  v_transform_deploy
+  v_transform_retract
+  v_vtol_off
+  v_vtol_on
+  v_vtol_toggle
+
+spaceship_power (12)
+  v_power_set_off
+  v_power_set_on
+  v_power_set_shields_off
+  v_power_set_shields_on
+  v_power_set_thrusters_off
+  v_power_set_thrusters_on
+  v_power_set_weapons_off
+  v_power_set_weapons_on
+  v_power_toggle
+  v_power_toggle_shields
+  v_power_toggle_thrusters
+  v_power_toggle_weapons
+
+spaceship_quantum (1)
+  v_toggle_qdrive_engagement
+
+spaceship_radar (1)
+  v_invoke_ping
+
+spaceship_target_hailing (1)
+  v_target_hail
+```
+
+In live tests, vehicle lights on/off and a 500 ms radar ping were exercised;
+listing the other entries does not verify their behavior. The game controls
+permission and other operational constraints are described in the
+[setup guide](../README.md#windows-quick-start) and
+[gateway protocol](PROTOCOL.md#game-controls).
