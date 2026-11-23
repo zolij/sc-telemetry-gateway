@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("VerseDataGateway.Tests")]
+[assembly: InternalsVisibleTo("VerseDataGateway.TelemetryDebug")]
 
 namespace VerseDataGateway.Core;
 
@@ -121,7 +122,7 @@ public sealed class GatewayRuntime
             {
                 var address = System.Net.IPAddress.Parse(options.MfdAddress);
                 var assetRoot = mfdAssetRoot ?? Path.Combine(AppContext.BaseDirectory, "mfd");
-                mfdServer = new MfdServer(address, options.MfdPort, mfdSnapshot!, assetRoot);
+                mfdServer = new MfdServer(address, options.MfdPort, mfdSnapshot!, assetRoot, gamePort: options.GamePort);
                 await mfdServer.StartAsync(stop.Token);
                 lock (gate) mfd = "Listener active";
             }

@@ -32,6 +32,7 @@ public sealed partial class MfdServer : IAsyncDisposable
     private readonly MfdSnapshotStore snapshot;
     private readonly MfdProfileStore profiles;
     private readonly MfdDeviceStore deviceStore;
+    private readonly MfdActions? actions;
     private readonly string host;
     private readonly string origin;
     private readonly object gate = new();
@@ -48,7 +49,7 @@ public sealed partial class MfdServer : IAsyncDisposable
     private Task? publisherTask;
 
     public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot,
-        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null)
+        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null, int? gamePort = null)
     {
         this.address = address;
         this.port = port;
@@ -57,6 +58,7 @@ public sealed partial class MfdServer : IAsyncDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VerseDataGateway");
         this.profiles = profiles ?? new MfdProfileStore(dataDirectory);
         this.deviceStore = deviceStore ?? new MfdDeviceStore(dataDirectory);
+        actions = gamePort is { } selectedPort ? new MfdActions(selectedPort, snapshot) : null;
         foreach (var device in this.deviceStore.List())
             approved[device.Id] = device;
         this.assetRoot = assetRoot;
@@ -125,6 +127,7 @@ public sealed partial class MfdServer : IAsyncDisposable
         app.MapMethods("/api/pair/request", [HttpMethods.Post], PairRequestAsync);
         app.MapMethods("/mfd/ws", [HttpMethods.Get], WebSocketAsync);
         MapProfileApi(app);
+        MapActionApi(app);
         app.MapMethods("/{*path}", [HttpMethods.Options], (HttpContext context) =>
         {
             context.Response.StatusCode = 405;
@@ -447,6 +450,7 @@ public sealed partial class MfdServer : IAsyncDisposable
             approved.Clear();
             foreach (var socket in sockets.Keys) socket.Abort();
         }
+        await shutdown.CancelAsync();
         publisher?.Cancel();
         if (publisherTask is not null)
         {
@@ -454,7 +458,7 @@ public sealed partial class MfdServer : IAsyncDisposable
         }
         if (app is not null) await app.StopAsync();
         if (app is not null) await app.DisposeAsync();
-        await shutdown.CancelAsync();
+        actions?.Dispose();
         publisher?.Dispose();
         shutdown.Dispose();
     }

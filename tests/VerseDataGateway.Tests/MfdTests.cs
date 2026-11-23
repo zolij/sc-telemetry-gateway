@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -7,6 +8,14 @@ using System.Text;
 using Sc.Game.Telemetry.V1;
 using VerseDataGateway.Core;
 using Google.Protobuf;
+using Grpc.Core;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace VerseDataGateway.Tests;
 
@@ -357,7 +366,7 @@ public sealed class MfdTests
         public MfdSnapshotStore Store { get; }
         public string ProfileRoot => profileRoot;
 
-        private MfdTestServer(IEnumerable<string> fields)
+        private MfdTestServer(IEnumerable<string> fields, int? gamePort)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
@@ -365,13 +374,13 @@ public sealed class MfdTests
             listener.Stop();
             Store = new(fields);
             Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(),
-                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot));
+                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot), gamePort);
             http.DefaultRequestHeaders.Add("Origin", Origin);
         }
 
-        public static async Task<MfdTestServer> Start(IEnumerable<string>? fields = null)
+        public static async Task<MfdTestServer> Start(IEnumerable<string>? fields = null, int? gamePort = null)
         {
-            var test = new MfdTestServer(fields ?? []);
+            var test = new MfdTestServer(fields ?? [], gamePort);
             await test.Server.StartAsync(test.Token);
             return test;
         }
@@ -408,6 +417,251 @@ public sealed class MfdTests
             http.Dispose();
             deadline.Dispose();
             if (Directory.Exists(profileRoot)) Directory.Delete(profileRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GameActionsRequireApprovalAndRespectSelectedFields(bool lightsSelected)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var gameState = new ActionGameState();
+        builder.Services.AddSingleton(gameState);
+        var game = builder.Build();
+        game.MapGrpcService<ActionGame>();
+        await game.StartAsync();
+        try
+        {
+            var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+            var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+            await using var test = await MfdTestServer.Start(
+                lightsSelected ? ["vehicle.state.lights_enabled"] : ["actor.vitals.heart_rate"], gamePort);
+            test.Store.StartStream();
+            using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+            http.DefaultRequestHeaders.Add("Origin", test.Origin);
+            using var denied = await http.GetAsync("/api/mfd/actions", test.Token);
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+            using var catalog = await http.GetAsync("/api/mfd/actions", test.Token);
+            catalog.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(test.Token));
+            Assert.Equal(lightsSelected, body.RootElement.EnumerateArray().Single(
+                item => item.GetProperty("action_name").GetString() == "v_lights_on").GetProperty("enabled").GetBoolean());
+            var gear = body.RootElement.EnumerateArray().Single(
+                item => item.GetProperty("action_name").GetString() == "v_toggle_landing_system");
+            Assert.Equal("vehicle.state.flight.state.gear", Assert.Single(gear.GetProperty("fields").EnumerateArray()).GetString());
+            Assert.False(gear.GetProperty("mapping_verified").GetBoolean());
+            Assert.False(gear.GetProperty("enabled").GetBoolean());
+            using var unselected = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_toggle_landing_system" }, test.Token);
+            Assert.Equal(HttpStatusCode.Forbidden, unselected.StatusCode);
+            using var result = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token);
+            Assert.Equal(lightsSelected ? HttpStatusCode.OK : HttpStatusCode.Forbidden, result.StatusCode);
+            if (lightsSelected)
+            {
+                using var response = JsonDocument.Parse(await result.Content.ReadAsStringAsync(test.Token));
+                Assert.Equal("Ok", response.RootElement.GetProperty("status").GetString());
+            }
+            foreach (var invalid in new object[]
+            {
+                    new { action_name = "v_invoke_ping", hold_ms = 0 },
+                    new { action_name = "v_invoke_ping", hold_ms = 5001 },
+                    new { action_name = "v_lights_on", hold_ms = 100 },
+                    new { action_name = "not_listed" },
+                    new { action_name = "v_invoke_ping", unexpected = true }
+            })
+            {
+                using var invalidResponse = await http.PostAsJsonAsync("/api/mfd/actions/trigger", invalid, test.Token);
+                Assert.True(invalidResponse.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden);
+            }
+            Assert.Equal(lightsSelected ? 1 : 0, gameState.Requests.Count);
+            using (var noOrigin = new HttpClient { BaseAddress = new Uri(test.Origin) })
+            {
+                noOrigin.DefaultRequestHeaders.Authorization = http.DefaultRequestHeaders.Authorization;
+                using var rejected = await noOrigin.PostAsJsonAsync("/api/mfd/actions/trigger",
+                    new { action_name = "v_invoke_ping" }, test.Token);
+                Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+            }
+            await Task.Delay(300, test.Token);
+            using var ping = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_invoke_ping", hold_ms = 5000 }, test.Token);
+            ping.EnsureSuccessStatusCode();
+            using var pingBody = JsonDocument.Parse(await ping.Content.ReadAsStringAsync(test.Token));
+            Assert.Equal("RateLimited", pingBody.RootElement.GetProperty("status").GetString());
+            var pingRequest = gameState.Requests.Last();
+            Assert.Equal("v_invoke_ping", pingRequest.ActionName);
+            Assert.True(pingRequest.HasHoldMs);
+            Assert.Equal((uint)5000, pingRequest.HoldMs);
+            using var repeated = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_invoke_ping", hold_ms = 1 }, test.Token);
+            Assert.Equal(HttpStatusCode.TooManyRequests, repeated.StatusCode);
+            Assert.Equal(lightsSelected ? 2 : 1, gameState.Requests.Count);
+            test.Store.Disconnected();
+            using var disconnected = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_invoke_ping", hold_ms = 100 }, test.Token);
+            Assert.Equal(HttpStatusCode.Forbidden, disconnected.StatusCode);
+            Assert.True(test.Server.RevokeDevice(Assert.Single(test.Server.Status.Devices).Id));
+            using var revoked = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token);
+            Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+            Assert.Equal(lightsSelected ? 2 : 1, gameState.Requests.Count);
+        }
+        finally { await game.DisposeAsync(); }
+    }
+
+    public sealed class ActionGameState
+    {
+        public ConcurrentQueue<TriggerGameActionRequest> Requests { get; } = new();
+        public TaskCompletionSource? CatalogEntered { get; set; }
+        public TaskCompletionSource? CatalogRelease { get; set; }
+        public int CatalogCalls;
+    }
+
+    [Fact]
+    public async Task GameActionCatalogLimitsConcurrentDiscoveryAndTriggerChecks()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var gameState = new ActionGameState();
+        builder.Services.AddSingleton(gameState);
+        await using var game = builder.Build();
+        game.MapGrpcService<ActionGame>();
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start(["vehicle.state.lights_enabled"], gamePort);
+        test.Store.StartStream();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+
+        async Task AssertBusy(HttpResponseMessage response)
+        {
+            using (response)
+            {
+                Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+                Assert.Equal("action_busy", body.RootElement.GetProperty("error").GetString());
+            }
+        }
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gameState.CatalogEntered = entered;
+        gameState.CatalogRelease = release;
+        try
+        {
+            var firstGet = http.GetAsync("/api/mfd/actions", test.Token);
+            await entered.Task.WaitAsync(test.Token);
+            await AssertBusy(await http.GetAsync("/api/mfd/actions", test.Token));
+            await AssertBusy(await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token));
+            Assert.Equal(1, Volatile.Read(ref gameState.CatalogCalls));
+            Assert.Empty(gameState.Requests);
+            release.SetResult();
+            using var firstResponse = await firstGet;
+            firstResponse.EnsureSuccessStatusCode();
+
+            entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            gameState.CatalogEntered = entered;
+            gameState.CatalogRelease = release;
+            var trigger = http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token);
+            await entered.Task.WaitAsync(test.Token);
+            await AssertBusy(await http.GetAsync("/api/mfd/actions", test.Token));
+            Assert.Equal(2, Volatile.Read(ref gameState.CatalogCalls));
+            release.SetResult();
+            using var triggerResponse = await trigger;
+            triggerResponse.EnsureSuccessStatusCode();
+            Assert.Single(gameState.Requests);
+            using var finalGet = await http.GetAsync("/api/mfd/actions", test.Token);
+            finalGet.EnsureSuccessStatusCode();
+            Assert.Equal(3, Volatile.Read(ref gameState.CatalogCalls));
+        }
+        finally { release.TrySetResult(); }
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.power.shield_generators", true)]
+    [InlineData("vehicle.state.power.shield_emitters", true)]
+    [InlineData("vehicle.state.shields.level", true)]
+    [InlineData("actor.vitals.heart_rate", false)]
+    public async Task ShieldControlRequiresAtLeastOneAssociatedSelectedField(string selected, bool allowed)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var gameState = new ActionGameState();
+        builder.Services.AddSingleton(gameState);
+        await using var game = builder.Build();
+        game.MapGrpcService<ActionGame>();
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start([selected], gamePort);
+        test.Store.StartStream();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var catalog = await http.GetAsync("/api/mfd/actions", test.Token);
+        catalog.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(test.Token));
+        var shield = json.RootElement.EnumerateArray().Single(
+            item => item.GetProperty("action_name").GetString() == "v_power_toggle_shields");
+        Assert.Equal(allowed, shield.GetProperty("enabled").GetBoolean());
+        Assert.Contains(shield.GetProperty("fields").EnumerateArray(),
+            item => item.GetString() == "vehicle.state.power.shield_generators");
+        Assert.Contains(shield.GetProperty("fields").EnumerateArray(),
+            item => item.GetString() == "vehicle.state.shields.level");
+        Assert.False(shield.GetProperty("mapping_verified").GetBoolean());
+        using var result = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+            new { action_name = "v_power_toggle_shields" }, test.Token);
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, result.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, gameState.Requests.Count);
+    }
+
+    public sealed class ActionGame(ActionGameState state) : GameTelemetryService.GameTelemetryServiceBase
+    {
+        public override async Task<ListTriggerableActionsResponse> ListTriggerableActions(
+            ListTriggerableActionsRequest request, ServerCallContext context)
+        {
+            Interlocked.Increment(ref state.CatalogCalls);
+            var release = state.CatalogRelease;
+            state.CatalogEntered?.TrySetResult();
+            if (release is not null) await release.Task.WaitAsync(context.CancellationToken);
+            return new ListTriggerableActionsResponse
+                {
+                    Actions =
+                    {
+                        new TriggerableAction { ActionName = "v_lights_on", Category = "lights_controller" },
+                        new TriggerableAction { ActionName = "v_toggle_landing_system", Category = "spaceship_movement" },
+                        new TriggerableAction { ActionName = "v_power_toggle_shields", Category = "spaceship_power" },
+                        new TriggerableAction { ActionName = "v_invoke_ping", Category = "spaceship_radar", Holdable = true }
+                    }
+                };
+        }
+
+        public override Task<TriggerGameActionResponse> TriggerGameAction(
+            TriggerGameActionRequest request, ServerCallContext context)
+        {
+            state.Requests.Enqueue(request.Clone());
+            return Task.FromResult(new TriggerGameActionResponse
+            {
+                Status = request.ActionName == "v_invoke_ping"
+                    ? TriggerGameActionStatus.RateLimited : TriggerGameActionStatus.Ok
+            });
         }
     }
 

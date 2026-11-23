@@ -3,8 +3,9 @@
 # Verse Data Gateway
 
 Verse Data Gateway is an unofficial, independent community project for
-Star Citizen. This read-only Windows telemetry gateway turns selected game
-data into a customizable phone or tablet MFD (multi-function display).
+Star Citizen. This Windows telemetry gateway turns selected game data into a
+customizable phone or tablet MFD (multi-function display), with optional
+game-supported controls.
 Optionally, it forwards separately selected, aggregated telemetry to a
 WebSocket receiver.
 
@@ -22,16 +23,19 @@ permitted by law. See the [disclaimer](docs/DISCLAIMER.md).
 ## Compatibility
 
 The application targets **PTU only**; LIVE is unsupported. The PTU installation
-checked on November 22, 2026 reported build `5.0.202.10025` (changelist
-`13248297`; manifest dated November 20, 2026). The build-specific telemetry
-mapping was recovered from PTU `5.0.202.205` (changelist `13238477`), not an
-official or stable SDK. Compatibility with other builds, game terms, or
-anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
+checked on November 23, 2026 reported build `5.0.202.10025` (changelist
+`13248297`; manifest dated November 20, 2026). The reconstructed telemetry
+and action definitions were checked against the descriptors embedded in that
+build. They are not an official or stable SDK. Compatibility with other builds,
+game terms, or anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for
+provenance.
+For the recovered game-side schema, see the
+[PTU telemetry protocol reference](docs/GAME-TELEMETRY.md).
 
 ## Design
 
 - Native Windows x64 tray application, self-contained .NET 10 distribution.
-- Loopback-only, read-only gRPC `TelemetryStream`; no game action RPCs.
+- Loopback-only gRPC telemetry and game-supported action RPCs.
 - Local MFD with approved devices and a separate, initially empty field allowlist.
 - Optional remote upload with its own initially empty field allowlist; no automatic game telemetry uploads.
 - Remote delivery uses five-second aggregation windows and WSS/JSON batch acknowledgements.
@@ -60,6 +64,10 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    server.game.telemetry.enabled = 1
    ```
 
+   To permit game controls, also set
+   `server.game.telemetry.trigger.actions.enabled = 1`. Without this game-side
+   setting, control requests may be rejected.
+
    Restart Star Citizen after saving. For a current-session test, enter these
    commands in the game console instead:
 
@@ -68,6 +76,8 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    grpc.client.server.external 0
    server.game.telemetry.enabled 1
    ```
+
+   For controls, also enter `server.game.telemetry.trigger.actions.enabled 1`.
 
    The gateway defaults to game port `29420`. Keep its game port equal to the
    configured port and `external` set to `0`. Check the gateway setting and
@@ -81,14 +91,16 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    a phone or tablet on the same network. Create a pairing code and scan its QR
    code with the phone camera, or enter the one-use code in the browser. Scanning
    or entering the code immediately authorizes the display.
-5. Create an MFD profile in the browser and add the instruments you need.
+5. Create an MFD profile in the browser and add instruments and game controls.
    Closing the dashboard leaves the tray running; double-click the tray icon to
    reopen it. Use **Pause and clear buffer** or the tray **Exit** to stop collection.
 
 The local MFD uses unencrypted HTTP and WebSocket traffic: anyone on the network
-may observe or modify the page, pairing codes, credentials and telemetry. Use only
-a trusted network, configure Windows Firewall yourself, and do not forward the
-port on your router. For optional remote delivery, see [Receiver](#receiver).
+may observe or modify the page, pairing codes, credentials, telemetry and game
+commands. **Existing and newly paired displays can trigger game actions**, with
+no separate gateway control switch. Use only a trusted network, configure
+Windows Firewall yourself, and do not forward the port on your router. For
+optional remote delivery, see [Receiver](#receiver).
 
 The app neither starts with Windows nor resumes collection automatically.
 Local MFD access is disabled until explicitly enabled; no network interface or
@@ -132,8 +144,24 @@ build your own MFD with named pages. In **Edit**, search the shared-field librar
 and add value tiles, status indicators or lists. Configure labels, decimal
 precision and normal, wide or large tile sizes. Rearrange tiles by their move
 handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
-values to your own labels and a fixed color palette. No graphs, arbitrary
-formulas or game controls are included; measurement units are not inferred.
+values to your own labels and a fixed color palette. No graphs or arbitrary
+formulas are included; measurement units are not inferred.
+
+The editor lists the game's available controls by category. Each tile either
+displays one telemetry field or triggers one game action. Controls with known
+field associations require at least one associated field to be shared in PC MFD
+settings. Vehicle lights on/off were verified against live PTU telemetry;
+other field associations are based on names and marked as not live-verified.
+Availability depends on the game,
+active action map and game-side trigger setting; an unavailable saved control
+is retained but disabled. A game response is shown on the tile, including in
+Focus Mode. An accepted request is not proof of a state change. If a response
+is lost, check the game before retrying.
+
+Some actions can be held for a configured 1–5000 ms; the request runs for that
+duration, not until the screen is released. Editing never triggers controls.
+The interface asks for confirmation before eject, emergency exit or
+self-destruct, but the game still decides whether any action is permitted.
 
 **Value format** defaults to **Automatic**, including for existing profiles.
 Shield level/faces and hydrogen fuel use 0–1 ratios (`0.75` → `75%`).
@@ -239,7 +267,7 @@ MFD fields. Apply settings and start collection explicitly.
 Bring your own server implementing [the protocol and ACK contract](docs/PROTOCOL.md).
 The app sends selected last-known snapshots, window statistics and buffered
 events every 5 seconds by default (configurable from 1 to 300 seconds).
-No game actions or arbitrary remote commands are supported.
+Remote receivers cannot trigger game actions or send arbitrary commands.
 
 The [deployment guide](docs/DEPLOYMENT.md) covers direct TLS, reverse proxies
 and optional Cloudflare Tunnel. The [JSON Schema](docs/telemetry.schema.json)

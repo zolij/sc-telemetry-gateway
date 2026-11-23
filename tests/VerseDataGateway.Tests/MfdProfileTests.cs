@@ -19,6 +19,62 @@ public sealed class MfdProfileTests : IDisposable
     };
 
     [Fact]
+    public void ActionTilesPersistAndRejectInvalidBindingsAndHolds()
+    {
+        var draft = Draft();
+        var tile = draft.Pages[0].Tiles[0];
+        var control = tile with { Id = Guid.NewGuid(), Field = "", Label = "Radar ping",
+            Widget = "action", Action = "v_invoke_ping", HoldMs = 1000 };
+        var light = tile with { Field = "vehicle.state.lights_enabled" };
+        var configured = draft with { Pages = [draft.Pages[0] with { Tiles = [light, control] }] };
+        var saved = Store.Create(configured);
+        var restored = Store.Get(saved.Id)!;
+        Assert.Null(restored.Pages[0].Tiles[0].Action);
+        Assert.Equal((uint)1000, restored.Pages[0].Tiles[1].HoldMs);
+        foreach (var invalid in new[]
+        {
+            control with { HoldMs = 0 },
+            control with { HoldMs = 5001 },
+            control with { Action = null },
+            control with { Action = "bad action" },
+            light with { Action = "v_invoke_ping" },
+            light with { Action = null, HoldMs = 100 }
+        })
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+        Assert.Throws<ArgumentException>(() => Store.Create(draft with { Pages = [draft.Pages[0] with
+        {
+            Tiles = [light with { Action = "v_lights_on" }]
+        }] }));
+        var legacy = JsonSerializer.Serialize(draft, WireJson.Options);
+        Assert.DoesNotContain("\"action\"", legacy);
+        Assert.DoesNotContain("\"hold_ms\"", legacy);
+        JsonSerializer.Deserialize<MfdProfile>(legacy, WireJson.Options)!.Validate();
+    }
+
+    [Theory]
+    [InlineData("v_toggle_landing_system", "vehicle.state.flight.state.gear")]
+    [InlineData("v_open_all_doors", "vehicle.state.doors.open_state")]
+    [InlineData("v_ifcs_gsafe_on", "vehicle.state.flight.settings.ifcs_g_safe.active")]
+    [InlineData("v_master_mode_set_nav", "vehicle.state.master_mode.mode")]
+    [InlineData("v_power_toggle_weapons", "vehicle.state.power.weapons")]
+    public void NameBasedActionsMapToExistingTelemetryFields(string action, string field)
+    {
+        Assert.Contains(field, MfdActions.FieldsForAction(action));
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.power.shield_generators")]
+    [InlineData("vehicle.state.power.shield_emitters")]
+    [InlineData("vehicle.state.shields.level")]
+    [InlineData("vehicle.state.shields.faces")]
+    public void ShieldControlMapsToRelatedFields(string field)
+    {
+        Assert.Contains(field, MfdActions.FieldsForAction("v_power_toggle_shields"));
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+    }
+
+    [Fact]
     public void PageTriggersPersistAndLegacyProfilesDefaultToManualPages()
     {
         var draft = Draft();

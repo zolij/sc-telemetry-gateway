@@ -260,11 +260,63 @@ Responses use `Cache-Control: no-store`.
 | --- | --- | --- |
 | GET | `/api/mfd/fields` | Enabled-field metadata, independent of whether values have arrived |
 | GET | `/api/mfd/events` | Known nonzero game-event names for page triggers, independent of field selection |
+| GET | `/api/mfd/actions` | Game action catalogue and local field eligibility |
+| POST | `/api/mfd/actions/trigger` | Trigger a currently listed, eligible game action |
 | GET | `/api/mfd/profiles` | Array of `{id, name, revision}` summaries |
 | GET | `/api/mfd/profiles/{id}` | Full profile and revision ETag |
 | POST | `/api/mfd/profiles` | Create a new profile; returns 201 and the saved document |
 | PUT | `/api/mfd/profiles/{id}` | Replace an existing profile with revision precondition |
 | DELETE | `/api/mfd/profiles/{id}` | Delete with revision precondition; returns 204 |
+
+### Game controls
+
+The action endpoints use the same host, origin and paired-device checks as the
+profile API. Existing and newly paired devices can trigger game actions without
+a separate gateway enable switch. HTTP is unencrypted: a network observer or
+attacker may obtain credentials or alter commands. Use only a trusted LAN.
+Remote telemetry receivers have no game-control channel.
+
+`GET /api/mfd/actions` queries the game over loopback and returns entries
+`{action_name, category, holdable, fields, enabled, mapping_verified}`.
+`fields` lists the gateway's corresponding fields. A mapped action is enabled
+when at least one of its corresponding fields is selected in MFD settings.
+Unmapped actions do not require a field. `mapping_verified` is
+`true` for the light on/off actions observed against live PTU telemetry,
+`false` for name-based associations not live-verified, and `null` for
+unmapped actions. Other listed actions are available as standalone controls.
+The list and game-side allowlist can change independently of gateway profiles.
+Only one catalogue query, including the trigger-time eligibility check, can be
+in flight at a time; concurrent requests receive HTTP 429 `action_busy`.
+
+The explicit field associations cover vehicle lights, landing gear, VTOL,
+transformation, door opening and locking, IFCS G-safe, ESP, proximity assist
+and coupling, master mode, power, shields, advanced HUD and light
+amplification. Apart from light on/off, these are
+based on action and field names, not observed state transitions; they are
+marked accordingly in the MFD. Refer to the current catalogue for each exact
+action and fields. Related values need not represent the same state: shield
+charge, for example, is not the on/off state of a shield generator.
+
+`POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
+"hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be
+an integer from 1 through 5000 and the game must list that action as holdable.
+The 5000 ms limit is a gateway safety limit, not a verified game maximum;
+a 500 ms radar ping was observed in the checked PTU build.
+The gateway re-reads the game catalogue and checks eligibility, active
+telemetry, approval, one concurrent request and a 250 ms minimum between
+dispatches. Writes require the exact Origin. Bodies are limited to 4096 bytes;
+requests have deadlines and are not automatically retried.
+
+An HTTP 200 response contains `{status, message}` from the game, including
+non-success statuses such as `UnknownAction`, `MapInactive`, `RateLimited`,
+`Failed`, `HoldNotAllowed` or `Filtered`. `Ok` means the game accepted the
+request, not that a particular telemetry state was observed. Gateway validation,
+authorization, busy and game/RPC failures use HTTP errors with `{error,
+message}`. A timeout, disconnect or device revocation cannot undo a dispatched
+action; a lost response leaves its outcome unknown. A hold is an interval
+requested from the game, not a separately cancellable press/release stream.
+The game must itself permit external actions via
+`server.game.telemetry.trigger.actions.enabled`.
 
 Field metadata entries contain `path`, `type` (lowercase protobuf scalar type),
 `repeated`, `enum_values`, `numeric`, `display_format`, and `maximum_field`.
@@ -320,8 +372,12 @@ page and tile IDs and starts the revision at 1. Names and tile labels contain
 1–80 characters without control characters. Profiles have 1–16 pages, each
 with 0–64 tiles; at most 32 profiles can be stored.
 
-Widgets are `value` or `status` for scalar fields, and `list` for repeated
-fields. Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive
+Widgets are `value` or `status` for scalar fields, `list` for repeated fields,
+and `action` for a standalone control. An action tile has an empty `field` and
+one `action` name; telemetry tiles cannot have an action. Optional `hold_ms`
+is bounded as described above. Saved actions that are absent from the current
+game catalogue remain in the profile but cannot be triggered.
+Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive
 width clamping. Decimal precision is 0–6; int64/uint64 wire strings are not
 converted to imprecise JavaScript numbers. A status tile can have at most 32
 rules: `{value, label, color}`. Values are exact raw scalar text (e.g. `false`

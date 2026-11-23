@@ -23,7 +23,9 @@ the window is closed. Double-click the tray icon to reopen the dashboard.
 Telemetry collection is always paused on launch, including after an update.
 For a local MFD, use Settings to choose a trusted network interface, select MFD
 fields and enable local MFD access; then start collection and pair your display
-from the dashboard. Local traffic is unencrypted. Remote upload is optional and
+from the dashboard. Paired displays can trigger game-supported actions. Local
+traffic is unencrypted and can be observed or modified; use a trusted network.
+Remote upload is optional and
 has its own field selection. Neither destination starts automatically.
 
 Before installing, Setup explains application usage statistics and offers a

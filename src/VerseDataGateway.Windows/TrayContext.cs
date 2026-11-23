@@ -95,7 +95,7 @@ internal sealed class TrayContext : ApplicationContext
             "Use at your own risk. Provided \"AS IS\", without warranties.\n" +
             "Authors and contributors disclaim liability to the fullest\n" +
             "extent permitted by law. See docs/DISCLAIMER.md.\n\n" +
-            "Apache-2.0. Protocol observed in PTU 5.0.202.205.\n" +
+            "Apache-2.0. Protocol checked against PTU 5.0.202.10025.\n" +
             "See LICENSE, NOTICE and docs in the application folder.", ProductName));
         menu.Items.Add("Exit", null, async (_, _) =>
         {
