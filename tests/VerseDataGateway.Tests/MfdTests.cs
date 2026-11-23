@@ -644,6 +644,37 @@ public sealed class MfdTests
     }
 
     [Fact]
+    public async Task ProfileApiQuarantinesOldCombinedProfilesWithoutBlockingAtomicProfiles()
+    {
+        await using var test = await MfdTestServer.Start();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        var legacy = MfdProfileTests.Draft() with { Id = Guid.NewGuid(), Revision = 1 };
+        legacy = legacy with { Pages = [legacy.Pages[0] with { Tiles =
+            [legacy.Pages[0].Tiles[0] with { Field = "vehicle.state.lights_enabled", Action = "v_lights" }] }] };
+        var atomic = MfdProfileTests.Draft() with { Id = Guid.NewGuid(), Revision = 1 };
+        Directory.CreateDirectory(test.ProfileRoot);
+        await File.WriteAllTextAsync(Path.Combine(test.ProfileRoot, "mfd-profiles.json"),
+            JsonSerializer.Serialize(new { schema_version = 1, profiles = new[] { legacy, atomic } }, WireJson.Options), test.Token);
+
+        using var list = await http.GetAsync("/api/mfd/profiles", test.Token);
+        var summaries = (await list.Content.ReadFromJsonAsync<MfdProfileSummary[]>(WireJson.Options, test.Token))!;
+        Assert.False(summaries.Single(item => item.Id == legacy.Id).Atomic);
+        Assert.True(summaries.Single(item => item.Id == atomic.Id).Atomic);
+        using var rejected = await http.GetAsync("/api/mfd/profiles/" + legacy.Id, test.Token);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        using var supported = await http.GetAsync("/api/mfd/profiles/" + atomic.Id, test.Token);
+        Assert.Equal(HttpStatusCode.OK, supported.StatusCode);
+        using var import = await http.PostAsJsonAsync("/api/mfd/profiles", legacy, WireJson.Options, test.Token);
+        Assert.Equal(HttpStatusCode.BadRequest, import.StatusCode);
+        using var remove = new HttpRequestMessage(HttpMethod.Delete, "/api/mfd/profiles/" + legacy.Id);
+        remove.Headers.IfMatch.Add(new("\"1\""));
+        using var deleted = await http.SendAsync(remove, test.Token);
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+    }
+
+    [Fact]
     public async Task ProfileApiRejectsInvalidBodiesAndForeignOrigins()
     {
         await using var test = await MfdTestServer.Start();
