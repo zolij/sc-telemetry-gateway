@@ -112,6 +112,9 @@
         <p id="format-note" class="library-note"></p>
         <label for="tile-action">GAME CONTROL</label><select id="tile-action"></select>
         <label id="hold-label" for="tile-hold">HOLD DURATION (MS, OPTIONAL)</label><input id="tile-hold" type="number" min="1" max="5000" placeholder="Press once">
+        <button id="add-tile-control" type="button">ADD CONTROL TO GROUP</button>
+        <div id="tile-controls-list" class="configured-controls"></div>
+        <p class="library-note">Add controls to group them on one tile. A selected control is also included when applying the tile. More than four controls use a selector.</p>
         <p class="library-note">A hold runs for the selected duration; releasing the screen does not cancel it. A command may still execute if its response is lost.</p>
         <div id="status-settings" hidden>
           <p class="library-note">Exact raw values, e.g. true, false or VEHICLE_MASTER_MODE_SCM. Unknown values keep their own text.</p>

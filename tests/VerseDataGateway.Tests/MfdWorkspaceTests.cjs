@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, group = null, groupField = "" } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -62,22 +62,27 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     { path: shieldPower, repeated: false, numeric: false },
     { path: shieldLevel, repeated: false, numeric: true },
     { path: "vehicle.state.lights_enabled", repeated: false, numeric: false }
-  ] : [];
-  let actionCatalog = mappedAction ? [{
+  ] : groupField ? [{ path: groupField, repeated: false, numeric: false }] : [];
+  let actionCatalog = group ? group.map(control => ({
+    action_name: control.action, category: "group", holdable: control.hold_ms != null,
+    field: groupField || null, fields: groupField ? [groupField] : [], enabled: true
+  })) : mappedAction ? [{
     action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
     field: shieldPower, fields: [shieldPower, shieldLevel], enabled: true
   }] : withAction ? [{
     action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
   }] : [];
-  if (withAction || mappedAction) {
+  if (withAction || mappedAction || group) {
     remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
     remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
     remote.pages[0].tiles.push({
       id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323",
-      field: mappedAction ? shieldLevel : "", label: mappedAction ? "Shields" : "Radar",
-      widget: mappedAction ? "value" : "action", size: "normal", decimals: 2, format: "auto", rules: [],
-      action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
-      ...(!mappedAction ? { hold_ms: 500 } : {})
+      field: group ? groupField : mappedAction ? shieldLevel : "", label: group ? "Group" : mappedAction ? "Shields" : "Radar",
+      widget: (group ? !!groupField : mappedAction) ? "value" : "action", size: "normal", decimals: 2, format: "auto", rules: [],
+      ...(group ? { controls: group } : {
+        action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
+        ...(!mappedAction ? { hold_ms: 500 } : {})
+      })
     });
   }
   const summaryStatuses = [];
@@ -173,6 +178,60 @@ test("action tile sends a bounded command only when online and reports acceptanc
   assert.match(feedback.textContent, /ACCEPTED.*CHECK GAME STATE/);
   view.workspace.paint(snapshot, false, 0, () => "");
   assert.equal(button.disabled, true);
+});
+
+test("small combined groups dispatch the selected button and require the displayed field", async () => {
+  const group = [{ action: "v_master_mode_set_nav" }, { action: "v_master_mode_set_scm" }];
+  const field = "vehicle.state.master_mode.mode";
+  const view = await fixture({ group, groupField: field });
+  const buttons = view.element("custom-cards").children[0].children[3].children;
+  const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.ok(buttons.every(button => button.disabled));
+  snapshot.selected_fields.push(field);
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.ok(buttons.every(button => !button.disabled));
+  await buttons[1].click();
+  assert.deepEqual(view.actionRequests, [{ action_name: "v_master_mode_set_scm" }]);
+  view.setActions([{ action_name: group[0].action, category: "group", holdable: false, field, fields: [field], enabled: true }]);
+  await view.poll();
+  const updated = view.element("custom-cards").children[0].children[3].children;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(updated[0].disabled, false);
+  assert.equal(updated[1].disabled, true);
+});
+
+test("large groups require a selection and retain each control's hold duration", async () => {
+  const group = Array.from({ length: 5 }, (_, index) => ({ action: "emote_" + index }));
+  group[3].hold_ms = 500;
+  const view = await fixture({ group });
+  const [select, button] = view.element("custom-cards").children[0].children[3].children;
+  const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, true);
+  select.value = group[3].action;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, false);
+  await button.click();
+  assert.deepEqual(view.actionRequests, [{ action_name: "emote_3", hold_ms: 500 }]);
+  view.workspace.paint(snapshot, false, 0, () => "");
+  assert.equal(button.disabled, true);
+});
+
+test("editing grouped controls preserves the group and rejects duplicates", async () => {
+  const group = [{ action: "emote_wave" }, { action: "emote_salute" }];
+  const view = await fixture({ group });
+  await view.element("edit-profile").click();
+  await view.element("custom-cards").children[0].children[3].children[1].click();
+  assert.equal(view.element("tile-controls-list").children.length, 2);
+  view.element("tile-action").value = "emote_wave";
+  view.element("add-tile-control").click();
+  assert.match(view.element("tile-message").textContent, /already/);
+  view.element("tile-action").value = "";
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
+  assert.equal(view.element("custom-cards").children.length, 1);
+  assert.deepEqual(view.actionRequests, []);
 });
 
 test("combined controls require their own selected and still-associated field", async () => {

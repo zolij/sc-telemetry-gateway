@@ -90,6 +90,11 @@ h1 span { color: var(--accent); }
 .size-large .instrument-value { color: var(--accent); font-size: clamp(38px, 6vw, 76px); letter-spacing: -.03em; }
 .instrument-meta { min-height: 1em; color: #a4baa8; font: 11px Consolas, monospace; }
 .game-action { margin-top: 12px; min-height: 48px; border-color: var(--accent); color: var(--accent); }
+.game-action-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 6px; margin-top: 12px; }
+.game-action-group .game-action { margin-top: 0; }
+.game-action-select { min-width: 0; }
+.configured-controls { display: grid; gap: 6px; margin-top: 12px; }
+.configured-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); font: 11px Consolas, monospace; }
 .game-action:disabled { opacity: .45; }
 .game-action-result { margin-top: 6px; color: var(--warning); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
 .instrument[data-state="stale"] .instrument-meta, .instrument[data-state="last-known"] .instrument-meta { color: var(--warning); }

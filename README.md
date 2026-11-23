@@ -159,6 +159,12 @@ is retained but disabled. A game response is shown on the tile, including in
 Focus Mode. An accepted request is not proof of a state change. If a response
 is lost, check the game before retrying.
 
+Use **Add control to group** in tile setup to put several controls on one tile.
+Up to four appear as separate buttons; larger groups use a selector and a
+trigger button. Each control may have its own hold duration and is checked
+independently. A telemetry tile can group only controls associated with its
+displayed field; unrelated controls can be grouped on a control-only tile.
+
 Some actions can be held for a configured 1–5000 ms; the request runs for that
 duration, not until the screen is released. Editing never triggers controls.
 The interface asks for confirmation before eject, emergency exit or

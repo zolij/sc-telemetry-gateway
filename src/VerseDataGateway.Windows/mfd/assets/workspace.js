@@ -9,6 +9,7 @@ const MfdWorkspace = (() => {
   let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
+  let groupedControls = [];
   let preferenceWarning = "";
   let triggerEvents = [];
   const eventCursor = MfdPageTriggers.createCursor();
@@ -34,6 +35,7 @@ const MfdWorkspace = (() => {
   const readable = MfdPresentation.readable;
   const actionLabel = name => readable(name.replace(/^v_/, ""));
   const actionFields = action => Array.isArray(action.fields) ? action.fields : action.field ? [action.field] : [];
+  const tileControls = tile => tile.controls ?? (tile.action ? [{ action: tile.action, hold_ms: tile.hold_ms }] : []);
   function label(path) {
     return path.split(".").filter(part => !["state", "flight", "instruments", "actor", "vehicle"].includes(part))
       .map(readable).join(" / ").slice(0, 80);
@@ -165,25 +167,25 @@ const MfdWorkspace = (() => {
       const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
       card.append(node("span", "instrument-label", tile.label), value, meta);
-      let actionButton = null;
+      const buttons = [];
+      let picker = null;
       let mappingNote = null;
-      if (tile.action && !draft) {
-        actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
-        actionButton.type = "button";
-        actionButton.disabled = true;
+      const controls = tileControls(tile);
+      if (controls.length && !draft) {
         const feedback = node("span", "game-action-result", actionFeedback.get(tile.id) ?? "");
         feedback.setAttribute("role", "status");
-        actionButton.addEventListener("click", async () => {
-          if (busy || draft || actionButton.disabled || actionPending.has(tile.id)) return;
-          if (["v_self_destruct", "v_eject", "v_emergency_exit"].includes(tile.action) &&
-              !window.confirm("Trigger " + actionLabel(tile.action) + " in the game?")) return;
+        const trigger = async (control, button) => {
+          if (!control || busy || draft || button.disabled || actionPending.has(tile.id)) return;
+          if (["v_self_destruct", "v_eject", "v_emergency_exit"].includes(control.action) &&
+              !window.confirm("Trigger " + actionLabel(control.action) + " in the game?")) return;
           actionPending.add(tile.id);
           const requestEpoch = epoch;
-          actionButton.disabled = true;
+          button.disabled = true;
+          repaint?.();
           feedback.textContent = "SENDING";
           try {
-            const body = { action_name: tile.action };
-            if (tile.hold_ms != null) body.hold_ms = tile.hold_ms;
+            const body = { action_name: control.action };
+            if (control.hold_ms != null) body.hold_ms = control.hold_ms;
             const result = (await api("actions/trigger", { method: "POST", body: JSON.stringify(body) })).data;
             if (requestEpoch === epoch)
               actionFeedback.set(tile.id, result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
@@ -198,12 +200,39 @@ const MfdWorkspace = (() => {
               repaint?.();
             }
           }
-        });
+        };
+        if (controls.length <= 4) {
+          const container = controls.length === 1 ? card : node("div", "game-action-group");
+          for (const control of controls) {
+            const button = node("button", "game-action", "TRIGGER / " + actionLabel(control.action));
+            button.type = "button";
+            button.disabled = true;
+            button.addEventListener("click", () => trigger(control, button));
+            buttons.push({ button, control });
+            container.append(button);
+          }
+          if (container !== card) card.append(container);
+        } else {
+          const container = node("div", "game-action-group");
+          const select = node("select", "game-action-select");
+          select.setAttribute("aria-label", "Choose control for " + tile.label);
+          select.append(new Option("Choose a control", ""));
+          for (const control of controls) select.append(new Option(actionLabel(control.action), control.action));
+          select.value = "";
+          const button = node("button", "game-action", "TRIGGER SELECTED");
+          button.type = "button";
+          button.disabled = true;
+          button.addEventListener("click", () => trigger(controls.find(item => item.action === select.value), button));
+          select.addEventListener("change", () => repaint?.());
+          container.append(select, button);
+          card.append(container);
+          picker = { select, button, controls };
+        }
         mappingNote = node("span", "game-action-result");
-        card.append(actionButton, mappingNote, feedback);
+        card.append(mappingNote, feedback);
       }
       if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote });
+      cards.set(tile.id, { tile, card, value, meta, buttons, picker, mappingNote });
       $("custom-cards").append(card);
     }
     controls();
@@ -273,23 +302,41 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton, mappingNote } of cards.values()) {
-      if (actionButton) {
-        const action = actions.find(item => item.action_name === tile.action);
+    for (const { tile, card, value, meta, buttons, picker, mappingNote } of cards.values()) {
+      const reason = control => {
+        const action = actions.find(item => item.action_name === control.action);
         const fieldSelected = tile.widget === "action" || selected.has(tile.field);
         const fieldMatches = tile.widget === "action" || !action || actionFields(action).includes(tile.field);
-        actionButton.disabled = !online || busy || !action?.enabled ||
-          !fieldSelected || !fieldMatches || (tile.hold_ms != null && !action.holdable) || actionPending.has(tile.id);
-        actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
+        return !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
           !fieldSelected || !action.enabled ? "Enable the matching field on the PC" :
           !fieldMatches ? "This control is no longer linked to this field" :
-          tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" : "";
-        mappingNote.textContent = action?.mapping_verified === false ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
+          control.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
+          busy || actionPending.has(tile.id) ? "Control busy" : "";
+      };
+      for (const { button, control } of buttons) {
+        button.title = reason(control);
+        button.disabled = !!button.title;
       }
+      if (picker) {
+        for (const option of picker.select.options) {
+          const control = picker.controls.find(item => item.action === option.value);
+          if (control) option.disabled = !!reason(control);
+        }
+        const chosen = picker.controls.find(item => item.action === picker.select.value);
+        picker.button.title = chosen ? reason(chosen) : "Choose a control";
+        picker.button.disabled = !!picker.button.title;
+        picker.select.disabled = busy || actionPending.has(tile.id);
+      }
+      if (mappingNote) mappingNote.textContent = tileControls(tile).some(control =>
+        actions.find(item => item.action_name === control.action)?.mapping_verified === false)
+        ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
       if (tile.widget === "action") {
-        value.textContent = draft ? "CONTROL" : actionButton?.disabled ? "UNAVAILABLE" : "READY";
-        meta.textContent = draft ? "Configure before saving" : actionButton?.title || "GAME ACTION";
-        card.dataset.state = draft || !actionButton?.disabled ? "live" : "unavailable";
+        const available = buttons.some(item => !item.button.disabled) ||
+          picker?.controls.some(control => !reason(control));
+        value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
+        meta.textContent = draft ? "Configure before saving" : available ? "GAME ACTION" :
+          buttons[0]?.button.title || picker?.button.title || "Action unavailable";
+        card.dataset.state = draft || available ? "live" : "unavailable";
         continue;
       }
       const field = snapshot?.fields?.[tile.field];
@@ -579,6 +626,35 @@ const MfdWorkspace = (() => {
     $("tile-hold").hidden = $("hold-label").hidden = !show;
     if (action && !action.holdable) $("tile-hold").value = "";
   }
+  function renderGroupedControls() {
+    $("tile-controls-list").replaceChildren();
+    for (const [index, control] of groupedControls.entries()) {
+      const row = node("div", "configured-control");
+      row.append(node("span", "", actionLabel(control.action) + (control.hold_ms != null ? " / " + control.hold_ms + " MS" : "")));
+      const remove = node("button", "", "REMOVE");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "Remove " + actionLabel(control.action));
+      remove.addEventListener("click", () => { groupedControls.splice(index, 1); renderGroupedControls(); });
+      row.append(remove);
+      $("tile-controls-list").append(row);
+    }
+  }
+  function selectedControl() {
+    const action = $("tile-action").value;
+    const hold = $("tile-hold").value;
+    if (!action) {
+      if (hold) throw new Error("Choose a control for the hold duration.");
+      return null;
+    }
+    const control = { action };
+    if (hold) {
+      const duration = Number(hold);
+      if (!Number.isInteger(duration) || duration < 1 || duration > 5000)
+        throw new Error("Hold duration must be between 1 and 5000 ms.");
+      control.hold_ms = duration;
+    }
+    return control;
+  }
   function widgetOptions() {
     const standalone = $("tile-widget").value === "action";
     $("tile-field").hidden = $("tile-field-label").hidden = standalone;
@@ -634,6 +710,8 @@ const MfdWorkspace = (() => {
     $("tile-size").value = tile.size; $("tile-decimals").value = tile.decimals;
     $("tile-format").value = tile.format ?? "auto";
     $("tile-hold").value = tile.hold_ms ?? "";
+    groupedControls = clone(tile.controls ?? []);
+    renderGroupedControls();
     $("status-rules").replaceChildren();
     for (const rule of tile.rules) addRule(rule);
     $("tile-message").textContent = "";
@@ -659,16 +737,26 @@ const MfdWorkspace = (() => {
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
-        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms"]) ||
+        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms", "controls"]) ||
             !(tile.widget === "action" ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
             !["value", "status", "list", "action"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
             !["auto", "number", "percent_fraction", "percent", "percent_max"].includes(tile.format === undefined ? "auto" : tile.format) ||
             !Number.isInteger(tile.decimals) || tile.decimals < 0 || tile.decimals > 6 || !Array.isArray(tile.rules) ||
             tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length ||
             tile.action !== undefined && (typeof tile.action !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(tile.action)) ||
-            tile.widget === "action" && !tile.action ||
+            tile.controls !== undefined && (!Array.isArray(tile.controls) || tile.controls.length < 1 || tile.controls.length > 64 ||
+              tile.action !== undefined || tile.hold_ms !== undefined) ||
+            tile.widget === "action" && !tile.action && !tile.controls ||
             tile.hold_ms !== undefined && (!tile.action || !Number.isInteger(tile.hold_ms) || tile.hold_ms < 1 || tile.hold_ms > 5000))
           throw new Error("Invalid tile settings.");
+        const controlNames = new Set();
+        for (const control of tileControls(tile)) {
+          if (!keys(control, ["action", "hold_ms"]) || typeof control.action !== "string" ||
+              !/^[A-Za-z0-9_-]{1,128}$/.test(control.action) || controlNames.has(control.action) ||
+              control.hold_ms !== undefined && (!Number.isInteger(control.hold_ms) || control.hold_ms < 1 || control.hold_ms > 5000))
+            throw new Error("Invalid or duplicate control.");
+          controlNames.add(control.action);
+        }
         identity(tile.id);
         const field = catalog.find(field => field.path === tile.field);
         if (field && field.repeated !== (tile.widget === "list")) throw new Error("Widget is incompatible with its field.");
@@ -804,6 +892,19 @@ const MfdWorkspace = (() => {
     });
     $("tile-format").addEventListener("change", widgetOptions);
     $("tile-action").addEventListener("change", holdOptions);
+    $("add-tile-control").addEventListener("click", () => {
+      try {
+        const control = selectedControl();
+        if (!control) throw new Error("Choose a control to add.");
+        if (groupedControls.some(item => item.action === control.action)) throw new Error("This control is already in the group.");
+        if (groupedControls.length >= 64) throw new Error("A tile can contain at most 64 controls.");
+        groupedControls.push(control);
+        $("tile-action").value = "";
+        $("tile-hold").value = "";
+        holdOptions(); renderGroupedControls();
+        $("tile-message").textContent = "";
+      } catch (error) { $("tile-message").textContent = error.message; }
+    });
     $("add-rule").addEventListener("click", () => addRule());
     $("cancel-tile").addEventListener("click", () => $("tile-dialog").close());
     $("tile-form").addEventListener("submit", event => {
@@ -818,16 +919,26 @@ const MfdWorkspace = (() => {
             label: row.querySelector('[data-rule="label"]').value.trim(), color: row.querySelector("select").value
           })) : []
         };
-        if ($("tile-action").value) tile.action = $("tile-action").value;
-        if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
-        const action = actions.find(item => item.action_name === tile.action);
-        if (tile.widget !== "action" && action && !actionFields(action).includes(tile.field))
-          throw new Error("This control is not linked to the selected field. Choose a matching field or control.");
+        const controls = [...groupedControls];
+        const selected = selectedControl();
+        if (selected) controls.push(selected);
+        if (controls.length === 1) {
+          tile.action = controls[0].action;
+          if (controls[0].hold_ms != null) tile.hold_ms = controls[0].hold_ms;
+        } else if (controls.length) tile.controls = controls;
+        for (const control of controls) {
+          const action = actions.find(item => item.action_name === control.action);
+          if (tile.widget !== "action" && action && !actionFields(action).includes(tile.field))
+            throw new Error("This control is not linked to the selected field. Choose a matching field or control.");
+          if (action && control.hold_ms != null && !action.holdable)
+            throw new Error("This control does not support a hold duration.");
+        }
         const next = clone(draft);
         const target = next.pages.find(item => item.id === pageId);
         if (tileId) target.tiles[target.tiles.findIndex(item => item.id === tileId)] = tile;
         else target.tiles.push(tile);
         validate(next); draft = next;
+        $("tile-message").textContent = "";
         $("tile-dialog").close(); render();
       } catch (error) { $("tile-message").textContent = error.message; }
     });
