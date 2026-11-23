@@ -53,7 +53,7 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    subfolder), preserving any existing settings:
 
    ```text
-   grpc.client.server.port = 50051
+   grpc.client.server.port = 29421
    grpc.client.server.external = 0
    server.game.telemetry.enabled = 1
    ```
@@ -62,18 +62,19 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    commands in the game console instead:
 
    ```text
-   grpc.client.server.port 50051
+   grpc.client.server.port 29421
    grpc.client.server.external 0
    server.game.telemetry.enabled 1
    ```
 
-   Keep the gateway's game port equal to the configured port and `external`
-   set to `0`.
+   The gateway defaults to game port `29421`. Keep its game port equal to the
+   configured port and `external` set to `0`. Existing saved port settings are
+   preserved on upgrade; check the gateway setting and `user.cfg` together.
 
 3. Open **Settings** in the dashboard. Under **Local MFD**, choose a network
-   interface and port on a trusted network and enable local MFD access. Under
-   **MFD fields**, select the values to share. Check the game port under
-   **Game**, then apply the settings.
+   interface and port on a trusted network and enable local MFD access. The
+   default MFD port is `29422`. Under **MFD fields**, select the values to share.
+   Check the game port under **Game**, then apply the settings.
 4. Choose **Start collection** explicitly. Open the dashboard's browser URL on
    a phone or tablet on the same network. Create a pairing code and scan its QR
    code with the phone camera, or enter the one-use code in the browser. Scanning

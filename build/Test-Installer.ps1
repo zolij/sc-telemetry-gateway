@@ -55,7 +55,7 @@ try {
     if (-not (Test-Path $exe)) { throw 'Per-user installation did not create the expected application.' }
     Start-Sleep -Seconds 3
     New-Item -ItemType Directory -Path $settingsRoot -Force | Out-Null
-    Set-Content $settings '{"game_port":50051,"endpoint":"","interval_seconds":5,"fields":[],"automatic_update_checks":false,"include_preview_updates":false}'
+    Set-Content $settings '{"game_port":29421,"mfd_port":29422,"endpoint":"","interval_seconds":5,"fields":[],"automatic_update_checks":false,"include_preview_updates":false}'
     $clear = [Text.Encoding]::UTF8.GetBytes('synthetic-installer-smoke-key')
     [IO.File]::WriteAllBytes($key, [Security.Cryptography.ProtectedData]::Protect(
         $clear, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))

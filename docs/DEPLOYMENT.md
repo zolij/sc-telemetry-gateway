@@ -9,7 +9,8 @@ described below.
 The MFD is an opt-in LAN HTTP and WebSocket listener. It is not an HTTPS or
 remote cloud service. The Windows application binds only to the single eligible
 IPv4 address and port selected in Settings. It does not change Windows Firewall
-rules or open router ports. If the browser cannot connect, allow the
+rules or open router ports. The default MFD port is `29422`; previously saved
+port settings remain unchanged. If the browser cannot connect, allow the
 application through the firewall for the appropriate private network profile,
 and verify the subnet/VLAN permits the PC and phone/tablet to communicate.
 
