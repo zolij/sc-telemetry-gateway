@@ -193,6 +193,7 @@ test("small combined groups dispatch the selected button and require the display
   assert.ok(buttons.every(button => !button.disabled));
   await buttons[1].click();
   assert.deepEqual(view.actionRequests, [{ action_name: "v_master_mode_set_scm" }]);
+  assert.match(view.element("custom-cards").children[0].children[5].textContent, /Master Mode Set Scm.*ACCEPTED/);
   view.setActions([{ action_name: group[0].action, category: "group", holdable: false, field, fields: [field], enabled: true }]);
   await view.poll();
   const updated = view.element("custom-cards").children[0].children[3].children;

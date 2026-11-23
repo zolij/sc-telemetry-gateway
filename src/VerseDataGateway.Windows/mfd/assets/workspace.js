@@ -188,8 +188,9 @@ const MfdWorkspace = (() => {
             if (control.hold_ms != null) body.hold_ms = control.hold_ms;
             const result = (await api("actions/trigger", { method: "POST", body: JSON.stringify(body) })).data;
             if (requestEpoch === epoch)
-              actionFeedback.set(tile.id, result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
-                "GAME: " + result.status + (result.message ? " / " + result.message : ""));
+              actionFeedback.set(tile.id, (controls.length > 1 ? actionLabel(control.action) + " / " : "") +
+                (result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
+                  "GAME: " + result.status + (result.message ? " / " + result.message : "")));
           } catch (error) {
             if (requestEpoch === epoch)
               actionFeedback.set(tile.id, error.message + " / The action may have executed; check the game before retrying.");
