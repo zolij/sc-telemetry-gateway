@@ -3,9 +3,10 @@
 ## What is measured
 
 This feature is separate from game telemetry and the user-configured receiver.
-On the first launch of a version supporting this feature, including after an
-upgrade, the app explains the data sent and offers Yes (the default) and No.
-No report is sent before that choice. The setting is also available in
+The interactive installer explains the data sent and offers a checkbox, enabled
+by default. Portable copies, silent installations and upgrades from versions
+without this notice ask on first launch instead, offering Yes (the default)
+and No. No report is sent before the choice. The setting is also available in
 **Settings > Privacy**.
 
 When enabled, the application sends a randomly generated installation ID, the

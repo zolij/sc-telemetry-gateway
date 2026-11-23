@@ -178,7 +178,7 @@ jobs:
 
           Installation and privacy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/INSTALLATION.md
           Disclaimer: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/DISCLAIMER.md
-          Signing status: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
+          Code signing policy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
           "@ | Set-Content artifacts/release-notes.txt
       - uses: actions/upload-artifact@v7
         with:

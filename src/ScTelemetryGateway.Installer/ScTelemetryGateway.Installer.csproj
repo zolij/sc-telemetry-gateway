@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>StarCitizenTelemetryGateway.Installer</AssemblyName>
+    <ApplicationIcon>../ScTelemetryGateway.Windows/mfd/assets/app-icon.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../ScTelemetryGateway.Windows/InstallationChoiceFile.cs" Link="InstallationChoiceFile.cs" />
+    <EmbeddedResource Include="$(InstallerPayload)" LogicalName="VelopackSetup.exe" />
+  </ItemGroup>
+  <Target Name="ValidateInstallerPayload" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(InstallerPayload)' == '' or !Exists('$(InstallerPayload)')" Text="InstallerPayload must identify the Velopack Setup executable." />
+  </Target>
+</Project>

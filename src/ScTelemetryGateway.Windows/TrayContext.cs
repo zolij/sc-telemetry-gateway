@@ -47,7 +47,14 @@ internal sealed class TrayContext : ApplicationContext
         usageReporter = new UsageReporter(usageClient, usageIdentity, UsageReporter.Endpoint);
         store = settingsStore ?? new SettingsStore();
         (options, key) = store.Load();
-        if (!smokeTest && !options.UsageNoticeShown)
+        var installationUsageChoice = smokeTest ? null : InstallationChoiceFile.Read(InstallationChoiceFile.DefaultPath);
+        if (installationUsageChoice.HasValue)
+        {
+            options = InstallationUsageChoice.Apply(options, installationUsageChoice.Value);
+            store.Save(options, key);
+            File.Delete(InstallationChoiceFile.DefaultPath);
+        }
+        else if (!smokeTest && !options.UsageNoticeShown)
         {
             var enabled = MessageBox.Show(
                 "This application sends usage statistics to the project service hosted by Cloudflare: " +

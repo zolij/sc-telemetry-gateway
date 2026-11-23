@@ -22,6 +22,8 @@
     <Compile Include="../../src/ScTelemetryGateway.Windows/SettingsStore.cs" Link="SettingsStore.cs" />
     <Compile Include="../../src/ScTelemetryGateway.Windows/ApplicationUpdater.cs" Link="ApplicationUpdater.cs" />
     <Compile Include="../../src/ScTelemetryGateway.Windows/UsageReporter.cs" Link="UsageReporter.cs" />
+    <Compile Include="../../src/ScTelemetryGateway.Windows/InstallationUsageChoice.cs" Link="InstallationUsageChoice.cs" />
+    <Compile Include="../../src/ScTelemetryGateway.Windows/InstallationChoiceFile.cs" Link="InstallationChoiceFile.cs" />
     <Content Include="../../docs/telemetry.schema.json" Link="telemetry.schema.json" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
   </ItemGroup>

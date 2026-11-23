@@ -8,6 +8,37 @@ namespace ScTelemetryGateway.Tests;
 public sealed class UsageTests
 {
     [Fact]
+    public void InstallationChoiceFilePersistsAndRejectsInvalidValues()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sctg-choice-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "choice");
+        try
+        {
+            Assert.Null(InstallationChoiceFile.Read(path));
+            InstallationChoiceFile.Write(path, true);
+            Assert.True(InstallationChoiceFile.Read(path));
+            InstallationChoiceFile.Write(path, false);
+            Assert.False(InstallationChoiceFile.Read(path));
+            File.WriteAllText(path, "invalid");
+            Assert.Throws<InvalidDataException>(() => InstallationChoiceFile.Read(path));
+        }
+        finally { Clean(directory); }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InstallationChoicePersistsWithoutChangingOtherSettings(bool enabled)
+    {
+        var existing = new GatewayOptions { GamePort = 12345 };
+        var updated = InstallationUsageChoice.Apply(existing, enabled);
+        var restored = JsonSerializer.Deserialize<GatewayOptions>(JsonSerializer.Serialize(updated, WireJson.Options), WireJson.Options)!;
+        Assert.Equal(enabled, restored.UsageStatisticsEnabled);
+        Assert.True(restored.UsageNoticeShown);
+        Assert.Equal(12345, restored.GamePort);
+    }
+
+    [Fact]
     public void ExistingSettingsRequireNoticeAndPersistDisabledChoice()
     {
         var existing = JsonSerializer.Deserialize<GatewayOptions>("""{}""", WireJson.Options)!;
