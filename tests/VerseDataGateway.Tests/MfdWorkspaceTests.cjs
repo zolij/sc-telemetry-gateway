@@ -464,7 +464,7 @@ test("advanced HUD displays only the current fresh SCM or NAV state", async () =
   assert.equal(mode.children[1].textContent, "Mode unavailable");
 });
 
-test("system power keeps shield states separate and provides three independent toggles", async () => {
+test("system power combines shield states and provides three independent toggles", async () => {
   const view = await fixture({ mappedAction: true });
   await view.element("edit-profile").click();
   view.element("preset-results").children[8].click();
@@ -476,8 +476,39 @@ test("system power keeps shield states separate and provides three independent t
     "vehicle.state.power.shield_emitters", "vehicle.state.power.engines"];
   const snapshot = { selected_fields: paths, fields: Object.fromEntries(paths.map((path, index) =>
     [path, { value: index !== 2, age_ms: 0, last_known: false }])) };
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.deepEqual(shields.children[1].children.map(item => item.children[1].textContent), ["On", "Off"]);
+  const [shield, emitter] = shields.children[1].children;
+  assert.equal(emitter.hidden, true);
+  for (const [generator, emitterValue, expected] of [[true, true, "On"], [false, false, "Off"], [true, false, "Mixed"], [false, true, "Mixed"]]) {
+    snapshot.fields[paths[1]].value = generator;
+    snapshot.fields[paths[2]].value = emitterValue;
+    view.workspace.paint(snapshot, true, 0, age => `${age} ms`);
+    assert.equal(shield.children[1].textContent, expected);
+    assert.equal(shield.dataset.state, "live");
+  }
+  snapshot.fields[paths[1]].age_ms = 1900;
+  snapshot.fields[paths[2]].age_ms = 100;
+  view.workspace.paint(snapshot, true, 100, age => `${age} ms`);
+  assert.equal(shield.dataset.state, "stale");
+  assert.equal(shield.children[2].textContent, "STALE / 2000 ms");
+  snapshot.fields[paths[1]].age_ms = 0;
+  snapshot.fields[paths[2]].last_known = true;
+  view.workspace.paint(snapshot, true, 0, age => `${age} ms`);
+  assert.equal(shield.dataset.state, "last-known");
+  snapshot.fields[paths[2]].last_known = false;
+  view.workspace.paint(snapshot, false, 0, age => `${age} ms`);
+  assert.equal(shield.dataset.state, "offline");
+  snapshot.fields[paths[2]].value = null;
+  view.workspace.paint(snapshot, true, 0, age => `${age} ms`);
+  assert.equal(shield.children[1].textContent, "Unknown");
+  assert.equal(shield.dataset.state, "unavailable");
+  delete snapshot.fields[paths[2]];
+  view.workspace.paint(snapshot, true, 0, age => `${age} ms`);
+  assert.equal(shield.children[1].textContent, "Unknown");
+  assert.equal(shield.children[2].textContent, "No value received");
+  snapshot.selected_fields = paths.filter(path => path !== paths[2]);
+  view.workspace.paint(snapshot, true, 0, age => `${age} ms`);
+  assert.equal(shield.children[1].textContent, "Not selected");
+  assert.match(shield.children[2].textContent, /both shield power fields/);
   assert.equal(shields.children[2].children[0].disabled, false);
   assert.equal(weapons.children[2].children[0].disabled, true);
   assert.equal(engines.children[2].children[0].disabled, true);

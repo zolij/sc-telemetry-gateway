@@ -188,8 +188,10 @@ is lost, check the game before retrying.
 Landing gear Toggle is disabled while received gear telemetry reports deploying
 or retracting. Advanced HUD shows the state for the current SCM or NAV master
 mode; select all three fields in MFD settings. Other, missing or stale modes
-are shown as unavailable. System Power shows independent weapon, engine,
-shield generator and shield emitter states with three separate toggles.
+are shown as unavailable. System Power shows weapon, shield and engine states
+with three separate toggles. The shield state combines generator and emitter:
+both on is On, both off is Off, and differing values are Mixed. Both fields
+must be selected and received; stale or last-known data is marked accordingly.
 
 Some actions can be held for a configured 1–5000 ms; the request runs for that
 duration, not until the screen is released. Editing never triggers controls.

@@ -312,9 +312,12 @@ store load and persisted atomically with a new profile revision. Custom cards
 with additional components are not converted. Landing gear Toggle is disabled
 when received gear state is deploying or retracting. Advanced HUD requires
 selected, current master-mode telemetry and displays the selected SCM or NAV
-field; other or stale modes are unavailable. System Power exposes separate
-weapon, engine, shield-generator and shield-emitter readings alongside three
-independent toggles. These display rules do not change game-side authorization.
+field; other or stale modes are unavailable. System Power displays weapon,
+shield and engine readings alongside three independent toggles. Its shield
+reading combines the generator and emitter: both on is On, both off is Off,
+and differing values are Mixed. Both fields must be selected and received;
+stale or last-known input is marked accordingly. These display rules do not
+change game-side authorization.
 
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
 "hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be

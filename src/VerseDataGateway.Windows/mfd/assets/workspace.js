@@ -260,8 +260,9 @@ const MfdWorkspace = (() => {
             for (const field of fields) {
               const child = tile.components.find(item => item.field === field);
               const valueCard = renderCard(child, tile);
-              if (fields.length === 1 && child.label.trim().toLowerCase() === title.toLowerCase())
+              if (fields.length > 1 || child.label.trim().toLowerCase() === title.toLowerCase())
                 valueCard.classList.add("power-single-value");
+              if (fields.length > 1 && field !== fields[0]) valueCard.hidden = true;
               values.append(valueCard);
             }
             row.append(values, renderCard(tile.components.find(child => child.action === action), tile));
@@ -482,6 +483,29 @@ const MfdWorkspace = (() => {
         field.value === null || needsMaximum && !rule ? "unavailable" : !history && (!Number.isFinite(age) || age >= 2000) ? "stale" : "live";
     }
     for (const { tile, summary, kind } of groups.values()) {
+      if (kind === "power" && !draft) {
+        const [generator, emitter] = powerFields.slice(1, 3).map(([field]) => snapshot?.fields?.[field]);
+        const shield = cards.get(tile.components.find(component => component.field === powerFields[1][0]).id);
+        const shieldFieldsSelected = powerFields.slice(1, 3).every(([field]) => selected.has(field));
+        shield.card.dataset.color = "neutral";
+        if (!shieldFieldsSelected || !generator || !emitter) {
+          shield.value.textContent = shieldFieldsSelected ? "Unknown" : "Not selected";
+          shield.meta.textContent = shieldFieldsSelected ? online ? "No value received" : "Waiting / offline" :
+            "Enable both shield power fields in PC settings";
+          shield.card.dataset.state = "unavailable";
+        } else {
+          const age = Number.isFinite(generator.age_ms) && Number.isFinite(emitter.age_ms)
+            ? Math.max(generator.age_ms, emitter.age_ms) + elapsed : NaN;
+          const valid = typeof generator.value === "boolean" && typeof emitter.value === "boolean";
+          shield.value.textContent = !valid ? "Unknown" : generator.value !== emitter.value ? "Mixed" : generator.value ? "On" : "Off";
+          const state = !online ? "OFFLINE / LAST KNOWN" : generator.last_known || emitter.last_known ? "LAST KNOWN" :
+            !valid ? "UNKNOWN" : !Number.isFinite(age) ? "AGE UNKNOWN" : age >= 2000 ? "STALE" : "LIVE";
+          shield.meta.textContent = state + " / " + ageText(age);
+          shield.card.dataset.state = !valid ? "unavailable" : !online ? "offline" : generator.last_known || emitter.last_known ? "last-known" :
+            !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
+          if (shield.value.textContent === "Mixed" && shield.card.dataset.state === "live") shield.card.dataset.color = "amber";
+        }
+      }
       if (kind === "hud" && !draft) {
         const mode = snapshot?.fields?.[masterField];
         const age = Number.isFinite(mode?.age_ms) ? mode.age_ms + elapsed : NaN;
