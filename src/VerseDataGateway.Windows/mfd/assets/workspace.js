@@ -5,11 +5,10 @@ const MfdWorkspace = (() => {
   const limits = { profiles: 32, pages: 16, tiles: 64, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
   let getToken, repaint;
-  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
+  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null, unsupported = null;
   let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
-  let groupedControls = [];
   let preferenceWarning = "";
   let triggerEvents = [];
   const eventCursor = MfdPageTriggers.createCursor();
@@ -34,8 +33,6 @@ const MfdWorkspace = (() => {
   }
   const readable = MfdPresentation.readable;
   const actionLabel = name => readable(name.replace(/^v_/, ""));
-  const actionFields = action => Array.isArray(action.fields) ? action.fields : action.field ? [action.field] : [];
-  const tileControls = tile => tile.controls ?? (tile.action ? [{ action: tile.action, hold_ms: tile.hold_ms }] : []);
   function label(path) {
     return path.split(".").filter(part => !["state", "flight", "instruments", "actor", "vehicle"].includes(part))
       .map(readable).join(" / ").slice(0, 80);
@@ -72,6 +69,7 @@ const MfdWorkspace = (() => {
     $("profile-select").disabled = busy;
     $("unpair-button").disabled = busy;
     for (const id of ["edit-profile", "copy-profile", "delete-profile"]) $(id).disabled = busy || !saved || editing;
+    $("delete-profile").disabled = busy || editing || (!saved && !unsupported);
     $("copy-profile").disabled ||= summaries.length >= limits.profiles;
     $("export-profile").disabled = busy || !profile();
     $("new-profile").disabled = busy || editing || summaries.length >= limits.profiles;
@@ -119,13 +117,13 @@ const MfdWorkspace = (() => {
     const select = $("profile-select");
     select.replaceChildren(new Option("Choose a profile", ""));
     for (const item of [...summaries].sort((a, b) => a.name.localeCompare(b.name)))
-      select.append(new Option(item.name, item.id));
+      select.append(new Option(item.name + (item.atomic === false ? " (unsupported combined profile)" : ""), item.id));
     if (draft && !saved) {
       const unsaved = new Option(draft.name + " (unsaved)", "draft");
       unsaved.disabled = true;
       select.append(unsaved);
     }
-    select.value = saved?.id ?? (draft ? "draft" : "");
+    select.value = saved?.id ?? (draft ? "draft" : unsupported?.id ?? "");
   }
   function render() {
     renderProfiles();
@@ -167,30 +165,30 @@ const MfdWorkspace = (() => {
       const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
       card.append(node("span", "instrument-label", tile.label), value, meta);
-      const buttons = [];
-      let picker = null;
+      let actionButton = null;
       let mappingNote = null;
-      const controls = tileControls(tile);
-      if (controls.length && !draft) {
+      if (tile.widget === "action" && tile.action && !draft) {
+        actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
+        actionButton.type = "button";
+        actionButton.disabled = true;
         const feedback = node("span", "game-action-result", actionFeedback.get(tile.id) ?? "");
         feedback.setAttribute("role", "status");
-        const trigger = async (control, button) => {
-          if (!control || busy || draft || button.disabled || actionPending.has(tile.id)) return;
-          if (["v_self_destruct", "v_eject", "v_emergency_exit"].includes(control.action) &&
-              !window.confirm("Trigger " + actionLabel(control.action) + " in the game?")) return;
+        actionButton.addEventListener("click", async () => {
+          if (busy || draft || actionButton.disabled || actionPending.has(tile.id)) return;
+          if (["v_self_destruct", "v_eject", "v_emergency_exit"].includes(tile.action) &&
+              !window.confirm("Trigger " + actionLabel(tile.action) + " in the game?")) return;
           actionPending.add(tile.id);
           const requestEpoch = epoch;
-          button.disabled = true;
+          actionButton.disabled = true;
           repaint?.();
           feedback.textContent = "SENDING";
           try {
-            const body = { action_name: control.action };
-            if (control.hold_ms != null) body.hold_ms = control.hold_ms;
+            const body = { action_name: tile.action };
+            if (tile.hold_ms != null) body.hold_ms = tile.hold_ms;
             const result = (await api("actions/trigger", { method: "POST", body: JSON.stringify(body) })).data;
             if (requestEpoch === epoch)
-              actionFeedback.set(tile.id, (controls.length > 1 ? actionLabel(control.action) + " / " : "") +
-                (result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
-                  "GAME: " + result.status + (result.message ? " / " + result.message : "")));
+              actionFeedback.set(tile.id, result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
+                "GAME: " + result.status + (result.message ? " / " + result.message : ""));
           } catch (error) {
             if (requestEpoch === epoch)
               actionFeedback.set(tile.id, error.message + " / The action may have executed; check the game before retrying.");
@@ -201,39 +199,12 @@ const MfdWorkspace = (() => {
               repaint?.();
             }
           }
-        };
-        if (controls.length <= 4) {
-          const container = controls.length === 1 ? card : node("div", "game-action-group");
-          for (const control of controls) {
-            const button = node("button", "game-action", "TRIGGER / " + actionLabel(control.action));
-            button.type = "button";
-            button.disabled = true;
-            button.addEventListener("click", () => trigger(control, button));
-            buttons.push({ button, control });
-            container.append(button);
-          }
-          if (container !== card) card.append(container);
-        } else {
-          const container = node("div", "game-action-group");
-          const select = node("select", "game-action-select");
-          select.setAttribute("aria-label", "Choose control for " + tile.label);
-          select.append(new Option("Choose a control", ""));
-          for (const control of controls) select.append(new Option(actionLabel(control.action), control.action));
-          select.value = "";
-          const button = node("button", "game-action", "TRIGGER SELECTED");
-          button.type = "button";
-          button.disabled = true;
-          button.addEventListener("click", () => trigger(controls.find(item => item.action === select.value), button));
-          select.addEventListener("change", () => repaint?.());
-          container.append(select, button);
-          card.append(container);
-          picker = { select, button, controls };
-        }
+        });
         mappingNote = node("span", "game-action-result");
-        card.append(mappingNote, feedback);
+        card.append(actionButton, mappingNote, feedback);
       }
       if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta, buttons, picker, mappingNote });
+      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote });
       $("custom-cards").append(card);
     }
     controls();
@@ -303,40 +274,22 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, buttons, picker, mappingNote } of cards.values()) {
-      const reason = control => {
-        const action = actions.find(item => item.action_name === control.action);
-        const fieldSelected = tile.widget === "action" || selected.has(tile.field);
-        const fieldMatches = tile.widget === "action" || !action || actionFields(action).includes(tile.field);
-        return !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
-          !fieldSelected || !action.enabled ? "Enable the matching field on the PC" :
-          !fieldMatches ? "This control is no longer linked to this field" :
-          control.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
+    for (const { tile, card, value, meta, actionButton, mappingNote } of cards.values()) {
+      if (actionButton) {
+        const action = actions.find(item => item.action_name === tile.action);
+        actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
+          !action.enabled ? "Enable the matching field on the PC" :
+          tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
           busy || actionPending.has(tile.id) ? "Control busy" : "";
-      };
-      for (const { button, control } of buttons) {
-        button.title = reason(control);
-        button.disabled = !!button.title;
+        actionButton.disabled = !!actionButton.title;
+        mappingNote.textContent = action?.mapping_verified === false
+          ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
       }
-      if (picker) {
-        for (const option of picker.select.options) {
-          const control = picker.controls.find(item => item.action === option.value);
-          if (control) option.disabled = !!reason(control);
-        }
-        const chosen = picker.controls.find(item => item.action === picker.select.value);
-        picker.button.title = chosen ? reason(chosen) : "Choose a control";
-        picker.button.disabled = !!picker.button.title;
-        picker.select.disabled = busy || actionPending.has(tile.id);
-      }
-      if (mappingNote) mappingNote.textContent = tileControls(tile).some(control =>
-        actions.find(item => item.action_name === control.action)?.mapping_verified === false)
-        ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
       if (tile.widget === "action") {
-        const available = buttons.some(item => !item.button.disabled) ||
-          picker?.controls.some(control => !reason(control));
+        const available = actionButton && !actionButton.disabled;
         value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
         meta.textContent = draft ? "Configure before saving" : available ? "GAME ACTION" :
-          buttons[0]?.button.title || picker?.button.title || "Action unavailable";
+          actionButton?.title || "Action unavailable";
         card.dataset.state = draft || available ? "live" : "unavailable";
         continue;
       }
@@ -415,7 +368,16 @@ const MfdWorkspace = (() => {
         }
       }
     }
-    if (!saved && !draft) {
+    if (unsupported) {
+      unsupported = summaries.find(item => item.id === unsupported.id) ?? null;
+      if (unsupported?.atomic !== false) {
+        const id = unsupported?.id;
+        unsupported = null;
+        if (id) await selectProfile(id, version);
+        else render();
+      }
+    }
+    if (!saved && !draft && !unsupported) {
       const preferred = summaries.find(item => item.id === preference?.profile);
       const onlyProfile = summaries.length === 1 ? summaries[0] : null;
       const next = preferred ?? onlyProfile;
@@ -424,9 +386,19 @@ const MfdWorkspace = (() => {
     controls();
   }
   async function selectProfile(id, version = viewVersion) {
+    const summary = summaries.find(item => item.id === id);
+    if (summary?.atomic === false) {
+      saved = draft = null;
+      unsupported = summary;
+      pageId = null;
+      render();
+      notice("This profile contains unsupported combined tiles. Delete it or choose another profile.", true);
+      return;
+    }
     const next = id ? (await api("profiles/" + id)).data : null;
     if (version !== viewVersion) return;
     saved = next;
+    unsupported = null;
     draft = null;
     pageId = preference?.profile === id ? preference.page : next?.pages[0].id;
     $("conflict-actions").hidden = true;
@@ -448,7 +420,7 @@ const MfdWorkspace = (() => {
   function reset() {
     epoch++;
     viewVersion++;
-    saved = draft = null;
+    saved = draft = unsupported = null;
     pageId = null;
     summaries = catalog = actions = [];
     actionError = "";
@@ -596,75 +568,44 @@ const MfdWorkspace = (() => {
       button.addEventListener("click", () => {
         if (busy || !action.enabled) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
-        const field = actionFields(action).map(path => catalog.find(item => item.path === path)).find(Boolean);
-        openTile({ id: uuid(), field: field?.path ?? "", label: actionLabel(action.action_name).slice(0, 80),
-          widget: field ? (field.repeated ? "list" : "value") : "action",
+        openTile({ id: uuid(), field: "", label: actionLabel(action.action_name).slice(0, 80), widget: "action",
           size: "normal", decimals: 2, format: "auto", rules: [], action: action.action_name }, true);
       });
       $("action-results").append(button);
     }
   }
   function actionOptions(current) {
-    const standalone = $("tile-widget").value === "action";
-    const field = $("tile-field").value;
     const select = $("tile-action");
-    select.replaceChildren(new Option(standalone ? "Choose a control" : "No control", ""));
-    for (const action of actions.filter(item => standalone || actionFields(item).includes(field))) {
+    select.replaceChildren(new Option("Choose a control", ""));
+    for (const action of actions) {
       const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
         (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
       option.disabled = !action.enabled;
       select.append(option);
     }
-    if (current && ![...select.options].some(option => option.value === current))
-      select.append(new Option(current + (actions.some(item => item.action_name === current)
-        ? " (not linked to this field)" : " (unavailable)"), current));
+    if (current && !actions.some(item => item.action_name === current))
+      select.append(new Option(current + " (unavailable)", current));
     select.value = current ?? "";
     holdOptions();
   }
   function holdOptions() {
     const action = actions.find(item => item.action_name === $("tile-action").value);
-    const show = !!action?.holdable || !!$("tile-hold").value && !action;
+    const show = $("tile-widget").value === "action" && (!!action?.holdable || !!$("tile-hold").value && !action);
     $("tile-hold").hidden = $("hold-label").hidden = !show;
     if (action && !action.holdable) $("tile-hold").value = "";
-  }
-  function renderGroupedControls() {
-    $("tile-controls-list").replaceChildren();
-    for (const [index, control] of groupedControls.entries()) {
-      const row = node("div", "configured-control");
-      row.append(node("span", "", actionLabel(control.action) + (control.hold_ms != null ? " / " + control.hold_ms + " MS" : "")));
-      const remove = node("button", "", "REMOVE");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "Remove " + actionLabel(control.action));
-      remove.addEventListener("click", () => { groupedControls.splice(index, 1); renderGroupedControls(); });
-      row.append(remove);
-      $("tile-controls-list").append(row);
-    }
-  }
-  function selectedControl() {
-    const action = $("tile-action").value;
-    const hold = $("tile-hold").value;
-    if (!action) {
-      if (hold) throw new Error("Choose a control for the hold duration.");
-      return null;
-    }
-    const control = { action };
-    if (hold) {
-      const duration = Number(hold);
-      if (!Number.isInteger(duration) || duration < 1 || duration > 5000)
-        throw new Error("Hold duration must be between 1 and 5000 ms.");
-      control.hold_ms = duration;
-    }
-    return control;
   }
   function widgetOptions() {
     const standalone = $("tile-widget").value === "action";
     $("tile-field").hidden = $("tile-field-label").hidden = standalone;
     $("tile-field").disabled = standalone;
     $("tile-field").required = !standalone;
+    $("tile-action").hidden = $("tile-action-label").hidden = !standalone;
+    $("tile-action").disabled = !standalone;
+    $("tile-action").required = standalone;
     const field = catalog.find(item => item.path === $("tile-field").value);
     const repeated = field?.repeated ?? page()?.tiles.find(item => item.id === tileId)?.widget === "list";
-    for (const option of $("tile-widget").options) option.disabled = option.value !== "action" &&
-      !standalone && (repeated ? option.value !== "list" : option.value === "list");
+    for (const option of $("tile-widget").options) option.disabled = standalone ? option.value !== "action" :
+      option.value === "action" || (repeated ? option.value !== "list" : option.value === "list");
     if ($("tile-widget").selectedOptions[0].disabled) $("tile-widget").value = repeated ? "list" : "value";
     $("status-settings").hidden = $("tile-widget").value !== "status";
     for (const option of $("tile-format").options)
@@ -711,8 +652,6 @@ const MfdWorkspace = (() => {
     $("tile-size").value = tile.size; $("tile-decimals").value = tile.decimals;
     $("tile-format").value = tile.format ?? "auto";
     $("tile-hold").value = tile.hold_ms ?? "";
-    groupedControls = clone(tile.controls ?? []);
-    renderGroupedControls();
     $("status-rules").replaceChildren();
     for (const rule of tile.rules) addRule(rule);
     $("tile-message").textContent = "";
@@ -738,26 +677,19 @@ const MfdWorkspace = (() => {
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
-        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms", "controls"]) ||
+        if (tile && (tile.controls !== undefined || tile.widget !== "action" && tile.action !== undefined))
+          throw new Error("Combined or grouped tiles are no longer supported. Import an atomic profile.");
+        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms"]) ||
             !(tile.widget === "action" ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
             !["value", "status", "list", "action"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
             !["auto", "number", "percent_fraction", "percent", "percent_max"].includes(tile.format === undefined ? "auto" : tile.format) ||
             !Number.isInteger(tile.decimals) || tile.decimals < 0 || tile.decimals > 6 || !Array.isArray(tile.rules) ||
             tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length ||
             tile.action !== undefined && (typeof tile.action !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(tile.action)) ||
-            tile.controls !== undefined && (!Array.isArray(tile.controls) || tile.controls.length < 1 || tile.controls.length > 64 ||
-              tile.action !== undefined || tile.hold_ms !== undefined) ||
-            tile.widget === "action" && !tile.action && !tile.controls ||
+            tile.widget === "action" && !tile.action ||
+            tile.widget === "action" && tile.format !== undefined && !["auto", "number"].includes(tile.format) ||
             tile.hold_ms !== undefined && (!tile.action || !Number.isInteger(tile.hold_ms) || tile.hold_ms < 1 || tile.hold_ms > 5000))
           throw new Error("Invalid tile settings.");
-        const controlNames = new Set();
-        for (const control of tileControls(tile)) {
-          if (!keys(control, ["action", "hold_ms"]) || typeof control.action !== "string" ||
-              !/^[A-Za-z0-9_-]{1,128}$/.test(control.action) || controlNames.has(control.action) ||
-              control.hold_ms !== undefined && (!Number.isInteger(control.hold_ms) || control.hold_ms < 1 || control.hold_ms > 5000))
-            throw new Error("Invalid or duplicate control.");
-          controlNames.add(control.action);
-        }
         identity(tile.id);
         const field = catalog.find(field => field.path === tile.field);
         if (field && field.repeated !== (tile.widget === "list")) throw new Error("Widget is incompatible with its field.");
@@ -817,7 +749,7 @@ const MfdWorkspace = (() => {
     });
     $("new-profile").addEventListener("click", () => run(() => {
       draft = { schema_version: 1, name: "My MFD", pages: [{ id: uuid(), name: "Page 1", tiles: [] }] };
-      saved = null; pageId = draft.pages[0].id;
+      saved = unsupported = null; pageId = draft.pages[0].id;
       render(); notice("Build your display, then SAVE TO PC.");
     }).then(() => { if (draft) { $("profile-name").focus(); $("profile-name").select(); } }));
     $("edit-profile").addEventListener("click", () => run(async () => {
@@ -849,9 +781,11 @@ const MfdWorkspace = (() => {
     }));
     $("delete-profile").addEventListener("click", () => {
       if (!window.confirm("Delete this shared profile from the PC? All displays will lose access to it.")) return;
-      run(async () => {
-        await api("profiles/" + saved.id, { method: "DELETE", headers: { "If-Match": '"' + saved.revision + '"' } });
-        saved = null; pageId = null; await refresh(true); render(); notice("Profile deleted.");
+      return run(async () => {
+        const target = saved ?? unsupported;
+        if (!target) throw new Error("Choose a profile to delete.");
+        await api("profiles/" + target.id, { method: "DELETE", headers: { "If-Match": '"' + target.revision + '"' } });
+        saved = unsupported = null; pageId = null; await refresh(true); render(); notice("Profile deleted.");
       });
     });
     $("profile-name").addEventListener("input", event => { if (draft) draft.name = event.target.value; });
@@ -878,34 +812,10 @@ const MfdWorkspace = (() => {
       run(() => { draft.pages = draft.pages.filter(item => item.id !== pageId); pageId = draft.pages[0].id; render(); });
     });
     $("field-search").addEventListener("input", renderLibrary);
-    $("tile-field").addEventListener("change", () => {
-      const current = $("tile-action").value;
-      widgetOptions(); actionOptions(current);
-    });
-    $("tile-widget").addEventListener("change", () => {
-      const current = $("tile-action").value;
-      if ($("tile-widget").value !== "action" && !$("tile-field").value) {
-        const action = actions.find(item => item.action_name === current);
-        $("tile-field").value = (action ? actionFields(action).find(path => catalog.some(field => field.path === path)) : null)
-          ?? catalog[0]?.path ?? "";
-      }
-      widgetOptions(); actionOptions(current);
-    });
+    $("tile-field").addEventListener("change", widgetOptions);
+    $("tile-widget").addEventListener("change", widgetOptions);
     $("tile-format").addEventListener("change", widgetOptions);
     $("tile-action").addEventListener("change", holdOptions);
-    $("add-tile-control").addEventListener("click", () => {
-      try {
-        const control = selectedControl();
-        if (!control) throw new Error("Choose a control to add.");
-        if (groupedControls.some(item => item.action === control.action)) throw new Error("This control is already in the group.");
-        if (groupedControls.length >= 64) throw new Error("A tile can contain at most 64 controls.");
-        groupedControls.push(control);
-        $("tile-action").value = "";
-        $("tile-hold").value = "";
-        holdOptions(); renderGroupedControls();
-        $("tile-message").textContent = "";
-      } catch (error) { $("tile-message").textContent = error.message; }
-    });
     $("add-rule").addEventListener("click", () => addRule());
     $("cancel-tile").addEventListener("click", () => $("tile-dialog").close());
     $("tile-form").addEventListener("submit", event => {
@@ -920,18 +830,11 @@ const MfdWorkspace = (() => {
             label: row.querySelector('[data-rule="label"]').value.trim(), color: row.querySelector("select").value
           })) : []
         };
-        const controls = [...groupedControls];
-        const selected = selectedControl();
-        if (selected) controls.push(selected);
-        if (controls.length === 1) {
-          tile.action = controls[0].action;
-          if (controls[0].hold_ms != null) tile.hold_ms = controls[0].hold_ms;
-        } else if (controls.length) tile.controls = controls;
-        for (const control of controls) {
-          const action = actions.find(item => item.action_name === control.action);
-          if (tile.widget !== "action" && action && !actionFields(action).includes(tile.field))
-            throw new Error("This control is not linked to the selected field. Choose a matching field or control.");
-          if (action && control.hold_ms != null && !action.holdable)
+        if (tile.widget === "action") {
+          tile.action = $("tile-action").value;
+          if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
+          const action = actions.find(item => item.action_name === tile.action);
+          if (action && tile.hold_ms != null && !action.holdable)
             throw new Error("This control does not support a hold duration.");
         }
         const next = clone(draft);
@@ -956,7 +859,7 @@ const MfdWorkspace = (() => {
         const missing = imported.pages.flatMap(item => item.tiles).some(tile => tile.widget !== "action" && !catalog.some(field => field.path === tile.field));
         if (missing && !window.confirm("Some imported fields are not enabled on this PC. They will be unavailable. Continue without enabling them?")) return;
         saved = (await api("profiles", { method: "POST", body: JSON.stringify(imported) })).data;
-        draft = null; pageId = saved.pages[0].id;
+        draft = unsupported = null; pageId = saved.pages[0].id;
         await refresh(true); render(); remember(); notice("Imported as a new profile.");
       });
     });

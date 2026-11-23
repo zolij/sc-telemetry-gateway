@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, group = null, groupField = "" } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, legacy = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -62,27 +62,22 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     { path: shieldPower, repeated: false, numeric: false },
     { path: shieldLevel, repeated: false, numeric: true },
     { path: "vehicle.state.lights_enabled", repeated: false, numeric: false }
-  ] : groupField ? [{ path: groupField, repeated: false, numeric: false }] : [];
-  let actionCatalog = group ? group.map(control => ({
-    action_name: control.action, category: "group", holdable: control.hold_ms != null,
-    field: groupField || null, fields: groupField ? [groupField] : [], enabled: true
-  })) : mappedAction ? [{
+  ] : [];
+  let actionCatalog = mappedAction ? [{
     action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
     field: shieldPower, fields: [shieldPower, shieldLevel], enabled: true
   }] : withAction ? [{
     action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
   }] : [];
-  if (withAction || mappedAction || group) {
+  if (withAction || mappedAction) {
     remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
     remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
     remote.pages[0].tiles.push({
       id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323",
-      field: group ? groupField : mappedAction ? shieldLevel : "", label: group ? "Group" : mappedAction ? "Shields" : "Radar",
-      widget: (group ? !!groupField : mappedAction) ? "value" : "action", size: "normal", decimals: 2, format: "auto", rules: [],
-      ...(group ? { controls: group } : {
-        action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
-        ...(!mappedAction ? { hold_ms: 500 } : {})
-      })
+      field: "", label: mappedAction ? "Shields" : "Radar",
+      widget: "action", size: "normal", decimals: 2, format: "auto", rules: [],
+      action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
+      ...(!mappedAction ? { hold_ms: 500 } : {})
     });
   }
   const summaryStatuses = [];
@@ -110,9 +105,14 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
         const etag = '"' + (remote?.revision ?? "empty") + '"';
         const status = options.headers["If-None-Match"] === etag ? 304 : 200;
         summaryStatuses.push(status);
-        return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision }] : [], etag);
+        return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision, atomic: !legacy }] : [], etag);
       }
       assert.equal(url, "/api/mfd/profiles/ship");
+      if (options.method === "DELETE") {
+        assert.equal(options.headers["If-Match"], '"' + remote.revision + '"');
+        remote = null;
+        return response(204, null);
+      }
       profileReads++;
       if (failedProfile) {
         failedProfile = false;
@@ -139,7 +139,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   });
   workspace.init(() => "test-token", () => {});
   await workspace.start();
-  assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
+  assert.equal(getElement("page-title").textContent, startEmpty || legacy ? "Your flight deck" : "Flight");
   return {
     workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
     setActions: value => { actionCatalog = value; },
@@ -180,139 +180,6 @@ test("action tile sends a bounded command only when online and reports acceptanc
   assert.equal(button.disabled, true);
 });
 
-test("small combined groups dispatch the selected button and require the displayed field", async () => {
-  const group = [{ action: "v_master_mode_set_nav" }, { action: "v_master_mode_set_scm" }];
-  const field = "vehicle.state.master_mode.mode";
-  const view = await fixture({ group, groupField: field });
-  const buttons = view.element("custom-cards").children[0].children[3].children;
-  const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.ok(buttons.every(button => button.disabled));
-  snapshot.selected_fields.push(field);
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.ok(buttons.every(button => !button.disabled));
-  await buttons[1].click();
-  assert.deepEqual(view.actionRequests, [{ action_name: "v_master_mode_set_scm" }]);
-  assert.match(view.element("custom-cards").children[0].children[5].textContent, /Master Mode Set Scm.*ACCEPTED/);
-  view.setActions([{ action_name: group[0].action, category: "group", holdable: false, field, fields: [field], enabled: true }]);
-  await view.poll();
-  const updated = view.element("custom-cards").children[0].children[3].children;
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(updated[0].disabled, false);
-  assert.equal(updated[1].disabled, true);
-});
-
-test("large groups require a selection and retain each control's hold duration", async () => {
-  const group = Array.from({ length: 5 }, (_, index) => ({ action: "emote_" + index }));
-  group[3].hold_ms = 500;
-  const view = await fixture({ group });
-  const [select, button] = view.element("custom-cards").children[0].children[3].children;
-  const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(button.disabled, true);
-  select.value = group[3].action;
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(button.disabled, false);
-  await button.click();
-  assert.deepEqual(view.actionRequests, [{ action_name: "emote_3", hold_ms: 500 }]);
-  view.workspace.paint(snapshot, false, 0, () => "");
-  assert.equal(button.disabled, true);
-});
-
-test("editing grouped controls preserves the group and rejects duplicates", async () => {
-  const group = [{ action: "emote_wave" }, { action: "emote_salute" }];
-  const view = await fixture({ group });
-  await view.element("edit-profile").click();
-  await view.element("custom-cards").children[0].children[3].children[1].click();
-  assert.equal(view.element("tile-controls-list").children.length, 2);
-  view.element("tile-action").value = "emote_wave";
-  view.element("add-tile-control").click();
-  assert.match(view.element("tile-message").textContent, /already/);
-  view.element("tile-action").value = "";
-  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
-  assert.equal(view.element("tile-message").textContent, "");
-  assert.equal(view.element("custom-cards").children.length, 1);
-  assert.deepEqual(view.actionRequests, []);
-});
-
-test("editing converts a legacy control into a group without losing its hold", async () => {
-  const view = await fixture({ withAction: true });
-  view.setActions([
-    { action_name: "v_invoke_ping", category: "radar", holdable: true, field: null, enabled: true },
-    { action_name: "emote_wave", category: "emote", holdable: false, field: null, enabled: true }
-  ]);
-  await view.poll();
-  await view.element("edit-profile").click();
-  await view.element("custom-cards").children[0].children[3].children[1].click();
-  view.element("add-tile-control").click();
-  assert.match(view.element("tile-controls-list").children[0].children[0].textContent, /500 MS/);
-  view.element("tile-action").value = "emote_wave";
-  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
-  assert.equal(view.element("tile-message").textContent, "");
-  await view.element("custom-cards").children[0].children[3].children[1].click();
-  assert.equal(view.element("tile-controls-list").children.length, 2);
-  assert.match(view.element("tile-controls-list").children[0].children[0].textContent, /500 MS/);
-  assert.deepEqual(view.actionRequests, []);
-});
-
-test("combined controls require their own selected and still-associated field", async () => {
-  const view = await fixture({ mappedAction: true });
-  let button = view.element("custom-cards").children[0].children[3];
-  const power = "vehicle.state.power.shield_generators", level = "vehicle.state.shields.level";
-  const snapshot = { selected_fields: [power], fields: {}, connection_status: "connected" };
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(button.disabled, true);
-  snapshot.selected_fields.push(level);
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(button.disabled, false);
-  view.setActions([{ action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
-    field: power, fields: [power], enabled: true }]);
-  await view.poll();
-  button = view.element("custom-cards").children[0].children[3];
-  view.workspace.paint(snapshot, true, 0, () => "");
-  assert.equal(button.disabled, true);
-  assert.match(button.title, /no longer linked/);
-});
-
-test("editor links secondary fields and creates combined controls from the library", async () => {
-  const view = await fixture({ mappedAction: true });
-  await view.element("edit-profile").click();
-  await view.element("custom-cards").children[0].children[3].children[1].click();
-  assert.equal(view.element("tile-field").value, "vehicle.state.shields.level");
-  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
-  assert.ok(view.element("tile-action").options.some(option => option.value === "v_power_toggle_shields"));
-  view.element("tile-field").value = "vehicle.state.power.shield_generators";
-  view.element("tile-field").listeners.get("change")();
-  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
-  view.element("tile-field").value = "vehicle.state.lights_enabled";
-  view.element("tile-field").listeners.get("change")();
-  assert.match(view.element("tile-action").options.at(-1).textContent, /not linked/);
-  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
-  assert.match(view.element("tile-message").textContent, /not linked/);
-  view.element("action-results").children[1].click();
-  assert.equal(view.element("tile-widget").value, "value");
-  assert.equal(view.element("tile-field").value, "vehicle.state.power.shield_generators");
-  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
-  assert.deepEqual(view.actionRequests, []);
-});
-
-test("editor supports legacy single-field action catalogs and converting standalone controls", async () => {
-  const view = await fixture({ mappedAction: true });
-  view.setActions([{ action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
-    field: "vehicle.state.power.shield_generators", enabled: true }]);
-  await view.poll();
-  await view.element("edit-profile").click();
-  view.element("action-results").children[1].click();
-  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
-  view.element("tile-widget").value = "action";
-  view.element("tile-widget").listeners.get("change")();
-  assert.equal(view.element("tile-field").disabled, true);
-  view.element("tile-widget").value = "value";
-  view.element("tile-widget").listeners.get("change")();
-  assert.equal(view.element("tile-field").disabled, false);
-  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
-});
-
 test("editing can add a game control without triggering it", async () => {
   const view = await fixture({ withAction: true });
   await view.element("edit-profile").click();
@@ -325,6 +192,47 @@ test("editing can add a game control without triggering it", async () => {
   assert.equal(view.element("tile-message").textContent, "");
   assert.equal(view.element("custom-cards").children.length, 2);
   assert.deepEqual(view.actionRequests, []);
+});
+
+test("the editor keeps mapped controls and telemetry on separate tiles", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  view.element("action-results").children[1].click();
+  assert.equal(view.element("tile-widget").value, "action");
+  assert.equal(view.element("tile-field").disabled, true);
+  assert.ok(view.element("tile-widget").options.find(option => option.value === "value").disabled);
+  view.element("field-results").children[0].children[1].click();
+  assert.equal(view.element("tile-widget").value, "value");
+  assert.equal(view.element("tile-action").disabled, true);
+  assert.ok(view.element("tile-widget").options.find(option => option.value === "action").disabled);
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("unsupported saved profiles remain visible and deletable without loading them", async () => {
+  const view = await fixture({ legacy: true });
+  assert.equal(view.profileReads(), 0);
+  assert.equal(view.element("profile-select").value, "ship");
+  assert.match(view.element("workspace-message").textContent, /unsupported combined tiles/);
+  assert.equal(view.element("delete-profile").disabled, false);
+  await view.element("delete-profile").click();
+  assert.equal(view.element("profile-select").value, "");
+  assert.equal(view.element("delete-profile").disabled, true);
+});
+
+test("import rejects combined and grouped tiles before sending them to the PC", async () => {
+  const view = await fixture();
+  for (const extra of [{ action: "v_lights" }, { controls: [{ action: "v_lights" }] }]) {
+    const data = profile(1);
+    data.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
+    data.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
+    data.pages[0].tiles = [{ id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323",
+      field: "vehicle.state.lights_enabled", label: "Lights", widget: "value",
+      size: "normal", decimals: 2, format: "auto", rules: [], ...extra }];
+    const file = { size: 100, text: async () => JSON.stringify(data) };
+    view.element("import-file").listeners.get("change")({ target: { files: [file] } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(view.element("workspace-message").textContent, /Combined or grouped tiles/);
+  }
 });
 
 test("the only saved profile is selected automatically when there is no saved preference", async () => {
