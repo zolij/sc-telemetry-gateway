@@ -35,6 +35,16 @@ the confirmed roles and the provider-required credit:
 certificate by [SignPath Foundation](https://signpath.org)".
 This is the proposed credit, not a claim that the project has been accepted.
 
+## Questions for the application
+
+- Confirm whether the single maintainer can hold all proposed roles.
+- Confirm whether the Velopack-generated Setup is eligible for signing.
+- The current Windows Setup is a one-click installer. The usage statistics
+  notice and Yes/No choice appear on first launch, before any report, not
+  during installation. Confirm whether this meets the provider's installation
+  notice and disable-option requirements; otherwise change the installer before
+  enabling signing.
+
 ## Repository setup after approval
 
 Create a SignPath project linked to this repository's verified GitHub build
