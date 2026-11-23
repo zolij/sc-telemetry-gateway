@@ -18,6 +18,51 @@ streaming flags matched. This comparison does not establish runtime semantics
 or compatibility with other builds. Recheck descriptors and test against the
 running game after an update. See [NOTICE](../NOTICE).
 
+## Five-minute stream observation
+
+On 2026-11-23, starting at 14:18:24 UTC, a read-only direct gRPC capture of
+PTU `5.0.202.10025` ran for 300.02 seconds. The recording contains original
+protobuf response payloads with local monotonic receive timestamps; no actions
+were sent by the recorder. These figures describe **this one session**, not
+guaranteed behavior or universal value ranges. The raw capture is not included
+in the repository because telemetry can contain player and vehicle data.
+
+- The stream delivered 5,792 frames. The first and last arrived at 0.004 and
+  299.966 seconds after capture start. Inter-frame intervals had a median of
+  51.764 ms, 95th percentile of 53.070 ms, and maximum of 57.507 ms; none
+  exceeded 100 ms. This is roughly 19.3 frames per second for this capture,
+  measured at the client rather than as an in-game simulation rate.
+- Every frame contained `actor`. `vehicle` and `weapons` appeared together in
+  5,594 frames; the remaining 198 contained only `actor`. `events`,
+  `force_feedback` and `turret` were absent throughout. No conclusion about
+  their general availability or event delivery can be drawn from one session.
+- Actor locomotion was `ON_FOOT` in 53 frames and `SEATED` in 5,739. The first
+  seated frame arrived at 2.74 seconds, while the first frame containing a
+  vehicle arrived at 10.24 seconds. Consumers should therefore not assume that
+  a seat transition and vehicle telemetry arrive simultaneously.
+- In the 5,594 vehicle frames, `speed` was encoded 5,593 times, `heading`
+  2,008 times, `vertical_speed_indicator` 1,663 times and
+  `atmospheric_density` 1,996 times. `quantum_fuel` was never encoded.
+  `ifcs_esp.active` and `ifcs_g_safe.active` were each encoded 2,233 times.
+  These are **wire-presence counts**: an omitted ordinary proto3 scalar can
+  represent its default, so absence does not prove a sensor is unavailable.
+- Both altitude fields were encoded in every vehicle frame. The raw float32
+  maximum (`3.4028235e+38`) occurred in `altitude` 4,022 times and
+  `radar_altitude` 3,598 times. This pattern is consistent with a sentinel,
+  but the schema does not define its meaning. The gateway treats that value
+  as invalid; a raw viewer should preserve it.
+- Encoded hydrogen fuel values were approximately 0.9831–0.9920, and encoded
+  shield level values approximately 0.00188–1.0; neither establishes a
+  guaranteed scale. Four shield-face values and two countermeasure entries
+  appeared in every vehicle frame. The weapons list contained one entry in
+  seven frames and two entries in 5,587 frames.
+- No unknown protobuf field tags were observed in the captured payloads.
+  This does not rule out additional fields in other situations or builds.
+
+The analysis counts a field at most once per frame, even when it occurs in
+multiple repeated entries. The raw protobuf payload, not a JSON conversion, was
+used to determine presence. Receive times are local and are not game timestamps.
+
 ## Developer terminal viewer
 
 For local development, run the separate terminal tool from the repository root:
