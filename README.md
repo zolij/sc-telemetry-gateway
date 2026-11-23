@@ -168,6 +168,8 @@ Combined cards show values and controls together, with shared availability
 warnings and separate feedback for each control. Existing combined profiles
 also use this compact display. The built-in templates use short control labels
 and show Boolean state as On/Off or Active/Inactive in automatic format.
+New templates use a single Toggle control where available; existing cards and
+custom control choices are not changed.
 
 The editor lists known controls by category even when the game is unavailable.
 The library includes a documented PTU snapshot and controls learned from the

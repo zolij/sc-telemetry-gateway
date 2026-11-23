@@ -5,14 +5,14 @@ const MfdWorkspace = (() => {
   const limits = { profiles: 32, pages: 16, tiles: 64, components: 16, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
   const presets = [
-    { label: "Vehicle lights", field: "vehicle.state.lights_enabled", actions: ["v_lights", "v_lights_on", "v_lights_off"] },
+    { label: "Vehicle lights", field: "vehicle.state.lights_enabled", actions: ["v_lights"], legacyActions: ["v_lights_on", "v_lights_off"] },
     { label: "Landing gear", field: "vehicle.state.flight.state.gear", actions: ["v_deploy_landing_system", "v_retract_landing_system"] },
-    { label: "G-safe", field: "vehicle.state.flight.settings.ifcs_g_safe.active", actions: ["v_ifcs_gsafe_on", "v_ifcs_gsafe_off", "v_ifcs_toggle_gforce_safety"] },
-    { label: "Coupled flight", field: "vehicle.state.flight.settings.ifcs_coupled.active", actions: ["v_ifcs_vector_decoupling_on", "v_ifcs_vector_decoupling_off", "v_ifcs_vector_decoupling_toggle"] },
+    { label: "G-safe", field: "vehicle.state.flight.settings.ifcs_g_safe.active", actions: ["v_ifcs_toggle_gforce_safety"], legacyActions: ["v_ifcs_gsafe_on", "v_ifcs_gsafe_off"] },
+    { label: "Coupled flight", field: "vehicle.state.flight.settings.ifcs_coupled.active", actions: ["v_ifcs_vector_decoupling_toggle"], legacyActions: ["v_ifcs_vector_decoupling_on", "v_ifcs_vector_decoupling_off"] },
     { label: "Master mode", field: "vehicle.state.master_mode.mode", actions: ["v_master_mode_cycle", "v_master_mode_set_scm"] },
-    { label: "SCM advanced HUD", field: "vehicle.state.flight.settings.advanced_hud_enabled_scm", actions: ["v_flight_advanced_hud_on", "v_flight_advanced_hud_toggle"] },
-    { label: "Flight light amplification", field: "vehicle.state.flight.settings.flight_light_amplification", actions: ["v_light_amplification_on", "v_light_amplification_toggle"] },
-    { label: "Weapons power", field: "vehicle.state.power.weapons", actions: ["v_power_set_weapons_on", "v_power_set_weapons_off", "v_power_toggle_weapons"] }
+    { label: "SCM advanced HUD", field: "vehicle.state.flight.settings.advanced_hud_enabled_scm", actions: ["v_flight_advanced_hud_toggle"], legacyActions: ["v_flight_advanced_hud_on"] },
+    { label: "Flight light amplification", field: "vehicle.state.flight.settings.flight_light_amplification", actions: ["v_light_amplification_toggle"], legacyActions: ["v_light_amplification_on"] },
+    { label: "Weapons power", field: "vehicle.state.power.weapons", actions: ["v_power_toggle_weapons"], legacyActions: ["v_power_set_weapons_on", "v_power_set_weapons_off"] }
   ];
   const presetActionLabels = {
     v_lights: "Toggle", v_lights_on: "On", v_lights_off: "Off",
@@ -246,7 +246,8 @@ const MfdWorkspace = (() => {
       let feedback = null;
       if (tile.widget === "action" && tile.action && (!draft || compactAction)) {
         const preset = parent && presets.find(item => item.label === parent.label &&
-          item.field && parent.components.some(child => child.field === item.field) && item.actions.includes(tile.action));
+          item.field && parent.components.some(child => child.field === item.field) &&
+          (item.actions.includes(tile.action) || item.legacyActions?.includes(tile.action)));
         const buttonLabel = preset && tile.label === actionLabel(tile.action)
           ? presetActionLabels[tile.action] : tile.label;
         actionButton = node("button", "game-action", compactAction

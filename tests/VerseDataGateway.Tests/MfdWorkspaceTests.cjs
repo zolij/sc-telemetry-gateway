@@ -38,7 +38,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false, actionsOnly = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false, actionsOnly = false, previousLights = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -119,6 +119,22 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
         ...control, id: "092eb896-64a8-457b-8ec6-05c8765c368f", label: "Other", action: "v_other"
       });
       if (actionsOnly) remote.pages[0].tiles[0].components.shift();
+    }
+    if (previousLights) {
+      remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
+      remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
+      const base = { size: "normal", decimals: 2, format: "auto", rules: [] };
+      remote.pages[0].tiles = [{
+        ...base, id: "14a8e3ae-a346-4d86-bdc0-58d0db8984e4", field: "", label: "Vehicle lights",
+        widget: "combined", size: "wide", components: [
+          { ...base, id: "8bf4dcd1-f27e-48dd-8804-b707b01ec8ba",
+            field: "vehicle.state.lights_enabled", label: "Vehicle lights", widget: "value" },
+          ...["v_lights", "v_lights_on", "v_lights_off"].map((action, index) => ({
+            ...base, id: `00000000-0000-4000-8000-00000000000${index + 1}`,
+            field: "", label: ["Lights", "Lights On", "Lights Off"][index], widget: "action", action
+          }))
+        ]
+      }];
     }
   }
   const summaryStatuses = [];
@@ -340,12 +356,12 @@ test("the lights template includes the observed field and controls even if unsel
   assert.equal(template.children[0].textContent, "Vehicle lights");
   template.click();
   const preview = view.element("custom-cards").children[1].children[2].children;
-  assert.deepEqual(preview.slice(1).map(item => item.children[0].textContent), ["Toggle", "On", "Off"]);
+  assert.deepEqual(preview.slice(1).map(item => item.children[0].textContent), ["Toggle"]);
   await view.element("save-profile").click();
   const group = view.savedBodies[0].pages[0].tiles[1];
   assert.equal(group.widget, "combined");
   assert.equal(group.components[0].field, "vehicle.state.lights_enabled");
-  assert.deepEqual(group.components.slice(1).map(item => item.action), ["v_lights", "v_lights_on", "v_lights_off"]);
+  assert.deepEqual(group.components.slice(1).map(item => item.action), ["v_lights"]);
   assert.deepEqual(view.actionRequests, []);
 });
 
@@ -353,9 +369,9 @@ test("all built-in templates render direct, descriptive controls", async () => {
   const view = await fixture({ mappedAction: true });
   await view.element("edit-profile").click();
   const expected = [
-    ["Toggle", "On", "Off"], ["Deploy", "Retract"], ["On", "Off", "Toggle"],
-    ["Decoupling on", "Decoupling off", "Toggle decoupling"], ["Cycle", "Set SCM"],
-    ["On", "Toggle"], ["On", "Toggle"], ["On", "Off", "Toggle"]
+    ["Toggle"], ["Deploy", "Retract"], ["Toggle"],
+    ["Toggle decoupling"], ["Cycle", "Set SCM"],
+    ["Toggle"], ["Toggle"], ["Toggle"]
   ];
   for (let index = 0; index < expected.length; index++) {
     view.element("preset-results").children[index + 1].click();
@@ -364,6 +380,25 @@ test("all built-in templates render direct, descriptive controls", async () => {
     assert.deepEqual(components.slice(1).map(item => item.children[0].textContent), expected[index]);
     assert.ok(components.every(item => !item.className?.includes("instrument size-")));
   }
+  await view.element("save-profile").click();
+  const actionSets = view.savedBodies[0].pages[0].tiles.slice(1).map(group =>
+    group.components.filter(item => item.widget === "action").map(item => item.action));
+  assert.deepEqual(actionSets, [
+    ["v_lights"], ["v_deploy_landing_system", "v_retract_landing_system"], ["v_ifcs_toggle_gforce_safety"],
+    ["v_ifcs_vector_decoupling_toggle"], ["v_master_mode_cycle", "v_master_mode_set_scm"],
+    ["v_flight_advanced_hud_toggle"], ["v_light_amplification_toggle"], ["v_power_toggle_weapons"]
+  ]);
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("previously saved template controls remain visible and survive editing", async () => {
+  const view = await fixture({ mappedAction: true, previousLights: true });
+  const components = view.element("custom-cards").children[0].children[1].children;
+  assert.deepEqual(components.slice(1).map(item => item.children[0].textContent), ["Toggle", "On", "Off"]);
+  await view.element("edit-profile").click();
+  await view.element("save-profile").click();
+  assert.deepEqual(view.savedBodies[0].pages[0].tiles[0].components.slice(1).map(item => item.action),
+    ["v_lights", "v_lights_on", "v_lights_off"]);
   assert.deepEqual(view.actionRequests, []);
 });
 
