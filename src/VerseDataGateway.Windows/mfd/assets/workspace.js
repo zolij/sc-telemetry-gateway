@@ -165,6 +165,7 @@ const MfdWorkspace = (() => {
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
       card.append(node("span", "instrument-label", tile.label), value, meta);
       let actionButton = null;
+      let mappingNote = null;
       if (tile.action && !draft) {
         actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
         actionButton.type = "button";
@@ -197,10 +198,11 @@ const MfdWorkspace = (() => {
             }
           }
         });
-        card.append(actionButton, feedback);
+        mappingNote = node("span", "game-action-result");
+        card.append(actionButton, mappingNote, feedback);
       }
       if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta, actionButton });
+      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote });
       $("custom-cards").append(card);
     }
     controls();
@@ -270,7 +272,7 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton, mappingNote } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
         actionButton.disabled = !online || busy || !action?.enabled ||
@@ -278,6 +280,7 @@ const MfdWorkspace = (() => {
         actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
           !action.enabled ? "Enable the matching field on the PC" :
           tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" : "";
+        mappingNote.textContent = action?.mapping_verified === false ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
       }
       if (tile.widget === "action") {
         value.textContent = draft ? "CONTROL" : actionButton?.disabled ? "UNAVAILABLE" : "READY";
@@ -535,7 +538,8 @@ const MfdWorkspace = (() => {
       button.type = "button";
       button.dataset.enabled = String(action.enabled);
       button.disabled = busy || !action.enabled;
-      button.append(node("strong", "", actionLabel(action.action_name)), node("span", "", readable(action.category)));
+      button.append(node("strong", "", actionLabel(action.action_name)), node("span", "",
+        readable(action.category) + (action.mapping_verified === false ? " / Field link not live-verified" : "")));
       button.addEventListener("click", () => {
         if (busy || !action.enabled) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
@@ -551,7 +555,8 @@ const MfdWorkspace = (() => {
     const select = $("tile-action");
     select.replaceChildren(new Option(standalone ? "Choose a control" : "No control", ""));
     for (const action of actions.filter(item => standalone || item.field === field)) {
-      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category), action.action_name);
+      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
+        (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
       option.disabled = !action.enabled;
       select.append(option);
     }

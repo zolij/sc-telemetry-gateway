@@ -27,10 +27,13 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       append(...items) { this.children.push(...items); },
       replaceChildren(...items) { this.children = items; },
       get childElementCount() { return this.children.length; },
+      get options() { return this.children; },
+      get selectedOptions() { return this.children.filter(option => option.value === this.value); },
       setAttribute() {},
       focus() {},
       select() {},
       close() {},
+      showModal() {},
       addEventListener(type, callback) { this.listeners.set(type, callback); },
       click() { return this.listeners.get("click")?.(); },
       querySelector(selector) {
@@ -40,15 +43,27 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     };
   }
   const getElement = id => {
-    if (!elements.has(id)) elements.set(id, element());
+    if (!elements.has(id)) {
+      const item = element();
+      const choices = {
+        "tile-widget": ["value", "status", "list", "action"],
+        "tile-format": ["auto", "number", "percent_fraction", "percent", "percent_max"]
+      }[id];
+      if (choices) item.append(...choices.map(value => Object.assign(element(), { value })));
+      elements.set(id, item);
+    }
     return elements.get(id);
   };
   let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, profileReads = 0;
   const actionRequests = [];
-  if (withAction) remote.pages[0].tiles.push({
-    id: "action-tile", field: "", label: "Radar", widget: "action", size: "normal",
+  if (withAction) {
+    remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
+    remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
+    remote.pages[0].tiles.push({
+    id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323", field: "", label: "Radar", widget: "action", size: "normal",
     decimals: 2, format: "auto", rules: [], action: "v_invoke_ping", hold_ms: 500
-  });
+    });
+  }
   const summaryStatuses = [];
   const response = (status, data, etag = null) => ({
     status, ok: status >= 200 && status < 300,
@@ -132,7 +147,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
 test("action tile sends a bounded command only when online and reports acceptance", async () => {
   const view = await fixture({ withAction: true });
   const card = view.element("custom-cards").children[0];
-  const button = card.children[3], feedback = card.children[4];
+  const button = card.children[3], feedback = card.children[5];
   const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
   view.workspace.paint(snapshot, false, 0, () => "");
   assert.equal(button.disabled, true);
@@ -143,6 +158,20 @@ test("action tile sends a bounded command only when online and reports acceptanc
   assert.match(feedback.textContent, /ACCEPTED.*CHECK GAME STATE/);
   view.workspace.paint(snapshot, false, 0, () => "");
   assert.equal(button.disabled, true);
+});
+
+test("editing can add a game control without triggering it", async () => {
+  const view = await fixture({ withAction: true });
+  await view.element("edit-profile").click();
+  const action = view.element("action-results").children[1];
+  assert.ok(action);
+  action.click();
+  assert.equal(view.element("tile-widget").value, "action");
+  assert.equal(view.element("tile-action").value, "v_invoke_ping");
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
+  assert.equal(view.element("custom-cards").children.length, 2);
+  assert.deepEqual(view.actionRequests, []);
 });
 
 test("the only saved profile is selected automatically when there is no saved preference", async () => {

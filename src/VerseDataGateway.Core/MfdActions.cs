@@ -17,7 +17,38 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
         {
             ["v_lights"] = "vehicle.state.lights_enabled",
             ["v_lights_on"] = "vehicle.state.lights_enabled",
-            ["v_lights_off"] = "vehicle.state.lights_enabled"
+            ["v_lights_off"] = "vehicle.state.lights_enabled",
+            ["v_toggle_landing_system"] = "vehicle.state.flight.state.gear",
+            ["v_deploy_landing_system"] = "vehicle.state.flight.state.gear",
+            ["v_retract_landing_system"] = "vehicle.state.flight.state.gear",
+            ["v_vtol_off"] = "vehicle.state.flight.state.vtol",
+            ["v_vtol_on"] = "vehicle.state.flight.state.vtol",
+            ["v_vtol_toggle"] = "vehicle.state.flight.state.vtol",
+            ["v_transform_cycle"] = "vehicle.state.flight.state.transformation",
+            ["v_transform_deploy"] = "vehicle.state.flight.state.transformation",
+            ["v_transform_retract"] = "vehicle.state.flight.state.transformation",
+            ["v_close_all_doors"] = "vehicle.state.doors.open_state",
+            ["v_open_all_doors"] = "vehicle.state.doors.open_state",
+            ["v_toggle_all_doors"] = "vehicle.state.doors.open_state",
+            ["v_lock_all_doors"] = "vehicle.state.doors.lock_state",
+            ["v_unlock_all_doors"] = "vehicle.state.doors.lock_state",
+            ["v_toggle_all_doorlocks"] = "vehicle.state.doors.lock_state",
+            ["v_ifcs_toggle_gforce_safety"] = "vehicle.state.flight.settings.ifcs_g_safe.active",
+            ["v_ifcs_gsafe_on"] = "vehicle.state.flight.settings.ifcs_g_safe.active",
+            ["v_ifcs_gsafe_off"] = "vehicle.state.flight.settings.ifcs_g_safe.active",
+            ["v_ifcs_toggle_esp"] = "vehicle.state.flight.settings.ifcs_esp.active",
+            ["v_ifcs_proximity_assist_off"] = "vehicle.state.flight.settings.ifcs_proximity_assist.active",
+            ["v_ifcs_proximity_assist_on"] = "vehicle.state.flight.settings.ifcs_proximity_assist.active",
+            ["v_ifcs_proximity_assist_toggle"] = "vehicle.state.flight.settings.ifcs_proximity_assist.active",
+            ["v_ifcs_vector_decoupling_off"] = "vehicle.state.flight.settings.ifcs_coupled.active",
+            ["v_ifcs_vector_decoupling_on"] = "vehicle.state.flight.settings.ifcs_coupled.active",
+            ["v_ifcs_vector_decoupling_toggle"] = "vehicle.state.flight.settings.ifcs_coupled.active",
+            ["v_master_mode_cycle"] = "vehicle.state.master_mode.mode",
+            ["v_master_mode_set_nav"] = "vehicle.state.master_mode.mode",
+            ["v_master_mode_set_scm"] = "vehicle.state.master_mode.mode",
+            ["v_power_set_weapons_off"] = "vehicle.state.power.weapons",
+            ["v_power_set_weapons_on"] = "vehicle.state.power.weapons",
+            ["v_power_toggle_weapons"] = "vehicle.state.power.weapons"
         };
 
     public async Task<IReadOnlyList<MfdAction>> ListAsync(CancellationToken cancellationToken)
@@ -35,7 +66,8 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
                 throw new InvalidDataException("The game returned an invalid action list.");
             var field = FieldForAction(action.ActionName);
             result.Add(new(action.ActionName, action.Category, action.Holdable, field,
-                field is null || snapshot.SelectedFields.Contains(field, StringComparer.Ordinal)));
+                field is null || snapshot.SelectedFields.Contains(field, StringComparer.Ordinal),
+                field is null ? null : action.ActionName is "v_lights_on" or "v_lights_off"));
         }
         return result;
     }
@@ -88,6 +120,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
     }
 }
 
-internal sealed record MfdAction(string ActionName, string Category, bool Holdable, string? Field, bool Enabled);
+internal sealed record MfdAction(string ActionName, string Category, bool Holdable, string? Field, bool Enabled,
+    bool? MappingVerified);
 internal sealed class MfdActionBusyException : Exception;
 internal sealed class MfdActionForbiddenException : Exception;

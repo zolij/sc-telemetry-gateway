@@ -47,6 +47,18 @@ public sealed class MfdProfileTests : IDisposable
         JsonSerializer.Deserialize<MfdProfile>(legacy, WireJson.Options)!.Validate();
     }
 
+    [Theory]
+    [InlineData("v_toggle_landing_system", "vehicle.state.flight.state.gear")]
+    [InlineData("v_open_all_doors", "vehicle.state.doors.open_state")]
+    [InlineData("v_ifcs_gsafe_on", "vehicle.state.flight.settings.ifcs_g_safe.active")]
+    [InlineData("v_master_mode_set_nav", "vehicle.state.master_mode.mode")]
+    [InlineData("v_power_toggle_weapons", "vehicle.state.power.weapons")]
+    public void NameBasedActionsMapToExistingTelemetryFields(string action, string field)
+    {
+        Assert.Equal(field, MfdActions.FieldForAction(action));
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+    }
+
     [Fact]
     public void PageTriggersPersistAndLegacyProfilesDefaultToManualPages()
     {

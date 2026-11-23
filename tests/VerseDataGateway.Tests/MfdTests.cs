@@ -449,6 +449,14 @@ public sealed class MfdTests
                 using var body = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(test.Token));
                 Assert.Equal(lightsSelected, body.RootElement.EnumerateArray().Single(
                     item => item.GetProperty("action_name").GetString() == "v_lights_on").GetProperty("enabled").GetBoolean());
+                var gear = body.RootElement.EnumerateArray().Single(
+                    item => item.GetProperty("action_name").GetString() == "v_toggle_landing_system");
+                Assert.Equal("vehicle.state.flight.state.gear", gear.GetProperty("field").GetString());
+                Assert.False(gear.GetProperty("mapping_verified").GetBoolean());
+                Assert.False(gear.GetProperty("enabled").GetBoolean());
+                using var unselected = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                    new { action_name = "v_toggle_landing_system" }, test.Token);
+                Assert.Equal(HttpStatusCode.Forbidden, unselected.StatusCode);
                 using var result = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
                     new { action_name = "v_lights_on" }, test.Token);
                 Assert.Equal(lightsSelected ? HttpStatusCode.OK : HttpStatusCode.Forbidden, result.StatusCode);
@@ -469,6 +477,22 @@ public sealed class MfdTests
                     using var invalidResponse = await http.PostAsJsonAsync("/api/mfd/actions/trigger", invalid, test.Token);
                     Assert.True(invalidResponse.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden);
                 }
+                using (var noOrigin = new HttpClient { BaseAddress = new Uri(test.Origin) })
+                {
+                    noOrigin.DefaultRequestHeaders.Authorization = http.DefaultRequestHeaders.Authorization;
+                    using var rejected = await noOrigin.PostAsJsonAsync("/api/mfd/actions/trigger",
+                        new { action_name = "v_invoke_ping" }, test.Token);
+                    Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+                }
+                await Task.Delay(300, test.Token);
+                using var ping = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                    new { action_name = "v_invoke_ping", hold_ms = 5000 }, test.Token);
+                ping.EnsureSuccessStatusCode();
+                using var pingBody = JsonDocument.Parse(await ping.Content.ReadAsStringAsync(test.Token));
+                Assert.Equal("RateLimited", pingBody.RootElement.GetProperty("status").GetString());
+                using var repeated = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                    new { action_name = "v_invoke_ping", hold_ms = 1 }, test.Token);
+                Assert.Equal(HttpStatusCode.TooManyRequests, repeated.StatusCode);
                 test.Store.Disconnected();
                 using var disconnected = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
                     new { action_name = "v_invoke_ping", hold_ms = 100 }, test.Token);
@@ -488,12 +512,14 @@ public sealed class MfdTests
                     new ListTriggerableActionsResponse { Actions =
                     {
                         new TriggerableAction { ActionName = "v_lights_on", Category = "lights_controller" },
+                        new TriggerableAction { ActionName = "v_toggle_landing_system", Category = "spaceship_movement" },
                         new TriggerableAction { ActionName = "v_invoke_ping", Category = "spaceship_radar", Holdable = true }
                     } });
 
             public override Task<TriggerGameActionResponse> TriggerGameAction(
                 TriggerGameActionRequest request, ServerCallContext context) =>
-                Task.FromResult(new TriggerGameActionResponse { Status = TriggerGameActionStatus.Ok });
+                Task.FromResult(new TriggerGameActionResponse { Status = request.ActionName == "v_invoke_ping"
+                    ? TriggerGameActionStatus.RateLimited : TriggerGameActionStatus.Ok });
         }
 
     [Fact]
