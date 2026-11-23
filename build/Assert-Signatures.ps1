@@ -16,7 +16,7 @@ foreach ($path in $Paths) {
         throw "Missing, invalid, unapproved or untimestamped signature: $path"
     }
     $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $path).Path)
-    if ($metadata.ProductName -ne 'Star Citizen Telemetry Gateway' -or
+    if ($metadata.ProductName -ne 'Verse Data Gateway' -or
         $metadata.ProductVersion.Split('+')[0] -ne $Version) {
         throw "Unexpected signed product identity or version: $path"
     }

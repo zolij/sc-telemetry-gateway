@@ -24,7 +24,7 @@ The Worker uses the address for rate limiting, but does not intentionally store
 it in D1 or include it in application error logs.
 
 The local ID is kept as `usage-id` alongside the settings under
-`%LOCALAPPDATA%\StarCitizenTelemetryGateway`. Portable and installed copies
+`%LOCALAPPDATA%\VerseDataGateway`. Portable and installed copies
 using the same Windows profile share it. Disabling reporting stops further
 reports and removes the local ID; previously received records remain until
 scheduled cleanup. Re-enabling creates a new ID. Removing the settings folder

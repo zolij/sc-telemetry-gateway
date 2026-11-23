@@ -65,12 +65,12 @@ jobs:
           $tags = @(gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
           if ($LASTEXITCODE -ne 0) { throw 'Could not check existing releases.' }
           if ($tags -contains "v$env:RELEASE_VERSION") { throw 'Release already exists; use a new immutable version.' }
-      - run: dotnet restore tests/ScTelemetryGateway.Tests --locked-mode
-      - run: dotnet test tests/ScTelemetryGateway.Tests --no-restore -c Release
+      - run: dotnet restore tests/VerseDataGateway.Tests --locked-mode
+      - run: dotnet test tests/VerseDataGateway.Tests --no-restore -c Release
       - name: Publish project
         shell: pwsh
         run: |
-          dotnet publish src/ScTelemetryGateway.Windows -c Release -r win-x64 --self-contained true `
+          dotnet publish src/VerseDataGateway.Windows -c Release -r win-x64 --self-contained true `
             -o artifacts/publish "-p:Version=$env:RELEASE_VERSION" -p:RestoreLockedMode=true
           if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
       - uses: actions/upload-artifact@v7
@@ -79,9 +79,9 @@ jobs:
         with:
           name: project-binaries-for-signing
           path: |
-            artifacts/publish/StarCitizenTelemetryGateway.exe
-            artifacts/publish/StarCitizenTelemetryGateway.dll
-            artifacts/publish/ScTelemetryGateway.Core.dll
+            artifacts/publish/VerseDataGateway.exe
+            artifacts/publish/VerseDataGateway.dll
+            artifacts/publish/VerseDataGateway.Core.dll
           if-no-files-found: error
       - name: Request project binary signatures
         if: inputs.signed
@@ -102,7 +102,7 @@ jobs:
         env:
           SIGNPATH_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_CERTIFICATE_THUMBPRINT }}
         run: |
-          $names = @('StarCitizenTelemetryGateway.exe', 'StarCitizenTelemetryGateway.dll', 'ScTelemetryGateway.Core.dll')
+          $names = @('VerseDataGateway.exe', 'VerseDataGateway.dll', 'VerseDataGateway.Core.dll')
           $paths = $names | ForEach-Object { "artifacts/signed-app/$_" }
           ./build/Assert-Signatures.ps1 -Paths $paths -Thumbprint $env:SIGNPATH_CERTIFICATE_THUMBPRINT -Version $env:RELEASE_VERSION
           foreach ($name in $names) { Copy-Item "artifacts/signed-app/$name" "artifacts/publish/$name" -Force }
@@ -143,7 +143,7 @@ jobs:
           $packages = @(Get-ChildItem artifacts/installer/*-full.nupkg)
           if ($packages.Count -ne 1) { throw 'Expected exactly one full update package.' }
           [IO.Compression.ZipFile]::ExtractToDirectory($packages[0].FullName, "$PWD/artifacts/package-verification")
-          foreach ($name in @('StarCitizenTelemetryGateway.exe', 'StarCitizenTelemetryGateway.dll', 'ScTelemetryGateway.Core.dll')) {
+          foreach ($name in @('VerseDataGateway.exe', 'VerseDataGateway.dll', 'VerseDataGateway.Core.dll')) {
             $files = @(Get-ChildItem artifacts/package-verification -Recurse -Filter $name)
             if ($files.Count -ne 1) { throw "Expected exactly one packaged $name." }
             ./build/Assert-Signatures.ps1 -Paths $files[0].FullName -Thumbprint $env:SIGNPATH_CERTIFICATE_THUMBPRINT -Version $env:RELEASE_VERSION
@@ -176,9 +176,9 @@ jobs:
           Use at your own risk. Provided AS IS; authors and contributors disclaim liability to the fullest extent permitted by law.
           Independent community project, not affiliated with Cloud Imperium Games.
 
-          Installation and privacy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/INSTALLATION.md
-          Disclaimer: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/DISCLAIMER.md
-          Code signing policy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
+          Installation and privacy: https://github.com/zolij/verse-data-gateway/blob/main/docs/INSTALLATION.md
+          Disclaimer: https://github.com/zolij/verse-data-gateway/blob/main/docs/DISCLAIMER.md
+          Code signing policy: https://github.com/zolij/verse-data-gateway/blob/main/docs/SIGNING.md
           "@ | Set-Content artifacts/release-notes.txt
       - uses: actions/upload-artifact@v7
         with:
@@ -189,7 +189,7 @@ jobs:
         shell: pwsh
         run: |
           $tag = "v$env:RELEASE_VERSION"
-          $title = "Star Citizen Telemetry Gateway $env:RELEASE_VERSION"
+          $title = "Verse Data Gateway $env:RELEASE_VERSION"
           $flags = @('--latest=true')
           if ($env:SIGNED_RELEASE -ne 'true') {
             $title += ' - UNSIGNED PREVIEW'
