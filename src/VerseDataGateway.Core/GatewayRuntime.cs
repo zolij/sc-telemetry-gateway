@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("VerseDataGateway.Tests")]
+[assembly: InternalsVisibleTo("VerseDataGateway.TelemetryDebug")]
 
 namespace VerseDataGateway.Core;
 

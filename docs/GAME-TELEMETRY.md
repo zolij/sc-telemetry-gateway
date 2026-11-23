@@ -18,6 +18,32 @@ streaming flags matched. This comparison does not establish runtime semantics
 or compatibility with other builds. Recheck descriptors and test against the
 running game after an update. See [NOTICE](../NOTICE).
 
+## Developer terminal viewer
+
+For local development, run the separate terminal tool from the repository root:
+
+```sh
+dotnet run --project tools/TelemetryDebug
+dotnet run --project tools/TelemetryDebug -- 29420
+```
+
+The optional argument is the game gRPC port, defaulting to `29420`. The tool
+connects directly to `127.0.0.1`, independently of the gateway and its MFD
+field selection. It requires the .NET SDK and the game's telemetry service to
+be enabled; see [setup](../README.md#windows-quick-start). Stop with Ctrl+C.
+It is a development tool, not bundled in the application.
+
+The display refreshes once per second and retains the most recent message for
+each section, with its receive age. A newer section replaces the entire previous
+section; it is not a history and may miss intermediate values and events.
+Disconnects clear the display before reconnecting. Raw scalar values are shown
+without MFD scaling, including non-finite floats and numeric enum values.
+`<omitted>` means the field was not encoded in that section: proto3 can omit
+actual default values, so it does not prove that the game value is unavailable.
+Empty repeated fields appear as `[]`; unknown protobuf fields are not displayed.
+The output can include sensitive in-game information; it is not written to a
+file by the tool, but terminal scrollback or redirection can retain it.
+
 ## Service and wire contract
 
 The proto3 package is `sc.game.telemetry.v1`; the service is
