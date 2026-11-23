@@ -96,8 +96,8 @@ separate test, not part of these two runs.
 
 A subsequent `visor_wipe` retry returned `OK` with an empty message. The next
 38 frames contained `actor` with `ON_FOOT` locomotion and no other sections.
-The mobiglas state was not verified, so it is unknown whether it caused the
-earlier `FILTERED` response. The retry did not establish a visible animation.
+The user confirmed that the earlier `FILTERED` response occurred because
+mobiglas was open. The retry did not establish a visible animation.
 
 Notable decoded changes during the seated actions' observation windows were:
 
