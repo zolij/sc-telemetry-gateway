@@ -295,6 +295,8 @@ action and field.
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
 "hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be
 an integer from 1 through 5000 and the game must list that action as holdable.
+The 5000 ms limit is a gateway safety limit, not a verified game maximum;
+a 500 ms radar ping was observed in the checked PTU build.
 The gateway re-reads the game catalogue and checks eligibility, active
 telemetry, approval, one concurrent request and a 250 ms minimum between
 dispatches. Writes require the exact Origin. Bodies are limited to 4096 bytes;

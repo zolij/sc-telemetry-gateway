@@ -539,7 +539,8 @@ const MfdWorkspace = (() => {
       button.dataset.enabled = String(action.enabled);
       button.disabled = busy || !action.enabled;
       button.append(node("strong", "", actionLabel(action.action_name)), node("span", "",
-        readable(action.category) + (action.mapping_verified === false ? " / Field link not live-verified" : "")));
+        readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "") +
+        (action.mapping_verified === false ? " / Field link not live-verified" : "")));
       button.addEventListener("click", () => {
         if (busy || !action.enabled) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
