@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, legacy = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -65,9 +65,9 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   ] : [];
   let actionCatalog = mappedAction ? [{
     action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
-    field: shieldPower, fields: [shieldPower, shieldLevel], enabled: true
+    fields: [shieldPower, shieldLevel], enabled: true
   }] : withAction ? [{
-    action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
+    action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, fields: [], enabled: true
   }] : [];
   if (withAction || mappedAction) {
     remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
@@ -105,7 +105,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
         const etag = '"' + (remote?.revision ?? "empty") + '"';
         const status = options.headers["If-None-Match"] === etag ? 304 : 200;
         summaryStatuses.push(status);
-        return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision, atomic: !legacy }] : [], etag);
+        return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision }] : [], etag);
       }
       assert.equal(url, "/api/mfd/profiles/ship");
       if (options.method === "DELETE") {
@@ -139,7 +139,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   });
   workspace.init(() => "test-token", () => {});
   await workspace.start();
-  assert.equal(getElement("page-title").textContent, startEmpty || legacy ? "Your flight deck" : "Flight");
+  assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
     workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
     setActions: value => { actionCatalog = value; },
@@ -208,20 +208,9 @@ test("the editor keeps mapped controls and telemetry on separate tiles", async (
   assert.deepEqual(view.actionRequests, []);
 });
 
-test("unsupported saved profiles remain visible and deletable without loading them", async () => {
-  const view = await fixture({ legacy: true });
-  assert.equal(view.profileReads(), 0);
-  assert.equal(view.element("profile-select").value, "ship");
-  assert.match(view.element("workspace-message").textContent, /unsupported combined tiles/);
-  assert.equal(view.element("delete-profile").disabled, false);
-  await view.element("delete-profile").click();
-  assert.equal(view.element("profile-select").value, "");
-  assert.equal(view.element("delete-profile").disabled, true);
-});
-
-test("import rejects combined and grouped tiles before sending them to the PC", async () => {
+test("import rejects invalid tile properties before sending them to the PC", async () => {
   const view = await fixture();
-  for (const extra of [{ action: "v_lights" }, { controls: [{ action: "v_lights" }] }]) {
+  for (const extra of [{ action: "v_lights" }, { unexpected: true }]) {
     const data = profile(1);
     data.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
     data.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
@@ -231,7 +220,7 @@ test("import rejects combined and grouped tiles before sending them to the PC", 
     const file = { size: 100, text: async () => JSON.stringify(data) };
     view.element("import-file").listeners.get("change")({ target: { files: [file] } });
     await new Promise(resolve => setImmediate(resolve));
-    assert.match(view.element("workspace-message").textContent, /Combined or grouped tiles/);
+    assert.match(view.element("workspace-message").textContent, /Invalid tile settings/);
   }
 });
 

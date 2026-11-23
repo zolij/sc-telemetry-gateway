@@ -454,7 +454,7 @@ public sealed class MfdTests
                 item => item.GetProperty("action_name").GetString() == "v_lights_on").GetProperty("enabled").GetBoolean());
             var gear = body.RootElement.EnumerateArray().Single(
                 item => item.GetProperty("action_name").GetString() == "v_toggle_landing_system");
-            Assert.Equal("vehicle.state.flight.state.gear", gear.GetProperty("field").GetString());
+            Assert.Equal("vehicle.state.flight.state.gear", Assert.Single(gear.GetProperty("fields").EnumerateArray()).GetString());
             Assert.False(gear.GetProperty("mapping_verified").GetBoolean());
             Assert.False(gear.GetProperty("enabled").GetBoolean());
             using var unselected = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
@@ -550,7 +550,8 @@ public sealed class MfdTests
         var shield = json.RootElement.EnumerateArray().Single(
             item => item.GetProperty("action_name").GetString() == "v_power_toggle_shields");
         Assert.Equal(allowed, shield.GetProperty("enabled").GetBoolean());
-        Assert.Equal("vehicle.state.power.shield_generators", shield.GetProperty("field").GetString());
+        Assert.Contains(shield.GetProperty("fields").EnumerateArray(),
+            item => item.GetString() == "vehicle.state.power.shield_generators");
         Assert.Contains(shield.GetProperty("fields").EnumerateArray(),
             item => item.GetString() == "vehicle.state.shields.level");
         Assert.False(shield.GetProperty("mapping_verified").GetBoolean());

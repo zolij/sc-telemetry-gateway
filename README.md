@@ -146,9 +146,8 @@ values to your own labels and a fixed color palette. No graphs or arbitrary
 formulas are included; measurement units are not inferred.
 
 The editor lists the game's available controls by category. Each tile either
-displays one telemetry field or triggers one game action; tiles cannot combine
-fields and actions or group several actions. Controls with known field
-associations require at least one associated field to be shared in PC MFD
+displays one telemetry field or triggers one game action. Controls with known
+field associations require at least one associated field to be shared in PC MFD
 settings. Vehicle lights on/off were verified against live PTU telemetry;
 other field associations are based on names and marked as not live-verified.
 Availability depends on the game,
@@ -156,10 +155,6 @@ active action map and game-side trigger setting; an unavailable saved control
 is retained but disabled. A game response is shown on the tile, including in
 Focus Mode. An accepted request is not proof of a state change. If a response
 is lost, check the game before retrying.
-
-Previously saved combined or grouped profiles cannot be opened or imported.
-They remain listed as unsupported and can be deleted without affecting other
-profiles; they are not converted automatically.
 
 Some actions can be held for a configured 1–5000 ms; the request runs for that
 duration, not until the screen is released. Editing never triggers controls.

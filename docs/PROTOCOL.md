@@ -262,7 +262,7 @@ Responses use `Cache-Control: no-store`.
 | GET | `/api/mfd/events` | Known nonzero game-event names for page triggers, independent of field selection |
 | GET | `/api/mfd/actions` | Game action catalogue and local field eligibility |
 | POST | `/api/mfd/actions/trigger` | Trigger a currently listed, eligible game action |
-| GET | `/api/mfd/profiles` | Array of `{id, name, revision, atomic}` summaries |
+| GET | `/api/mfd/profiles` | Array of `{id, name, revision}` summaries |
 | GET | `/api/mfd/profiles/{id}` | Full profile and revision ETag |
 | POST | `/api/mfd/profiles` | Create a new profile; returns 201 and the saved document |
 | PUT | `/api/mfd/profiles/{id}` | Replace an existing profile with revision precondition |
@@ -277,9 +277,8 @@ attacker may obtain credentials or alter commands. Use only a trusted LAN.
 Remote telemetry receivers have no game-control channel.
 
 `GET /api/mfd/actions` queries the game over loopback and returns entries
-`{action_name, category, holdable, field, fields, enabled, mapping_verified}`.
-`fields` lists the gateway's corresponding fields; `field` is the first entry
-or `null` for compatibility with older displays. A mapped action is enabled
+`{action_name, category, holdable, fields, enabled, mapping_verified}`.
+`fields` lists the gateway's corresponding fields. A mapped action is enabled
 when at least one of its corresponding fields is selected in MFD settings.
 Unmapped actions do not require a field. `mapping_verified` is
 `true` for the light on/off actions observed against live PTU telemetry,
@@ -373,13 +372,9 @@ with 0–64 tiles; at most 32 profiles can be stored.
 
 Widgets are `value` or `status` for scalar fields, `list` for repeated fields,
 and `action` for a standalone control. An action tile has an empty `field` and
-one `action` name; telemetry tiles cannot have an action. Grouped `controls`
-are no longer accepted. Optional `hold_ms` is bounded as described above.
-Saved profiles containing combined or grouped tiles remain listed with
-`atomic: false` and can be deleted, but cannot be loaded or updated; they are
-not converted automatically. Other profiles are unaffected. Saved actions
-that are absent from the current game catalogue remain in the profile but
-cannot be triggered.
+one `action` name; telemetry tiles cannot have an action. Optional `hold_ms`
+is bounded as described above. Saved actions that are absent from the current
+game catalogue remain in the profile but cannot be triggered.
 Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive
 width clamping. Decimal precision is 0–6; int64/uint64 wire strings are not
 converted to imprecise JavaScript numbers. A status tile can have at most 32

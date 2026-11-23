@@ -5,7 +5,7 @@ const MfdWorkspace = (() => {
   const limits = { profiles: 32, pages: 16, tiles: 64, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
   let getToken, repaint;
-  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null, unsupported = null;
+  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
@@ -69,7 +69,6 @@ const MfdWorkspace = (() => {
     $("profile-select").disabled = busy;
     $("unpair-button").disabled = busy;
     for (const id of ["edit-profile", "copy-profile", "delete-profile"]) $(id).disabled = busy || !saved || editing;
-    $("delete-profile").disabled = busy || editing || (!saved && !unsupported);
     $("copy-profile").disabled ||= summaries.length >= limits.profiles;
     $("export-profile").disabled = busy || !profile();
     $("new-profile").disabled = busy || editing || summaries.length >= limits.profiles;
@@ -117,13 +116,13 @@ const MfdWorkspace = (() => {
     const select = $("profile-select");
     select.replaceChildren(new Option("Choose a profile", ""));
     for (const item of [...summaries].sort((a, b) => a.name.localeCompare(b.name)))
-      select.append(new Option(item.name + (item.atomic === false ? " (unsupported combined profile)" : ""), item.id));
+      select.append(new Option(item.name, item.id));
     if (draft && !saved) {
       const unsaved = new Option(draft.name + " (unsaved)", "draft");
       unsaved.disabled = true;
       select.append(unsaved);
     }
-    select.value = saved?.id ?? (draft ? "draft" : unsupported?.id ?? "");
+    select.value = saved?.id ?? (draft ? "draft" : "");
   }
   function render() {
     renderProfiles();
@@ -368,16 +367,7 @@ const MfdWorkspace = (() => {
         }
       }
     }
-    if (unsupported) {
-      unsupported = summaries.find(item => item.id === unsupported.id) ?? null;
-      if (unsupported?.atomic !== false) {
-        const id = unsupported?.id;
-        unsupported = null;
-        if (id) await selectProfile(id, version);
-        else render();
-      }
-    }
-    if (!saved && !draft && !unsupported) {
+    if (!saved && !draft) {
       const preferred = summaries.find(item => item.id === preference?.profile);
       const onlyProfile = summaries.length === 1 ? summaries[0] : null;
       const next = preferred ?? onlyProfile;
@@ -386,19 +376,9 @@ const MfdWorkspace = (() => {
     controls();
   }
   async function selectProfile(id, version = viewVersion) {
-    const summary = summaries.find(item => item.id === id);
-    if (summary?.atomic === false) {
-      saved = draft = null;
-      unsupported = summary;
-      pageId = null;
-      render();
-      notice("This profile contains unsupported combined tiles. Delete it or choose another profile.", true);
-      return;
-    }
     const next = id ? (await api("profiles/" + id)).data : null;
     if (version !== viewVersion) return;
     saved = next;
-    unsupported = null;
     draft = null;
     pageId = preference?.profile === id ? preference.page : next?.pages[0].id;
     $("conflict-actions").hidden = true;
@@ -420,7 +400,7 @@ const MfdWorkspace = (() => {
   function reset() {
     epoch++;
     viewVersion++;
-    saved = draft = unsupported = null;
+    saved = draft = null;
     pageId = null;
     summaries = catalog = actions = [];
     actionError = "";
@@ -677,8 +657,6 @@ const MfdWorkspace = (() => {
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
-        if (tile && (tile.controls !== undefined || tile.widget !== "action" && tile.action !== undefined))
-          throw new Error("Combined or grouped tiles are no longer supported. Import an atomic profile.");
         if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms"]) ||
             !(tile.widget === "action" ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
             !["value", "status", "list", "action"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
@@ -687,6 +665,7 @@ const MfdWorkspace = (() => {
             tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length ||
             tile.action !== undefined && (typeof tile.action !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(tile.action)) ||
             tile.widget === "action" && !tile.action ||
+            tile.widget !== "action" && tile.action !== undefined ||
             tile.widget === "action" && tile.format !== undefined && !["auto", "number"].includes(tile.format) ||
             tile.hold_ms !== undefined && (!tile.action || !Number.isInteger(tile.hold_ms) || tile.hold_ms < 1 || tile.hold_ms > 5000))
           throw new Error("Invalid tile settings.");
@@ -749,7 +728,7 @@ const MfdWorkspace = (() => {
     });
     $("new-profile").addEventListener("click", () => run(() => {
       draft = { schema_version: 1, name: "My MFD", pages: [{ id: uuid(), name: "Page 1", tiles: [] }] };
-      saved = unsupported = null; pageId = draft.pages[0].id;
+      saved = null; pageId = draft.pages[0].id;
       render(); notice("Build your display, then SAVE TO PC.");
     }).then(() => { if (draft) { $("profile-name").focus(); $("profile-name").select(); } }));
     $("edit-profile").addEventListener("click", () => run(async () => {
@@ -782,10 +761,8 @@ const MfdWorkspace = (() => {
     $("delete-profile").addEventListener("click", () => {
       if (!window.confirm("Delete this shared profile from the PC? All displays will lose access to it.")) return;
       return run(async () => {
-        const target = saved ?? unsupported;
-        if (!target) throw new Error("Choose a profile to delete.");
-        await api("profiles/" + target.id, { method: "DELETE", headers: { "If-Match": '"' + target.revision + '"' } });
-        saved = unsupported = null; pageId = null; await refresh(true); render(); notice("Profile deleted.");
+        await api("profiles/" + saved.id, { method: "DELETE", headers: { "If-Match": '"' + saved.revision + '"' } });
+        saved = null; pageId = null; await refresh(true); render(); notice("Profile deleted.");
       });
     });
     $("profile-name").addEventListener("input", event => { if (draft) draft.name = event.target.value; });
@@ -859,7 +836,7 @@ const MfdWorkspace = (() => {
         const missing = imported.pages.flatMap(item => item.tiles).some(tile => tile.widget !== "action" && !catalog.some(field => field.path === tile.field));
         if (missing && !window.confirm("Some imported fields are not enabled on this PC. They will be unavailable. Continue without enabling them?")) return;
         saved = (await api("profiles", { method: "POST", body: JSON.stringify(imported) })).data;
-        draft = unsupported = null; pageId = saved.pages[0].id;
+        draft = null; pageId = saved.pages[0].id;
         await refresh(true); render(); remember(); notice("Imported as a new profile.");
       });
     });

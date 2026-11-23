@@ -91,10 +91,9 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
             if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
                 throw new InvalidDataException("The game returned an invalid action list.");
             var fields = FieldsForAction(action.ActionName);
-            var field = fields.FirstOrDefault();
-            result.Add(new(action.ActionName, action.Category, action.Holdable, field,
+            result.Add(new(action.ActionName, action.Category, action.Holdable,
                 fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
-                field is null ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
+                fields.Count == 0 ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
         }
         return result;
     }
@@ -148,7 +147,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
     }
 }
 
-internal sealed record MfdAction(string ActionName, string Category, bool Holdable, string? Field, bool Enabled,
+internal sealed record MfdAction(string ActionName, string Category, bool Holdable, bool Enabled,
     bool? MappingVerified, IReadOnlyList<string> Fields);
 internal sealed class MfdActionBusyException : Exception;
 internal sealed class MfdActionForbiddenException : Exception;
