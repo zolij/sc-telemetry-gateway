@@ -33,7 +33,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
         {
             if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
                 throw new InvalidDataException("The game returned an invalid action list.");
-            FieldByAction.TryGetValue(action.ActionName, out var field);
+            var field = FieldForAction(action.ActionName);
             result.Add(new(action.ActionName, action.Category, action.Holdable, field,
                 field is null || snapshot.SelectedFields.Contains(field, StringComparer.Ordinal)));
         }
@@ -75,7 +75,10 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
         finally { triggerLock.Release(); }
     }
 
-    private static bool ValidName(string? value) => value is { Length: > 0 and <= 128 } &&
+    internal static string? FieldForAction(string name) =>
+        FieldByAction.TryGetValue(name, out var field) ? field : null;
+
+    internal static bool ValidName(string? value) => value is { Length: > 0 and <= 128 } &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
     public void Dispose()

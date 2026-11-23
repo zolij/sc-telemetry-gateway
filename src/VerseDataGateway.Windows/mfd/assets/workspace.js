@@ -5,7 +5,8 @@ const MfdWorkspace = (() => {
   const limits = { profiles: 32, pages: 16, tiles: 64, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
   let getToken, repaint;
-  let catalog = [], summaries = [], saved = null, draft = null, pageId = null;
+  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
+  let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
   let preferenceWarning = "";
@@ -31,6 +32,7 @@ const MfdWorkspace = (() => {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
   const readable = MfdPresentation.readable;
+  const actionLabel = name => readable(name.replace(/^v_/, ""));
   function label(path) {
     return path.split(".").filter(part => !["state", "flight", "instruments", "actor", "vehicle"].includes(part))
       .map(readable).join(" / ").slice(0, 80);
@@ -80,6 +82,8 @@ const MfdWorkspace = (() => {
     for (const input of document.querySelectorAll("#editor-toolbar input")) input.disabled = busy;
     for (const button of document.querySelectorAll(".tile-controls button, #field-results button, #page-navigation button"))
       button.disabled = busy;
+    for (const button of document.querySelectorAll("#action-results button"))
+      button.disabled = busy || button.dataset.enabled !== "true";
   }
   async function run(operation) {
     if (busy) return;
@@ -160,8 +164,43 @@ const MfdWorkspace = (() => {
       const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
       card.append(node("span", "instrument-label", tile.label), value, meta);
+      let actionButton = null;
+      if (tile.action && !draft) {
+        actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
+        actionButton.type = "button";
+        actionButton.disabled = true;
+        const feedback = node("span", "game-action-result", actionFeedback.get(tile.id) ?? "");
+        feedback.setAttribute("role", "status");
+        actionButton.addEventListener("click", async () => {
+          if (busy || draft || actionButton.disabled || actionPending.has(tile.id)) return;
+          if (["v_self_destruct", "v_eject", "v_emergency_exit"].includes(tile.action) &&
+              !window.confirm("Trigger " + actionLabel(tile.action) + " in the game?")) return;
+          actionPending.add(tile.id);
+          const requestEpoch = epoch;
+          actionButton.disabled = true;
+          feedback.textContent = "SENDING";
+          try {
+            const body = { action_name: tile.action };
+            if (tile.hold_ms != null) body.hold_ms = tile.hold_ms;
+            const result = (await api("actions/trigger", { method: "POST", body: JSON.stringify(body) })).data;
+            if (requestEpoch === epoch)
+              actionFeedback.set(tile.id, result.status === "Ok" ? "ACCEPTED / CHECK GAME STATE" :
+                "GAME: " + result.status + (result.message ? " / " + result.message : ""));
+          } catch (error) {
+            if (requestEpoch === epoch)
+              actionFeedback.set(tile.id, error.message + " / The action may have executed; check the game before retrying.");
+          } finally {
+            if (requestEpoch === epoch) {
+              actionPending.delete(tile.id);
+              feedback.textContent = actionFeedback.get(tile.id);
+              repaint?.();
+            }
+          }
+        });
+        card.append(actionButton, feedback);
+      }
       if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta });
+      cards.set(tile.id, { tile, card, value, meta, actionButton });
       $("custom-cards").append(card);
     }
     controls();
@@ -231,7 +270,21 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton } of cards.values()) {
+      if (actionButton) {
+        const action = actions.find(item => item.action_name === tile.action);
+        actionButton.disabled = !online || busy || !action?.enabled ||
+          (tile.hold_ms != null && !action.holdable) || actionPending.has(tile.id);
+        actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
+          !action.enabled ? "Enable the matching field on the PC" :
+          tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" : "";
+      }
+      if (tile.widget === "action") {
+        value.textContent = draft ? "CONTROL" : actionButton?.disabled ? "UNAVAILABLE" : "READY";
+        meta.textContent = draft ? "Configure before saving" : actionButton?.title || "GAME ACTION";
+        card.dataset.state = draft || !actionButton?.disabled ? "live" : "unavailable";
+        continue;
+      }
       const field = snapshot?.fields?.[tile.field];
       const definition = catalog.find(item => item.path === tile.field);
       const mode = !tile.format || tile.format === "auto" ? definition?.display_format ?? "number" : tile.format;
@@ -331,6 +384,7 @@ const MfdWorkspace = (() => {
       const [fields, events] = await Promise.all([api("fields"), api("events")]);
       catalog = fields.data;
       triggerEvents = events.data;
+      await refreshActions();
       await refresh(true);
       renderLibrary();
       render();
@@ -341,13 +395,32 @@ const MfdWorkspace = (() => {
     viewVersion++;
     saved = draft = null;
     pageId = null;
-    summaries = catalog = [];
+    summaries = catalog = actions = [];
+    actionError = "";
+    actionFeedback.clear();
+    actionPending.clear();
     triggerEvents = [];
     resetEvents();
     etag = null;
     $("conflict-actions").hidden = true;
     $("tile-dialog").close();
     render();
+  }
+
+  async function refreshActions() {
+    try {
+      const next = (await api("actions")).data;
+      if (!Array.isArray(next)) throw new Error("Invalid game action catalog.");
+      const changed = JSON.stringify(actions) !== JSON.stringify(next) || !!actionError;
+      actions = next;
+      actionError = "";
+      if (changed) { renderLibrary(); render(); }
+    } catch (error) {
+      const changed = actions.length > 0 || actionError !== error.message;
+      actions = [];
+      actionError = error.message;
+      if (changed) { renderLibrary(); render(); }
+    }
   }
 
   // Editor functions are kept separate from the telemetry paint path.
@@ -454,11 +527,53 @@ const MfdWorkspace = (() => {
     }
     if (!$("field-results").childElementCount)
       $("field-results").append(node("p", "library-note", catalog.length ? "No matching fields." : "Enable shared fields in gateway settings, then restart collection."));
+    $("action-results").replaceChildren(node("h3", "", "GAME CONTROLS"));
+    if (actionError) $("action-results").append(node("p", "library-note", "Controls unavailable: " + actionError));
+    for (const action of [...actions].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
+      if (query && !(action.category + " " + action.action_name + " " + actionLabel(action.action_name)).toLowerCase().includes(query)) continue;
+      const button = node("button", "field-item");
+      button.type = "button";
+      button.dataset.enabled = String(action.enabled);
+      button.disabled = busy || !action.enabled;
+      button.append(node("strong", "", actionLabel(action.action_name)), node("span", "", readable(action.category)));
+      button.addEventListener("click", () => {
+        if (busy || !action.enabled) return;
+        if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
+        openTile({ id: uuid(), field: "", label: actionLabel(action.action_name).slice(0, 80), widget: "action",
+          size: "normal", decimals: 2, format: "auto", rules: [], action: action.action_name }, true);
+      });
+      $("action-results").append(button);
+    }
+  }
+  function actionOptions(current) {
+    const standalone = $("tile-widget").value === "action";
+    const field = $("tile-field").value;
+    const select = $("tile-action");
+    select.replaceChildren(new Option(standalone ? "Choose a control" : "No control", ""));
+    for (const action of actions.filter(item => standalone || item.field === field)) {
+      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category), action.action_name);
+      option.disabled = !action.enabled;
+      select.append(option);
+    }
+    if (current && !actions.some(item => item.action_name === current))
+      select.append(new Option(current + " (unavailable)", current));
+    select.value = current ?? "";
+    holdOptions();
+  }
+  function holdOptions() {
+    const action = actions.find(item => item.action_name === $("tile-action").value);
+    const show = !!action?.holdable || !!$("tile-hold").value && !action;
+    $("tile-hold").hidden = $("hold-label").hidden = !show;
+    if (action && !action.holdable) $("tile-hold").value = "";
   }
   function widgetOptions() {
+    const standalone = $("tile-widget").value === "action";
+    $("tile-field").hidden = $("tile-field-label").hidden = standalone;
+    $("tile-field").disabled = standalone;
     const field = catalog.find(item => item.path === $("tile-field").value);
     const repeated = field?.repeated ?? page()?.tiles.find(item => item.id === tileId)?.widget === "list";
-    for (const option of $("tile-widget").options) option.disabled = repeated ? option.value !== "list" : option.value === "list";
+    for (const option of $("tile-widget").options) option.disabled = standalone ? option.value !== "action" :
+      option.value === "action" || (repeated ? option.value !== "list" : option.value === "list");
     if ($("tile-widget").selectedOptions[0].disabled) $("tile-widget").value = repeated ? "list" : "value";
     $("status-settings").hidden = $("tile-widget").value !== "status";
     for (const option of $("tile-format").options)
@@ -503,10 +618,12 @@ const MfdWorkspace = (() => {
     $("tile-label").value = tile.label; $("tile-widget").value = tile.widget;
     $("tile-size").value = tile.size; $("tile-decimals").value = tile.decimals;
     $("tile-format").value = tile.format ?? "auto";
+    $("tile-hold").value = tile.hold_ms ?? "";
     $("status-rules").replaceChildren();
     for (const rule of tile.rules) addRule(rule);
     $("tile-message").textContent = "";
     widgetOptions();
+    actionOptions(tile.action);
     $("tile-dialog").showModal();
   }
 
@@ -527,11 +644,15 @@ const MfdWorkspace = (() => {
         throw new Error("Invalid page name or tile count.");
       identity(item.id);
       for (const tile of item.tiles) {
-        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules"]) || !text(tile.field, 1024) || !text(tile.label, 80) ||
-            !["value", "status", "list"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
+        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms"]) ||
+            !(tile.widget === "action" ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
+            !["value", "status", "list", "action"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
             !["auto", "number", "percent_fraction", "percent", "percent_max"].includes(tile.format === undefined ? "auto" : tile.format) ||
             !Number.isInteger(tile.decimals) || tile.decimals < 0 || tile.decimals > 6 || !Array.isArray(tile.rules) ||
-            tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length)
+            tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length ||
+            tile.action !== undefined && (typeof tile.action !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(tile.action)) ||
+            tile.widget === "action" && !tile.action ||
+            tile.hold_ms !== undefined && (!tile.action || !Number.isInteger(tile.hold_ms) || tile.hold_ms < 1 || tile.hold_ms > 5000))
           throw new Error("Invalid tile settings.");
         identity(tile.id);
         const field = catalog.find(field => field.path === tile.field);
@@ -653,16 +774,17 @@ const MfdWorkspace = (() => {
       run(() => { draft.pages = draft.pages.filter(item => item.id !== pageId); pageId = draft.pages[0].id; render(); });
     });
     $("field-search").addEventListener("input", renderLibrary);
-    $("tile-field").addEventListener("change", widgetOptions);
+    $("tile-field").addEventListener("change", () => { widgetOptions(); actionOptions(); });
     $("tile-widget").addEventListener("change", widgetOptions);
     $("tile-format").addEventListener("change", widgetOptions);
+    $("tile-action").addEventListener("change", holdOptions);
     $("add-rule").addEventListener("click", () => addRule());
     $("cancel-tile").addEventListener("click", () => $("tile-dialog").close());
     $("tile-form").addEventListener("submit", event => {
       event.preventDefault();
       try {
         const tile = {
-          id: tileId ?? $("tile-dialog").dataset.newId, field: $("tile-field").value,
+          id: tileId ?? $("tile-dialog").dataset.newId, field: $("tile-widget").value === "action" ? "" : $("tile-field").value,
           label: $("tile-label").value.trim(), widget: $("tile-widget").value,
           size: $("tile-size").value, decimals: Number($("tile-decimals").value), format: $("tile-format").value,
           rules: $("tile-widget").value === "status" ? [...$("status-rules").children].map(row => ({
@@ -670,6 +792,8 @@ const MfdWorkspace = (() => {
             label: row.querySelector('[data-rule="label"]').value.trim(), color: row.querySelector("select").value
           })) : []
         };
+        if ($("tile-action").value) tile.action = $("tile-action").value;
+        if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
         const next = clone(draft);
         const target = next.pages.find(item => item.id === pageId);
         if (tileId) target.tiles[target.tiles.findIndex(item => item.id === tileId)] = tile;
@@ -688,7 +812,7 @@ const MfdWorkspace = (() => {
         if (file.size > limits.bytes) throw new Error("Import must not exceed 512 KiB.");
         const imported = JSON.parse(await file.text());
         validate(imported);
-        const missing = imported.pages.flatMap(item => item.tiles).some(tile => !catalog.some(field => field.path === tile.field));
+        const missing = imported.pages.flatMap(item => item.tiles).some(tile => tile.widget !== "action" && !catalog.some(field => field.path === tile.field));
         if (missing && !window.confirm("Some imported fields are not enabled on this PC. They will be unavailable. Continue without enabling them?")) return;
         saved = (await api("profiles", { method: "POST", body: JSON.stringify(imported) })).data;
         draft = null; pageId = saved.pages[0].id;
@@ -701,7 +825,7 @@ const MfdWorkspace = (() => {
     setInterval(async () => {
       if (!getToken() || busy || polling) return;
       polling = true;
-      try { await refresh(); }
+      try { await refresh(); await refreshActions(); }
       catch (error) { notice(error.message, true); }
       finally { polling = false; }
     }, 5000);

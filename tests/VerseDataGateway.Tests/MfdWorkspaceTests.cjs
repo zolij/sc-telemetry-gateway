@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -44,6 +44,11 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     return elements.get(id);
   };
   let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, profileReads = 0;
+  const actionRequests = [];
+  if (withAction) remote.pages[0].tiles.push({
+    id: "action-tile", field: "", label: "Radar", widget: "action", size: "normal",
+    decimals: 2, format: "auto", rules: [], action: "v_invoke_ping", hold_ms: 500
+  });
   const summaryStatuses = [];
   const response = (status, data, etag = null) => ({
     status, ok: status >= 200 && status < 300,
@@ -60,6 +65,13 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     fetch: async (url, options) => {
       if (url.endsWith("/fields")) return response(200, []);
       if (url.endsWith("/events")) return response(200, [enter]);
+      if (url.endsWith("/actions")) return response(200, withAction ? [{
+        action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
+      }] : []);
+      if (url.endsWith("/actions/trigger")) {
+        actionRequests.push(JSON.parse(options.body));
+        return response(200, { status: "Ok", message: "" });
+      }
       if (url.endsWith("/profiles")) {
         const etag = '"' + (remote?.revision ?? "empty") + '"';
         const status = options.headers["If-None-Match"] === etag ? 304 : 200;
@@ -95,7 +107,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   await workspace.start();
   assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
-    workspace, element: getElement, poll: () => poll(), summaryStatuses,
+    workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
     update: () => { remote = profile(2); },
     create: () => { remote = profile(1); },
     failNextProfile: () => { failedProfile = true; },
@@ -116,6 +128,22 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     }
   };
 }
+
+test("action tile sends a bounded command only when online and reports acceptance", async () => {
+  const view = await fixture({ withAction: true });
+  const card = view.element("custom-cards").children[0];
+  const button = card.children[3], feedback = card.children[4];
+  const snapshot = { selected_fields: [], fields: {}, connection_status: "connected" };
+  view.workspace.paint(snapshot, false, 0, () => "");
+  assert.equal(button.disabled, true);
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, false);
+  await button.click();
+  assert.deepEqual(view.actionRequests, [{ action_name: "v_invoke_ping", hold_ms: 500 }]);
+  assert.match(feedback.textContent, /ACCEPTED.*CHECK GAME STATE/);
+  view.workspace.paint(snapshot, false, 0, () => "");
+  assert.equal(button.disabled, true);
+});
 
 test("the only saved profile is selected automatically when there is no saved preference", async () => {
   const view = await fixture({ preference: null });

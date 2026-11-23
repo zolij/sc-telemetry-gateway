@@ -22,6 +22,10 @@ public sealed record MfdTile
     public int Decimals { get; init; } = 2;
     public string Format { get; init; } = "auto";
     public MfdStatusRule[] Rules { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Action { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public uint? HoldMs { get; init; }
 }
 
 public sealed record MfdPage
@@ -79,16 +83,32 @@ public sealed record MfdProfile
                 if (tile is null) throw new ArgumentException("Tiles cannot be null.");
                 Identity(tile.Id, ids);
                 Text(tile.Label, 80, "Tile label");
-                if (tile.Field is null || !FieldCatalog.All.TryGetValue(tile.Field, out var field))
-                    throw new ArgumentException("Unknown telemetry field.");
-                if (tile.Widget is not ("value" or "status" or "list") ||
-                    field.Repeated != (tile.Widget == "list"))
-                    throw new ArgumentException("Widget is incompatible with the telemetry field.");
+                var actionOnly = tile.Widget == "action";
+                if (tile.Action is not null && !MfdActions.ValidName(tile.Action) ||
+                    tile.HoldMs is 0 or > MfdActions.MaxHoldMilliseconds ||
+                    tile.Action is null && tile.HoldMs is not null)
+                    throw new ArgumentException("Invalid action or hold duration.");
+                TelemetryField? field = null;
+                if (actionOnly)
+                {
+                    if (tile.Field != "" || tile.Action is null || tile.Format is not ("auto" or "number"))
+                        throw new ArgumentException("An action tile requires an action and no telemetry field.");
+                }
+                else
+                {
+                    if (tile.Field is null || !FieldCatalog.All.TryGetValue(tile.Field, out field))
+                        throw new ArgumentException("Unknown telemetry field.");
+                    if (tile.Widget is not ("value" or "status" or "list") ||
+                        field.Repeated != (tile.Widget == "list"))
+                        throw new ArgumentException("Widget is incompatible with the telemetry field.");
+                    if (tile.Action is not null && MfdActions.FieldForAction(tile.Action) != tile.Field)
+                        throw new ArgumentException("The action does not match the telemetry field.");
+                }
                 if (tile.Size is not ("normal" or "wide" or "large") || tile.Decimals is < 0 or > 6)
                     throw new ArgumentException("Invalid tile size or decimal precision.");
                 if (tile.Format is not ("auto" or "number" or "percent_fraction" or "percent" or "percent_max") ||
-                    tile.Format is not ("auto" or "number") && !MfdFieldFormats.IsNumeric(field) ||
-                    tile.Format == "percent_max" && (field.Repeated || MfdFieldFormats.MaximumField(field) is null))
+                    tile.Format is not ("auto" or "number") && (field is null || !MfdFieldFormats.IsNumeric(field)) ||
+                    tile.Format == "percent_max" && (field is null || field.Repeated || MfdFieldFormats.MaximumField(field) is null))
                     throw new ArgumentException("Display format is incompatible with the telemetry field.");
                 if (tile.Rules is null || tile.Rules.Length > 32 || tile.Widget != "status" && tile.Rules.Length != 0)
                     throw new ArgumentException("Invalid status rules.");

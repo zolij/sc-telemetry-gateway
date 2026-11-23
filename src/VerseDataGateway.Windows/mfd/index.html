@@ -18,7 +18,7 @@
       <div class="link-status"><span class="status-dot" aria-hidden="true"></span><span id="connection" role="status">NOT PAIRED</span></div>
     </header>
 
-    <div class="security-note">LAN HTTP IS UNENCRYPTED <span>·</span> USE ONLY ON A TRUSTED NETWORK</div>
+    <div class="security-note">LAN HTTP IS UNENCRYPTED <span>·</span> PAIRED DISPLAYS CAN CONTROL THE GAME <span>·</span> USE ONLY ON A TRUSTED NETWORK</div>
 
     <section id="pairing" class="pairing" aria-labelledby="pair-title">
       <div class="pairing-intro"><span class="section-index">01 / DEVICE ACCESS</span><h2 id="pair-title">Connect your<br><em>display.</em></h2><p>Scan the QR code shown on the gateway, or enter its one-use code below. Pairing grants this display access immediately.</p></div>
@@ -31,7 +31,7 @@
     </section>
 
     <section id="dashboard" hidden aria-label="Telemetry display">
-      <div class="display-bar"><span id="view-kicker">CUSTOM MFD / READ ONLY TELEMETRY</span><span id="frame-age">NO FRAME</span><button id="unpair-button" class="text-button" type="button">PAIR AGAIN</button></div>
+      <div class="display-bar"><span id="view-kicker">CUSTOM MFD / TELEMETRY + CONTROLS</span><span id="frame-age">NO FRAME</span><button id="unpair-button" class="text-button" type="button">PAIR AGAIN</button></div>
       <div class="workspace-toolbar">
         <label class="profile-picker">DISPLAY PROFILE<select id="profile-select" aria-label="Display profile"><option value="">Choose a profile</option></select></label>
         <div class="toolbar-actions">
@@ -83,22 +83,22 @@
           <div id="empty-display" class="empty-display"><span class="empty-mark" aria-hidden="true">+</span><h3>Create your first MFD.</h3><p>No presets. Choose the data that matters to you.</p></div>
           <div id="custom-cards" class="instrument-grid"></div>
         </section>
-        <aside id="field-library" class="field-library" hidden aria-label="Add telemetry tiles">
-          <span class="section-index">DATA LIBRARY</span><h2>Add an instrument</h2>
+        <aside id="field-library" class="field-library" hidden aria-label="Add telemetry and controls">
+          <span class="section-index">DISPLAY LIBRARY</span><h2>Add an instrument or control</h2>
           <label for="field-search">SEARCH SHARED FIELDS</label><input id="field-search" type="search" placeholder="Speed, shields, oxygen...">
           <p class="library-note">Only fields enabled on the PC are available. No game data yet? You can still build your layout.</p>
-          <div id="field-results"></div>
+          <div id="field-results"></div><div id="action-results"></div>
         </aside>
       </div>
-      <footer><span>LOCAL DISPLAY / READ ONLY</span><span>SELECT DATA IN GATEWAY SETTINGS</span></footer>
+      <footer><span>LOCAL DISPLAY / GAME CONTROLS</span><span>USE ONLY ON A TRUSTED NETWORK</span></footer>
     </section>
     <dialog id="tile-dialog" class="tile-dialog">
       <form id="tile-form">
         <span class="section-index">INSTRUMENT SETTINGS</span><h2>Configure tile</h2>
-        <label for="tile-field">TELEMETRY FIELD</label><select id="tile-field" required></select>
+        <label id="tile-field-label" for="tile-field">TELEMETRY FIELD</label><select id="tile-field"></select>
         <label for="tile-label">LABEL</label><input id="tile-label" maxlength="80" required>
         <div class="form-columns">
-          <label>DISPLAY TYPE<select id="tile-widget"><option value="value">Value</option><option value="status">Status indicator</option><option value="list">List</option></select></label>
+          <label>DISPLAY TYPE<select id="tile-widget"><option value="value">Value</option><option value="status">Status indicator</option><option value="list">List</option><option value="action" hidden>Game control</option></select></label>
           <label>SIZE<select id="tile-size"><option value="normal">Normal / 1 x 1</option><option value="wide">Wide / 2 x 1</option><option value="large">Large / 2 x 2</option></select></label>
           <label>DECIMAL PLACES<input id="tile-decimals" type="number" min="0" max="6" value="2" required></label>
           <label>VALUE FORMAT<select id="tile-format">
@@ -110,6 +110,9 @@
           </select></label>
         </div>
         <p id="format-note" class="library-note"></p>
+        <label for="tile-action">GAME CONTROL</label><select id="tile-action"></select>
+        <label id="hold-label" for="tile-hold">HOLD DURATION (MS, OPTIONAL)</label><input id="tile-hold" type="number" min="1" max="5000" placeholder="Press once">
+        <p class="library-note">A hold runs for the selected duration; releasing the screen does not cancel it. A command may still execute if its response is lost.</p>
         <div id="status-settings" hidden>
           <p class="library-note">Exact raw values, e.g. true, false or VEHICLE_MASTER_MODE_SCM. Unknown values keep their own text.</p>
           <div id="status-rules"></div><button id="add-rule" type="button">ADD STATUS RULE</button>

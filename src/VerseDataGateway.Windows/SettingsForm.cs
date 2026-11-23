@@ -61,7 +61,7 @@ internal sealed class SettingsForm : Form
         local.Controls.Add(mfdEnabled);
         AddRow(local, "Local IPv4 interface", mfdAddress);
         AddRow(local, "MFD port", mfdPort);
-        AddText(local, "WARNING: HTTP and WebSocket traffic are unencrypted. Anyone on the network may observe or modify the page, pairing codes, credentials and telemetry. Use only on a trusted network.");
+        AddText(local, "WARNING: HTTP and WebSocket traffic are unencrypted. Paired displays can trigger game actions. Anyone on the network may observe or modify the page, pairing codes, credentials, telemetry and commands. Use only on a trusted network.");
         AddText(local, "Windows Firewall may require a rule you create yourself. Do not forward this port on your router.");
         tabs.TabPages.Add(Page("Local MFD", local));
 
@@ -70,7 +70,7 @@ internal sealed class SettingsForm : Form
 
         var connection = CreatePage("Game");
         AddText(connection, "Game connection", true);
-        AddText(connection, "The game service is read-only and accessed on this PC. Collection starts only when you choose Start.");
+        AddText(connection, "The game service is accessed on this PC. Paired MFD displays can trigger actions supported and enabled by the game. Collection starts only when you choose Start.");
         AddRow(connection, "Game port", port);
         tabs.TabPages.Add(Page("Game", connection));
 
