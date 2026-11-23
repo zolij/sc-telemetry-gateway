@@ -14,8 +14,8 @@ public sealed class ContractTests
     public void MissingPortsUseDefaultsAndSavedPortsRemainUnchanged()
     {
         var defaults = JsonSerializer.Deserialize<GatewayOptions>("""{}""", WireJson.Options)!;
-        Assert.Equal(29421, defaults.GamePort);
-        Assert.Equal(29422, defaults.MfdPort);
+        Assert.Equal(29420, defaults.GamePort);
+        Assert.Equal(29421, defaults.MfdPort);
 
         var saved = JsonSerializer.Deserialize<GatewayOptions>(
             """{"game_port":50051,"mfd_port":50052}""", WireJson.Options)!;

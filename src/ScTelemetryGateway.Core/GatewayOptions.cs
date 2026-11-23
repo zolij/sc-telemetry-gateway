@@ -2,14 +2,14 @@ namespace ScTelemetryGateway.Core;
 
 public sealed record GatewayOptions
 {
-    public int GamePort { get; init; } = 29421;
+    public int GamePort { get; init; } = 29420;
     public string Endpoint { get; init; } = "";
     public int IntervalSeconds { get; init; } = 5;
     public HashSet<string> Fields { get; init; } = [];
     public bool RemoteEnabled { get; init; } = true;
     public bool MfdEnabled { get; init; }
     public string MfdAddress { get; init; } = "";
-    public int MfdPort { get; init; } = 29422;
+    public int MfdPort { get; init; } = 29421;
     public HashSet<string> MfdFields { get; init; } = [];
     public bool AutomaticUpdateChecks { get; init; } = true;
     public bool IncludePreviewUpdates { get; init; }
