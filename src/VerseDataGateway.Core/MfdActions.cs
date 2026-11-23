@@ -51,6 +51,31 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
             ["v_power_toggle_weapons"] = "vehicle.state.power.weapons"
         };
 
+    private static readonly IReadOnlyDictionary<string, string[]> FieldsByAction = BuildAdditionalMappings();
+
+    private static IReadOnlyDictionary<string, string[]> BuildAdditionalMappings()
+    {
+        var mappings = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        void Add(string[] fields, params string[] actions)
+        {
+            foreach (var action in actions) mappings.Add(action, fields);
+        }
+
+        Add(["vehicle.state.power.shield_generators", "vehicle.state.power.shield_emitters", "vehicle.state.shields.level"],
+            "v_power_toggle_shields", "v_power_set_shields_on", "v_power_set_shields_off");
+        Add(["vehicle.state.power.engines"],
+            "v_power_toggle_thrusters", "v_power_set_thrusters_on", "v_power_set_thrusters_off");
+        Add(["vehicle.state.power.powerplants", "vehicle.state.power.engines", "vehicle.state.power.weapons",
+                "vehicle.state.power.coolers", "vehicle.state.power.life_support", "vehicle.state.power.gravity_generators",
+                "vehicle.state.power.sensors", "vehicle.state.power.shield_generators", "vehicle.state.power.shield_emitters"],
+            "v_power_toggle", "v_power_set_on", "v_power_set_off");
+        Add(["vehicle.state.flight.settings.advanced_hud_enabled_scm", "vehicle.state.flight.settings.advanced_hud_enabled_nav"],
+            "v_flight_advanced_hud_toggle", "v_flight_advanced_hud_on", "v_flight_advanced_hud_off");
+        Add(["vehicle.state.flight.settings.flight_light_amplification", "turret.light_amplification"],
+            "v_light_amplification_toggle", "v_light_amplification_on", "v_light_amplification_off");
+        return mappings;
+    }
+
     public async Task<IReadOnlyList<MfdAction>> ListAsync(CancellationToken cancellationToken)
     {
         var client = new GameTelemetryService.GameTelemetryServiceClient(channel);
@@ -64,10 +89,11 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
         {
             if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
                 throw new InvalidDataException("The game returned an invalid action list.");
-            var field = FieldForAction(action.ActionName);
+            var fields = FieldsForAction(action.ActionName);
+            var field = fields.FirstOrDefault();
             result.Add(new(action.ActionName, action.Category, action.Holdable, field,
-                field is null || snapshot.SelectedFields.Contains(field, StringComparer.Ordinal),
-                field is null ? null : action.ActionName is "v_lights_on" or "v_lights_off"));
+                fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
+                field is null ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
         }
         return result;
     }
@@ -107,8 +133,9 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
         finally { triggerLock.Release(); }
     }
 
-    internal static string? FieldForAction(string name) =>
-        FieldByAction.TryGetValue(name, out var field) ? field : null;
+    internal static IReadOnlyList<string> FieldsForAction(string name) =>
+        FieldsByAction.TryGetValue(name, out var fields) ? fields :
+        FieldByAction.TryGetValue(name, out var field) ? [field] : [];
 
     internal static bool ValidName(string? value) => value is { Length: > 0 and <= 128 } &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
@@ -121,6 +148,6 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
 }
 
 internal sealed record MfdAction(string ActionName, string Category, bool Holdable, string? Field, bool Enabled,
-    bool? MappingVerified);
+    bool? MappingVerified, IReadOnlyList<string> Fields);
 internal sealed class MfdActionBusyException : Exception;
 internal sealed class MfdActionForbiddenException : Exception;

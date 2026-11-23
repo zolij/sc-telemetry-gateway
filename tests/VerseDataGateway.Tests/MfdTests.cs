@@ -520,6 +520,46 @@ public sealed class MfdTests
         public ConcurrentQueue<TriggerGameActionRequest> Requests { get; } = new();
     }
 
+    [Theory]
+    [InlineData("vehicle.state.power.shield_generators", true)]
+    [InlineData("vehicle.state.power.shield_emitters", true)]
+    [InlineData("vehicle.state.shields.level", true)]
+    [InlineData("actor.vitals.heart_rate", false)]
+    public async Task ShieldControlRequiresAtLeastOneAssociatedSelectedField(string selected, bool allowed)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var gameState = new ActionGameState();
+        builder.Services.AddSingleton(gameState);
+        await using var game = builder.Build();
+        game.MapGrpcService<ActionGame>();
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start([selected], gamePort);
+        test.Store.StartStream();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var catalog = await http.GetAsync("/api/mfd/actions", test.Token);
+        catalog.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(test.Token));
+        var shield = json.RootElement.EnumerateArray().Single(
+            item => item.GetProperty("action_name").GetString() == "v_power_toggle_shields");
+        Assert.Equal(allowed, shield.GetProperty("enabled").GetBoolean());
+        Assert.Equal("vehicle.state.power.shield_generators", shield.GetProperty("field").GetString());
+        Assert.Contains(shield.GetProperty("fields").EnumerateArray(),
+            item => item.GetString() == "vehicle.state.shields.level");
+        Assert.False(shield.GetProperty("mapping_verified").GetBoolean());
+        using var result = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+            new { action_name = "v_power_toggle_shields" }, test.Token);
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, result.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, gameState.Requests.Count);
+    }
+
     public sealed class ActionGame(ActionGameState state) : GameTelemetryService.GameTelemetryServiceBase
     {
         public override Task<ListTriggerableActionsResponse> ListTriggerableActions(
@@ -530,6 +570,7 @@ public sealed class MfdTests
                     {
                         new TriggerableAction { ActionName = "v_lights_on", Category = "lights_controller" },
                         new TriggerableAction { ActionName = "v_toggle_landing_system", Category = "spaceship_movement" },
+                        new TriggerableAction { ActionName = "v_power_toggle_shields", Category = "spaceship_power" },
                         new TriggerableAction { ActionName = "v_invoke_ping", Category = "spaceship_radar", Holdable = true }
                     }
                 });

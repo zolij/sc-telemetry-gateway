@@ -277,9 +277,11 @@ attacker may obtain credentials or alter commands. Use only a trusted LAN.
 Remote telemetry receivers have no game-control channel.
 
 `GET /api/mfd/actions` queries the game over loopback and returns entries
-`{action_name, category, holdable, field, enabled, mapping_verified}`. `field`
-is the gateway's corresponding field or `null`; `enabled` is false when a
-corresponding field is not selected in MFD settings. `mapping_verified` is
+`{action_name, category, holdable, field, fields, enabled, mapping_verified}`.
+`fields` lists the gateway's corresponding fields; `field` is the first entry
+or `null` for compatibility with older displays. A mapped action is enabled
+when at least one of its corresponding fields is selected in MFD settings.
+Unmapped actions do not require a field. `mapping_verified` is
 `true` for the light on/off actions observed against live PTU telemetry,
 `false` for name-based associations not live-verified, and `null` for
 unmapped actions. Other listed actions are available as standalone controls.
@@ -287,10 +289,12 @@ The list and game-side allowlist can change independently of gateway profiles.
 
 The explicit field associations cover vehicle lights, landing gear, VTOL,
 transformation, door opening and locking, IFCS G-safe, ESP, proximity assist
-and coupling, master mode, and weapon power. Apart from light on/off, these are
+and coupling, master mode, power, shields, advanced HUD and light
+amplification. Apart from light on/off, these are
 based on action and field names, not observed state transitions; they are
 marked accordingly in the MFD. Refer to the current catalogue for each exact
-action and field.
+action and fields. Related values need not represent the same state: shield
+charge, for example, is not the on/off state of a shield generator.
 
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
 "hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be

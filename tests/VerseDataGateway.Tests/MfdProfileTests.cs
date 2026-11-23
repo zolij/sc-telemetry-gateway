@@ -55,8 +55,25 @@ public sealed class MfdProfileTests : IDisposable
     [InlineData("v_power_toggle_weapons", "vehicle.state.power.weapons")]
     public void NameBasedActionsMapToExistingTelemetryFields(string action, string field)
     {
-        Assert.Equal(field, MfdActions.FieldForAction(action));
+        Assert.Contains(field, MfdActions.FieldsForAction(action));
         Assert.True(FieldCatalog.All.ContainsKey(field));
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.power.shield_generators")]
+    [InlineData("vehicle.state.power.shield_emitters")]
+    [InlineData("vehicle.state.shields.level")]
+    public void ShieldControlCanBeAttachedToAnyRelatedField(string field)
+    {
+        var draft = Draft();
+        var tile = draft.Pages[0].Tiles[0] with { Field = field, Action = "v_power_toggle_shields" };
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] });
+        Assert.Equal(field, Store.Get(saved.Id)!.Pages[0].Tiles[0].Field);
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+        Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with
+        {
+            Tiles = [tile with { Field = "actor.vitals.heart_rate" }]
+        }] }).Validate());
     }
 
     [Fact]

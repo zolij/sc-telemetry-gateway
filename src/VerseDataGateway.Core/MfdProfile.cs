@@ -101,7 +101,7 @@ public sealed record MfdProfile
                     if (tile.Widget is not ("value" or "status" or "list") ||
                         field.Repeated != (tile.Widget == "list"))
                         throw new ArgumentException("Widget is incompatible with the telemetry field.");
-                    if (tile.Action is not null && MfdActions.FieldForAction(tile.Action) != tile.Field)
+                    if (tile.Action is not null && !MfdActions.FieldsForAction(tile.Action).Contains(tile.Field, StringComparer.Ordinal))
                         throw new ArgumentException("The action does not match the telemetry field.");
                 }
                 if (tile.Size is not ("normal" or "wide" or "large") || tile.Decimals is < 0 or > 6)
