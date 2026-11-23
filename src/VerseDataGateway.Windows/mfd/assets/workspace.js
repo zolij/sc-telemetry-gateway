@@ -14,10 +14,29 @@ const MfdWorkspace = (() => {
     { label: "Flight light amplification", field: "vehicle.state.flight.settings.flight_light_amplification", actions: ["v_light_amplification_on", "v_light_amplification_toggle"] },
     { label: "Weapons power", field: "vehicle.state.power.weapons", actions: ["v_power_set_weapons_on", "v_power_set_weapons_off", "v_power_toggle_weapons"] }
   ];
+  const presetActionLabels = {
+    v_lights: "Toggle", v_lights_on: "On", v_lights_off: "Off",
+    v_deploy_landing_system: "Deploy", v_retract_landing_system: "Retract",
+    v_ifcs_gsafe_on: "On", v_ifcs_gsafe_off: "Off", v_ifcs_toggle_gforce_safety: "Toggle",
+    v_ifcs_vector_decoupling_on: "Decoupling on", v_ifcs_vector_decoupling_off: "Decoupling off",
+    v_ifcs_vector_decoupling_toggle: "Toggle decoupling",
+    v_master_mode_cycle: "Cycle", v_master_mode_set_scm: "Set SCM",
+    v_flight_advanced_hud_on: "On", v_flight_advanced_hud_toggle: "Toggle",
+    v_light_amplification_on: "On", v_light_amplification_toggle: "Toggle",
+    v_power_set_weapons_on: "On", v_power_set_weapons_off: "Off", v_power_toggle_weapons: "Toggle"
+  };
+  const presetBooleanLabels = {
+    "Vehicle lights": ["On", "Off"],
+    "G-safe": ["Active", "Inactive"],
+    "Coupled flight": ["Active", "Inactive"],
+    "SCM advanced HUD": ["On", "Off"],
+    "Flight light amplification": ["On", "Off"],
+    "Weapons power": ["On", "Off"]
+  };
   let getToken, repaint;
   let catalog = [], actions = [], actionLibrary = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
-  let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
+  let cards = new Map(), groups = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, tileParent = null, selectedGroup = null, preference = null;
   let preferenceWarning = "";
   let triggerEvents = [];
@@ -166,6 +185,7 @@ const MfdWorkspace = (() => {
     $("empty-display").querySelector("p").textContent = !current ? "Choose the data and controls that matter to you." :
       draft ? "Add a field, control or combined template from the library." : "Select EDIT to add your own telemetry tiles.";
     cards = new Map();
+    groups = new Map();
     $("custom-cards").replaceChildren();
     if (!page()?.tiles.some(tile => tile.id === selectedGroup && tile.widget === "combined")) selectedGroup = null;
     for (const tile of page()?.tiles ?? []) $("custom-cards").append(renderCard(tile));
@@ -174,7 +194,7 @@ const MfdWorkspace = (() => {
   }
 
   function renderCard(tile, parent = null) {
-      const card = node("article", "instrument size-" + tile.size);
+      const card = node(parent ? "div" : "article", parent ? "combined-component" : "instrument size-" + tile.size);
       card.dataset.tileId = tile.id;
       card.dataset.widget = tile.widget;
       if (tile.widget === "combined") {
@@ -205,19 +225,41 @@ const MfdWorkspace = (() => {
         const components = node("div", "combined-components");
         for (const child of tile.components) components.append(renderCard(child, tile));
         card.append(components);
+        const summary = node("span", "combined-summary");
+        summary.id = "combined-summary-" + tile.id;
+        summary.setAttribute("role", "status");
+        card.append(summary);
+        groups.set(tile.id, { tile, summary });
         if (draft) addTileControls(card, tile);
         return card;
       }
-      const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
+      const compactAction = !!parent && tile.widget === "action";
+      const value = compactAction ? null : node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
-      card.append(node("span", "instrument-label", tile.label), value, meta);
+      if (!compactAction) {
+        if (!parent || draft || tile.label.trim().toLowerCase() !== parent.label.trim().toLowerCase())
+          card.append(node("span", "instrument-label", tile.label));
+        card.append(value, meta);
+      }
       let actionButton = null;
       let mappingNote = null;
       let feedback = null;
-      if (tile.widget === "action" && tile.action && !draft) {
-        actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
+      if (tile.widget === "action" && tile.action && (!draft || compactAction)) {
+        const preset = parent && presets.find(item => item.label === parent.label &&
+          item.field && parent.components.some(child => child.field === item.field) && item.actions.includes(tile.action));
+        const buttonLabel = preset && tile.label === actionLabel(tile.action)
+          ? presetActionLabels[tile.action] : tile.label;
+        actionButton = node("button", "game-action", compactAction
+          ? buttonLabel + (tile.hold_ms != null ? " / HOLD " + tile.hold_ms + " MS" : "")
+          : "TRIGGER / " + actionLabel(tile.action));
         actionButton.type = "button";
         actionButton.disabled = true;
+        if (compactAction) {
+          meta.id = "combined-reason-" + tile.id;
+          actionButton.setAttribute("aria-label", (buttonLabel === tile.label ? tile.label : buttonLabel + " / " + tile.label) +
+            (tile.hold_ms != null ? ", hold " + tile.hold_ms + " milliseconds" : ""));
+          actionButton.setAttribute("aria-describedby", meta.id + " combined-summary-" + parent.id);
+        }
         feedback = node("span", "game-action-result");
         feedback.setAttribute("role", "status");
         actionButton.addEventListener("click", async () => {
@@ -245,11 +287,14 @@ const MfdWorkspace = (() => {
             }
           }
         });
-        mappingNote = node("span", "game-action-result");
-        card.append(actionButton, mappingNote, feedback);
+        if (compactAction) card.append(actionButton, meta, feedback);
+        else {
+          mappingNote = node("span", "game-action-result");
+          card.append(actionButton, mappingNote, feedback);
+        }
       }
       if (draft) addTileControls(card, tile, parent);
-      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote, feedback });
+      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote, feedback, parent });
       return card;
   }
 
@@ -316,23 +361,24 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton, mappingNote, feedback } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton, mappingNote, feedback, parent } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
-        actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
+        actionButton.title = draft ? "Controls cannot be triggered while editing" : !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
           !action.enabled ? "Enable the matching field on the PC" :
           tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
           busy || actionPending.has(tile.id) ? "Control busy" : "";
         actionButton.disabled = !!actionButton.title;
-        mappingNote.textContent = action?.mapping_verified === false
+        if (mappingNote) mappingNote.textContent = action?.mapping_verified === false
           ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
-        feedback.textContent = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
+        const message = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
+        if (feedback.textContent !== message) feedback.textContent = message;
       }
       if (tile.widget === "action") {
         const available = actionButton && !actionButton.disabled;
-        value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
-        meta.textContent = draft ? "Configure before saving" : available ? "GAME ACTION" :
-          actionButton?.title || "Action unavailable";
+        if (value) value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
+        meta.textContent = parent ? (!draft && online && !available ? actionButton?.title || "Action unavailable" : "") :
+          draft ? "Configure before saving" : available ? "GAME ACTION" : actionButton?.title || "Action unavailable";
         card.dataset.state = draft || available ? "live" : "unavailable";
         continue;
       }
@@ -365,7 +411,11 @@ const MfdWorkspace = (() => {
           value.dataset.signature = signature;
         }
       } else {
-        value.textContent = rule?.label ?? MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type);
+        const preset = parent && presets.find(item => item.label === parent.label && item.field === tile.field);
+        const booleanLabels = preset && presetBooleanLabels[preset.label];
+        value.textContent = rule?.label ?? (tile.widget === "value" && booleanLabels && typeof field.value === "boolean"
+          ? booleanLabels[field.value ? 0 : 1]
+          : MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type));
         delete value.dataset.signature;
       }
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;
@@ -379,6 +429,20 @@ const MfdWorkspace = (() => {
           " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
         field.value === null || needsMaximum && !rule ? "unavailable" : !history && (!Number.isFinite(age) || age >= 2000) ? "stale" : "live";
+    }
+    for (const { tile, summary } of groups.values()) {
+      const controls = tile.components.filter(component => component.widget === "action");
+      const warnings = [];
+      const entries = controls.map(component => cards.get(component.id)).filter(Boolean);
+      const reason = entries[0]?.actionButton?.disabled ? entries[0].actionButton.title : "";
+      if (!draft && reason && entries.every(entry => entry.actionButton?.disabled && entry.actionButton.title === reason)) {
+        warnings.push("CONTROLS / " + reason.toUpperCase());
+        for (const entry of entries) entry.meta.textContent = "";
+      }
+      if (!draft && online && controls.some(component => actions.find(action => action.action_name === component.action)?.mapping_verified === false))
+        warnings.push("SOME FIELD LINKS ARE NOT LIVE-VERIFIED");
+      const message = warnings.join(" / ");
+      if (summary.textContent !== message) summary.textContent = message;
     }
   }
 

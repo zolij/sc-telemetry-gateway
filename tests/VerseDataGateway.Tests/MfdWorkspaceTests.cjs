@@ -38,7 +38,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -91,6 +91,9 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   }] : withAction ? [{
     action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, fields: [], enabled: true
   }] : [];
+  if (twoActions) actionCatalog.push({
+    action_name: "v_other", category: "spaceship_power", holdable: false, fields: [shieldPower], enabled: false
+  });
   if (withAction || mappedAction) {
     remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
     remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
@@ -112,6 +115,9 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
           control
         ]
       }];
+      if (twoActions) remote.pages[0].tiles[0].components.push({
+        ...control, id: "092eb896-64a8-457b-8ec6-05c8765c368f", label: "Other", action: "v_other"
+      });
     }
   }
   const summaryStatuses = [];
@@ -332,12 +338,51 @@ test("the lights template includes the observed field and controls even if unsel
   const template = view.element("preset-results").children[1];
   assert.equal(template.children[0].textContent, "Vehicle lights");
   template.click();
+  const preview = view.element("custom-cards").children[1].children[2].children;
+  assert.deepEqual(preview.slice(1).map(item => item.children[0].textContent), ["Toggle", "On", "Off"]);
   await view.element("save-profile").click();
   const group = view.savedBodies[0].pages[0].tiles[1];
   assert.equal(group.widget, "combined");
   assert.equal(group.components[0].field, "vehicle.state.lights_enabled");
   assert.deepEqual(group.components.slice(1).map(item => item.action), ["v_lights", "v_lights_on", "v_lights_off"]);
   assert.deepEqual(view.actionRequests, []);
+});
+
+test("all built-in templates render direct, descriptive controls", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  const expected = [
+    ["Toggle", "On", "Off"], ["Deploy", "Retract"], ["On", "Off", "Toggle"],
+    ["Decoupling on", "Decoupling off", "Toggle decoupling"], ["Cycle", "Set SCM"],
+    ["On", "Toggle"], ["On", "Toggle"], ["On", "Off", "Toggle"]
+  ];
+  for (let index = 0; index < expected.length; index++) {
+    view.element("preset-results").children[index + 1].click();
+    const group = view.element("custom-cards").children.at(-1);
+    const components = group.children[2].children;
+    assert.deepEqual(components.slice(1).map(item => item.children[0].textContent), expected[index]);
+    assert.ok(components.every(item => !item.className?.includes("instrument size-")));
+  }
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("built-in boolean states remain distinct from unavailable values", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  view.element("preset-results").children[1].click();
+  await view.element("save-profile").click();
+  const group = view.element("custom-cards").children[1];
+  const value = group.children[1].children[0].children[0];
+  const path = "vehicle.state.lights_enabled";
+  const snapshot = { selected_fields: [path], fields: { [path]: { value: true, age_ms: 0, last_known: false } } };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(value.textContent, "On");
+  snapshot.fields[path].value = false;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(value.textContent, "Off");
+  snapshot.fields[path].value = null;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(value.textContent, "Unknown");
 });
 
 test("combined controls and telemetry update independently", async () => {
@@ -350,13 +395,32 @@ test("combined controls and telemetry update independently", async () => {
   };
   view.workspace.paint(snapshot, true, 0, () => "now");
   assert.equal(value.children[1].textContent, "Yes");
-  assert.equal(action.children[3].disabled, false);
-  await action.children[3].click();
+  assert.equal(action.children[0].disabled, false);
+  await action.children[0].click();
   assert.equal(view.actionRequests.length, 1);
-  assert.match(action.children[5].textContent, /ACCEPTED/);
+  assert.match(action.children[2].textContent, /ACCEPTED/);
   view.workspace.paint(snapshot, false, 0, () => "now");
-  assert.equal(action.children[3].disabled, true);
+  assert.equal(action.children[0].disabled, true);
+  assert.match(group.children[2].textContent, /CONTROLS.*GAME DISCONNECTED/);
   assert.equal(value.dataset.state, "offline");
+});
+
+test("combined controls show shared and individual unavailability without losing action feedback", async () => {
+  const view = await fixture({ mappedAction: true, combined: true, twoActions: true });
+  const group = view.element("custom-cards").children[0];
+  const [, first, second] = group.children[1].children;
+  const snapshot = { selected_fields: [], fields: {} };
+  view.workspace.paint(snapshot, false, 0, () => "");
+  assert.equal(first.children[1].textContent, "");
+  assert.equal(second.children[1].textContent, "");
+  assert.match(group.children[2].textContent, /GAME DISCONNECTED/);
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(first.children[0].disabled, false);
+  assert.equal(second.children[0].disabled, true);
+  assert.match(second.children[1].textContent, /matching field/);
+  assert.doesNotMatch(group.children[2].textContent, /GAME DISCONNECTED/);
+  await first.children[0].click();
+  assert.match(first.children[2].textContent, /ACCEPTED/);
 });
 
 test("import rejects invalid tile properties before sending them to the PC", async () => {

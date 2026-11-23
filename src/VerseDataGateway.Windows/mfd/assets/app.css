@@ -85,10 +85,25 @@ h1 span { color: var(--accent); }
 .instrument { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 16px; border: 1px solid #3c5044; background: linear-gradient(135deg, #1d2c24, #15211b); }
 .instrument.size-wide, .instrument.size-large { grid-column: span 2; }
 .instrument.size-large { grid-row: span 2; background: linear-gradient(140deg, #2a4131, #19271f 65%); }
-.combined-card { gap: 12px; }
-.combined-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 6px; flex: 1; }
-.combined-components .instrument { grid-column: auto; grid-row: auto; padding: 12px; background: #101c16; }
-.combined-components .instrument-value, .size-large .combined-components .instrument-value { font-size: clamp(20px, 2vw, 30px); letter-spacing: 0; }
+.combined-card { gap: 10px; }
+.combined-components { display: flex; flex-wrap: wrap; align-content: start; gap: 8px; flex: 1; min-width: 0; }
+.combined-component { min-width: 0; display: flex; flex-direction: column; }
+.combined-component:not([data-widget="action"]) { flex: 1 0 100%; }
+.combined-component[data-widget="action"] { flex: 1 1 90px; }
+.combined-component .instrument-value, .size-large .combined-component .instrument-value { margin: 0; padding: 2px 0; color: var(--ink); font-size: clamp(20px, 2vw, 30px); letter-spacing: 0; }
+.combined-component .instrument-meta { min-height: 0; overflow-wrap: anywhere; }
+.combined-component .game-action { width: 100%; margin: 0; min-height: 48px; overflow-wrap: anywhere; }
+.combined-component .game-action-result:empty, .combined-summary:empty { display: none; }
+.combined-summary { color: var(--warning); font: 11px Consolas, monospace; line-height: 1.4; overflow-wrap: anywhere; }
+.combined-component[data-state="stale"] .instrument-meta, .combined-component[data-state="last-known"] .instrument-meta { color: var(--warning); }
+.combined-component[data-state="unavailable"] .instrument-value, .combined-component[data-state="offline"] .instrument-value { color: #a7b3a5; }
+.combined-component[data-color="green"] .instrument-value { color: #afdc81; }
+.combined-component[data-color="amber"] .instrument-value { color: #f0c283; }
+.combined-component[data-color="red"] .instrument-value { color: #f29e94; }
+.combined-component[data-color="blue"] .instrument-value { color: #8bc5e6; }
+.combined-component[data-widget="list"] .instrument-value { max-height: 240px; overflow-y: auto; }
+.editing .combined-component { padding: 8px; border: 1px dashed var(--line); }
+.editing .combined-component .tile-controls { margin-top: 8px; }
 .combined-settings { display: flex; flex-wrap: wrap; gap: 6px; }
 .combined-settings input { flex: 1 1 120px; min-width: 0; }
 .combined-settings select { flex: 1 1 100px; }

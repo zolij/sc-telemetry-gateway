@@ -164,6 +164,10 @@ up to 16 independently configured values, status indicators, lists and controls.
 The library also offers editable combined templates for observed relationships.
 Templates do not enable fields; unavailable components remain visible.
 Observations are correlations, not proof that a command caused a state change.
+Combined cards show values and controls together, with shared availability
+warnings and separate feedback for each control. Existing combined profiles
+also use this compact display. The built-in templates use short control labels
+and show Boolean state as On/Off or Active/Inactive.
 
 The editor lists known controls by category even when the game is unavailable.
 The library includes a documented PTU snapshot and controls learned from the
