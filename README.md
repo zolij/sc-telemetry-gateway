@@ -29,6 +29,8 @@ mapping was recovered from PTU `5.0.202.205` (changelist `13238477`), and
 the action RPC definitions from the checked PTU build. Neither is an official
 or stable SDK. Compatibility with other builds, game terms, or
 anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
+For the recovered game-side schema, see the
+[PTU telemetry protocol reference](docs/GAME-TELEMETRY.md).
 
 ## Design
 
