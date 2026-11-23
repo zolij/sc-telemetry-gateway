@@ -83,7 +83,11 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   const fields = mappedAction ? [
     { path: shieldPower, repeated: false, numeric: false },
     { path: shieldLevel, repeated: false, numeric: true },
-    { path: "vehicle.state.lights_enabled", repeated: false, numeric: false }
+    { path: "vehicle.state.lights_enabled", repeated: false, numeric: false },
+    ...["vehicle.state.flight.state.gear", "vehicle.state.master_mode.mode",
+      "vehicle.state.flight.settings.advanced_hud_enabled_scm", "vehicle.state.flight.settings.advanced_hud_enabled_nav",
+      "vehicle.state.power.weapons", "vehicle.state.power.shield_emitters", "vehicle.state.power.engines"]
+      .map(path => ({ path, repeated: false, numeric: false, type: path.endsWith(".gear") || path.endsWith(".mode") ? "enum" : "bool" }))
   ] : [];
   let actionCatalog = mappedAction ? [{
     action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
@@ -369,24 +373,25 @@ test("all built-in templates render direct, descriptive controls", async () => {
   const view = await fixture({ mappedAction: true });
   await view.element("edit-profile").click();
   const expected = [
-    ["Toggle"], ["Deploy", "Retract"], ["Toggle"],
-    ["Toggle decoupling"], ["Cycle", "Set SCM"],
-    ["Toggle"], ["Toggle"], ["Toggle"]
+    ["Toggle"], ["Toggle"], ["Toggle"],
+    ["Toggle"], ["Cycle"],
+    ["Toggle"], ["Toggle"], ["Toggle", "Toggle", "Toggle"]
   ];
   for (let index = 0; index < expected.length; index++) {
     view.element("preset-results").children[index + 1].click();
     const group = view.element("custom-cards").children.at(-1);
     const components = group.children[2].children;
-    assert.deepEqual(components.slice(1).map(item => item.children[0].textContent), expected[index]);
+    assert.deepEqual(components.filter(item => item.dataset.widget === "action").map(item => item.children[0].textContent), expected[index]);
     assert.ok(components.every(item => !item.className?.includes("instrument size-")));
   }
   await view.element("save-profile").click();
   const actionSets = view.savedBodies[0].pages[0].tiles.slice(1).map(group =>
     group.components.filter(item => item.widget === "action").map(item => item.action));
   assert.deepEqual(actionSets, [
-    ["v_lights"], ["v_deploy_landing_system", "v_retract_landing_system"], ["v_ifcs_toggle_gforce_safety"],
-    ["v_ifcs_vector_decoupling_toggle"], ["v_master_mode_cycle", "v_master_mode_set_scm"],
-    ["v_flight_advanced_hud_toggle"], ["v_light_amplification_toggle"], ["v_power_toggle_weapons"]
+    ["v_lights"], ["v_toggle_landing_system"], ["v_ifcs_toggle_gforce_safety"],
+    ["v_ifcs_vector_decoupling_toggle"], ["v_master_mode_cycle"],
+    ["v_flight_advanced_hud_toggle"], ["v_light_amplification_toggle"],
+    ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"]
   ]);
   assert.deepEqual(view.actionRequests, []);
 });
@@ -400,6 +405,76 @@ test("previously saved template controls remain visible and survive editing", as
   assert.deepEqual(view.savedBodies[0].pages[0].tiles[0].components.slice(1).map(item => item.action),
     ["v_lights", "v_lights_on", "v_lights_off"]);
   assert.deepEqual(view.actionRequests, []);
+});
+
+test("landing gear toggle disables during deployment and retraction", async () => {
+  const view = await fixture({ mappedAction: true });
+  view.setActions([{ action_name: "v_toggle_landing_system", category: "spaceship_movement", enabled: true, holdable: false }]);
+  await view.poll();
+  await view.element("edit-profile").click();
+  view.element("preset-results").children[2].click();
+  await view.element("save-profile").click();
+  const group = view.element("custom-cards").children[1];
+  const button = group.children[1].children[1].children[0];
+  const path = "vehicle.state.flight.state.gear";
+  const snapshot = { selected_fields: [path], fields: { [path]: { value: "", age_ms: 0, last_known: false } } };
+  for (const [state, disabled] of [["RETRACTED", false], ["DEPLOYING", true], ["DEPLOYED", false], ["RETRACTING", true]]) {
+    snapshot.fields[path].value = "VEHICLE_COMPONENT_DEPLOYMENT_STATE_" + state;
+    view.workspace.paint(snapshot, true, 0, () => "");
+    assert.equal(button.disabled, disabled, state);
+    if (disabled) assert.match(group.children[2].textContent, /TRANSITION/);
+  }
+});
+
+test("advanced HUD displays only the current fresh SCM or NAV state", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  view.element("preset-results").children[6].click();
+  await view.element("save-profile").click();
+  const group = view.element("custom-cards").children[1];
+  const [mode, scm, nav] = group.children[1].children;
+  const master = "vehicle.state.master_mode.mode";
+  const scmPath = "vehicle.state.flight.settings.advanced_hud_enabled_scm";
+  const navPath = "vehicle.state.flight.settings.advanced_hud_enabled_nav";
+  const field = value => ({ value, age_ms: 0, last_known: false });
+  const snapshot = { selected_fields: [master, scmPath, navPath], fields: {
+    [master]: field("VEHICLE_MASTER_MODE_SCM"), [scmPath]: field(true), [navPath]: field(false)
+  } };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(mode.hidden, true); assert.equal(scm.hidden, false); assert.equal(nav.hidden, true);
+  assert.equal(scm.children[1].textContent, "On");
+  snapshot.fields[master].value = "VEHICLE_MASTER_MODE_NAVIGATION";
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(scm.hidden, true); assert.equal(nav.hidden, false);
+  assert.equal(nav.children[1].textContent, "Off");
+  snapshot.fields[master].age_ms = 2000;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(mode.hidden, false); assert.equal(scm.hidden, true); assert.equal(nav.hidden, true);
+  assert.equal(mode.children[1].textContent, "Mode unavailable");
+  snapshot.fields[master].age_ms = 0;
+  snapshot.fields[master].value = "VEHICLE_MASTER_MODE_STEALTH";
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(mode.children[1].textContent, "Mode unavailable");
+});
+
+test("system power keeps shield states separate and provides three independent toggles", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  view.element("preset-results").children[8].click();
+  await view.element("save-profile").click();
+  const group = view.element("custom-cards").children[1];
+  const [weapons, shields, engines] = group.children[1].children;
+  assert.deepEqual([weapons, shields, engines].map(row => row.children[0].textContent), ["Weapons", "Shields", "Engines"]);
+  const paths = ["vehicle.state.power.weapons", "vehicle.state.power.shield_generators",
+    "vehicle.state.power.shield_emitters", "vehicle.state.power.engines"];
+  const snapshot = { selected_fields: paths, fields: Object.fromEntries(paths.map((path, index) =>
+    [path, { value: index !== 2, age_ms: 0, last_known: false }])) };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.deepEqual(shields.children[1].children.map(item => item.children[1].textContent), ["On", "Off"]);
+  assert.equal(shields.children[2].children[0].disabled, false);
+  assert.equal(weapons.children[2].children[0].disabled, true);
+  assert.equal(engines.children[2].children[0].disabled, true);
+  assert.equal(group.children[2].textContent, "");
 });
 
 test("built-in boolean states remain distinct from unavailable values", async () => {

@@ -102,6 +102,11 @@ h1 span { color: var(--accent); }
 .combined-component[data-color="red"] .instrument-value { color: #f29e94; }
 .combined-component[data-color="blue"] .instrument-value { color: #8bc5e6; }
 .combined-component[data-widget="list"] .instrument-value { max-height: 240px; overflow-y: auto; }
+.power-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; width: 100%; }
+.power-row { display: flex; flex-direction: column; min-width: 0; gap: 8px; padding: 10px; border-left: 2px solid var(--line); background: #101c16; }
+.power-values { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.power-values .instrument-label { font-size: 9px; }
+.power-row > .combined-component[data-widget="action"] { flex: 0 0 auto; }
 .editing .combined-component { padding: 8px; border: 1px dashed var(--line); }
 .editing .combined-component .tile-controls { margin-top: 8px; }
 .combined-settings { display: flex; flex-wrap: wrap; gap: 6px; }

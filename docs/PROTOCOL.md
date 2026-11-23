@@ -303,10 +303,18 @@ The explicit field associations cover vehicle lights, landing gear, VTOL,
 transformation, door opening and locking, IFCS G-safe, ESP, proximity assist
 and coupling, master mode, power, shields, advanced HUD and light
 amplification. Apart from light on/off, these are
-based on action and field names, not observed state transitions; they are
-marked accordingly in the MFD. Refer to the current catalogue for each exact
+based on action and field names, not observed state transitions. Refer to the current catalogue for each exact
 action and fields. Related values need not represent the same state: shield
 charge, for example, is not the on/off state of a shield generator.
+
+Built-in combined templates from earlier versions are converted on profile
+store load and persisted atomically with a new profile revision. Custom cards
+with additional components are not converted. Landing gear Toggle is disabled
+when received gear state is deploying or retracting. Advanced HUD requires
+selected, current master-mode telemetry and displays the selected SCM or NAV
+field; other or stale modes are unavailable. System Power exposes separate
+weapon, engine, shield-generator and shield-emitter readings alongside three
+independent toggles. These display rules do not change game-side authorization.
 
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
 "hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be

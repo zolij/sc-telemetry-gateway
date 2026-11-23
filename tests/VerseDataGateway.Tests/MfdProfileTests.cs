@@ -72,6 +72,46 @@ public sealed class MfdProfileTests : IDisposable
             Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
     }
 
+    [Fact]
+    public void EarlierTemplatesMigrateAtomicallyOnceWithRevisionAndLeaveCustomCards()
+    {
+        MfdTile Value(string field, string label) => new() {
+            Id = Guid.NewGuid(), Field = field, Label = label, Widget = "value", Size = "normal"
+        };
+        MfdTile Action(string name) => new() {
+            Id = Guid.NewGuid(), Field = "", Label = name, Widget = "action", Size = "normal", Action = name
+        };
+        MfdTile Group(string label, string field, params string[] actions) => new() {
+            Id = Guid.NewGuid(), Field = "", Label = label, Widget = "combined", Size = "wide",
+            Components = new[] { Value(field, label) }.Concat(actions.Select(Action)).ToArray()
+        };
+        var old = new[] {
+            Group("Landing gear", "vehicle.state.flight.state.gear", "v_deploy_landing_system", "v_retract_landing_system"),
+            Group("Master mode", "vehicle.state.master_mode.mode", "v_master_mode_cycle", "v_master_mode_set_scm"),
+            Group("SCM advanced HUD", "vehicle.state.flight.settings.advanced_hud_enabled_scm", "v_flight_advanced_hud_toggle"),
+            Group("Weapons power", "vehicle.state.power.weapons", "v_power_toggle_weapons"),
+            Group("Landing gear", "vehicle.state.flight.state.gear", "v_deploy_landing_system", "v_invoke_ping")
+        };
+        var draft = Draft();
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = old }] });
+        var migrated = Store.Get(saved.Id)!;
+        Assert.Equal(saved.Revision + 1, migrated.Revision);
+        var tiles = migrated.Pages[0].Tiles;
+        Assert.Equal("v_toggle_landing_system", Assert.Single(tiles[0].Components!, component => component.Widget == "action").Action);
+        Assert.Equal("v_master_mode_cycle", Assert.Single(tiles[1].Components!, component => component.Widget == "action").Action);
+        Assert.Equal("Advanced HUD", tiles[2].Label);
+        Assert.Equal(new[] { "vehicle.state.master_mode.mode", "vehicle.state.flight.settings.advanced_hud_enabled_scm",
+            "vehicle.state.flight.settings.advanced_hud_enabled_nav" }, tiles[2].Components!.Where(item => item.Widget == "value").Select(item => item.Field));
+        Assert.Equal("System power", tiles[3].Label);
+        Assert.Equal(4, tiles[3].Components!.Count(item => item.Widget == "value"));
+        Assert.Equal(new[] { "v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters" },
+            tiles[3].Components!.Where(item => item.Widget == "action").Select(item => item.Action));
+        Assert.Contains(tiles[4].Components!, item => item.Action == "v_invoke_ping");
+        var reopened = Store.Get(saved.Id)!;
+        Assert.Equal(migrated.Revision, reopened.Revision);
+        Assert.Equal(JsonSerializer.Serialize(migrated, WireJson.Options), JsonSerializer.Serialize(reopened, WireJson.Options));
+    }
+
     [Theory]
     [InlineData("vehicle.state.lights_enabled", "v_lights_on")]
     [InlineData("vehicle.state.flight.state.gear", "v_deploy_landing_system")]

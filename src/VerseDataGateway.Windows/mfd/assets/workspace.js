@@ -6,33 +6,56 @@ const MfdWorkspace = (() => {
   const colors = ["neutral", "green", "amber", "red", "blue"];
   const presets = [
     { label: "Vehicle lights", field: "vehicle.state.lights_enabled", actions: ["v_lights"], legacyActions: ["v_lights_on", "v_lights_off"] },
-    { label: "Landing gear", field: "vehicle.state.flight.state.gear", actions: ["v_deploy_landing_system", "v_retract_landing_system"] },
+    { label: "Landing gear", field: "vehicle.state.flight.state.gear", actions: ["v_toggle_landing_system"], legacyActions: ["v_deploy_landing_system", "v_retract_landing_system"] },
     { label: "G-safe", field: "vehicle.state.flight.settings.ifcs_g_safe.active", actions: ["v_ifcs_toggle_gforce_safety"], legacyActions: ["v_ifcs_gsafe_on", "v_ifcs_gsafe_off"] },
     { label: "Coupled flight", field: "vehicle.state.flight.settings.ifcs_coupled.active", actions: ["v_ifcs_vector_decoupling_toggle"], legacyActions: ["v_ifcs_vector_decoupling_on", "v_ifcs_vector_decoupling_off"] },
-    { label: "Master mode", field: "vehicle.state.master_mode.mode", actions: ["v_master_mode_cycle", "v_master_mode_set_scm"] },
-    { label: "SCM advanced HUD", field: "vehicle.state.flight.settings.advanced_hud_enabled_scm", actions: ["v_flight_advanced_hud_toggle"], legacyActions: ["v_flight_advanced_hud_on"] },
+    { label: "Master mode", field: "vehicle.state.master_mode.mode", actions: ["v_master_mode_cycle"], legacyActions: ["v_master_mode_set_scm"] },
+    { label: "Advanced HUD", field: "vehicle.state.flight.settings.advanced_hud_enabled_scm", actions: ["v_flight_advanced_hud_toggle"], legacyActions: ["v_flight_advanced_hud_on"], kind: "hud" },
     { label: "Flight light amplification", field: "vehicle.state.flight.settings.flight_light_amplification", actions: ["v_light_amplification_toggle"], legacyActions: ["v_light_amplification_on"] },
-    { label: "Weapons power", field: "vehicle.state.power.weapons", actions: ["v_power_toggle_weapons"], legacyActions: ["v_power_set_weapons_on", "v_power_set_weapons_off"] }
+    { label: "System power", field: "vehicle.state.power.weapons", actions: ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"], kind: "power" }
   ];
   const presetActionLabels = {
     v_lights: "Toggle", v_lights_on: "On", v_lights_off: "Off",
-    v_deploy_landing_system: "Deploy", v_retract_landing_system: "Retract",
+    v_toggle_landing_system: "Toggle", v_deploy_landing_system: "Deploy", v_retract_landing_system: "Retract",
     v_ifcs_gsafe_on: "On", v_ifcs_gsafe_off: "Off", v_ifcs_toggle_gforce_safety: "Toggle",
     v_ifcs_vector_decoupling_on: "Decoupling on", v_ifcs_vector_decoupling_off: "Decoupling off",
-    v_ifcs_vector_decoupling_toggle: "Toggle decoupling",
+    v_ifcs_vector_decoupling_toggle: "Toggle",
     v_master_mode_cycle: "Cycle", v_master_mode_set_scm: "Set SCM",
     v_flight_advanced_hud_on: "On", v_flight_advanced_hud_toggle: "Toggle",
     v_light_amplification_on: "On", v_light_amplification_toggle: "Toggle",
-    v_power_set_weapons_on: "On", v_power_set_weapons_off: "Off", v_power_toggle_weapons: "Toggle"
+    v_power_set_weapons_on: "On", v_power_set_weapons_off: "Off", v_power_toggle_weapons: "Toggle",
+    v_power_toggle_shields: "Toggle", v_power_toggle_thrusters: "Toggle"
   };
   const presetBooleanLabels = {
     "Vehicle lights": ["On", "Off"],
     "G-safe": ["Active", "Inactive"],
     "Coupled flight": ["Active", "Inactive"],
-    "SCM advanced HUD": ["On", "Off"],
+    "Advanced HUD": ["On", "Off"],
     "Flight light amplification": ["On", "Off"],
-    "Weapons power": ["On", "Off"]
+    "System power": ["On", "Off"]
   };
+  const masterField = "vehicle.state.master_mode.mode";
+  const hudScm = "vehicle.state.flight.settings.advanced_hud_enabled_scm";
+  const hudNav = "vehicle.state.flight.settings.advanced_hud_enabled_nav";
+  const powerFields = [
+    ["vehicle.state.power.weapons", "Weapons"],
+    ["vehicle.state.power.shield_generators", "Shield generator"],
+    ["vehicle.state.power.shield_emitters", "Shield emitter"],
+    ["vehicle.state.power.engines", "Engines"]
+  ];
+  function groupKind(tile) {
+    if (tile.widget !== "combined") return null;
+    const fields = tile.components.filter(item => item.widget === "value").map(item => item.field);
+    const controls = tile.components.filter(item => item.widget === "action").map(item => item.action);
+    if (tile.label === "Advanced HUD" && tile.components.length === 4 &&
+        [masterField, hudScm, hudNav].every(field => fields.filter(value => value === field).length === 1) &&
+        controls.length === 1 && controls[0] === "v_flight_advanced_hud_toggle") return "hud";
+    if (tile.label === "System power" && tile.components.length === 7 &&
+        powerFields.every(([field]) => fields.filter(value => value === field).length === 1) &&
+        ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"].every(action =>
+          controls.filter(value => value === action).length === 1)) return "power";
+    return null;
+  }
   let getToken, repaint;
   let catalog = [], actions = [], actionLibrary = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
@@ -223,13 +246,30 @@ const MfdWorkspace = (() => {
           card.append(settings);
         }
         const components = node("div", "combined-components");
-        for (const child of tile.components) components.append(renderCard(child, tile));
+        const kind = groupKind(tile);
+        if (kind === "power" && !draft) {
+          components.classList.add("power-components");
+          for (const [title, fields, action] of [
+            ["Weapons", [powerFields[0][0]], "v_power_toggle_weapons"],
+            ["Shields", [powerFields[1][0], powerFields[2][0]], "v_power_toggle_shields"],
+            ["Engines", [powerFields[3][0]], "v_power_toggle_thrusters"]
+          ]) {
+            const row = node("section", "power-row");
+            row.append(node("span", "instrument-label", title));
+            const values = node("div", "power-values");
+            for (const field of fields) values.append(renderCard(tile.components.find(child => child.field === field), tile));
+            row.append(values, renderCard(tile.components.find(child => child.action === action), tile));
+            components.append(row);
+          }
+        } else {
+          for (const child of tile.components) components.append(renderCard(child, tile));
+        }
         card.append(components);
         const summary = node("span", "combined-summary");
         summary.id = "combined-summary-" + tile.id;
         summary.setAttribute("role", "status");
         card.append(summary);
-        groups.set(tile.id, { tile, summary });
+        groups.set(tile.id, { tile, summary, kind });
         if (draft) addTileControls(card, tile);
         return card;
       }
@@ -242,7 +282,6 @@ const MfdWorkspace = (() => {
         card.append(value, meta);
       }
       let actionButton = null;
-      let mappingNote = null;
       let feedback = null;
       if (tile.widget === "action" && tile.action && (!draft || compactAction)) {
         const preset = parent && presets.find(item => item.label === parent.label &&
@@ -290,12 +329,11 @@ const MfdWorkspace = (() => {
         });
         if (compactAction) card.append(actionButton, meta, feedback);
         else {
-          mappingNote = node("span", "game-action-result");
-          card.append(actionButton, mappingNote, feedback);
+          card.append(actionButton, node("span", "game-action-result"), feedback);
         }
       }
       if (draft) addTileControls(card, tile, parent);
-      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote, feedback, parent });
+      cards.set(tile.id, { tile, card, value, meta, actionButton, feedback, parent });
       return card;
   }
 
@@ -362,16 +400,19 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton, mappingNote, feedback, parent } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton, feedback, parent } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
+        const gear = tile.action === "v_toggle_landing_system" && parent?.components.some(item => item.field === "vehicle.state.flight.state.gear")
+          ? snapshot?.fields?.["vehicle.state.flight.state.gear"]?.value : null;
+        const transitioning = gear === "VEHICLE_COMPONENT_DEPLOYMENT_STATE_DEPLOYING" ||
+          gear === "VEHICLE_COMPONENT_DEPLOYMENT_STATE_RETRACTING";
         actionButton.title = draft ? "Controls cannot be triggered while editing" : !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
           !action.enabled ? "Enable the matching field on the PC" :
           tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
+          transitioning ? "Landing gear is in transition" :
           busy || actionPending.has(tile.id) ? "Control busy" : "";
         actionButton.disabled = !!actionButton.title;
-        if (mappingNote) mappingNote.textContent = action?.mapping_verified === false
-          ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
         const message = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
         if (feedback.textContent !== message) feedback.textContent = message;
       }
@@ -412,7 +453,9 @@ const MfdWorkspace = (() => {
           value.dataset.signature = signature;
         }
       } else {
-        const preset = parent && presets.find(item => item.label === parent.label && item.field === tile.field);
+        const preset = parent && presets.find(item => item.label === parent.label &&
+          (item.field === tile.field || item.kind === "hud" && tile.field === hudNav ||
+           item.kind === "power" && powerFields.some(([field]) => field === tile.field)));
         const booleanLabels = preset && presetBooleanLabels[preset.label];
         value.textContent = rule?.label ?? (tile.widget === "value" && (!tile.format || tile.format === "auto") &&
           booleanLabels && typeof field.value === "boolean"
@@ -432,7 +475,25 @@ const MfdWorkspace = (() => {
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
         field.value === null || needsMaximum && !rule ? "unavailable" : !history && (!Number.isFinite(age) || age >= 2000) ? "stale" : "live";
     }
-    for (const { tile, summary } of groups.values()) {
+    for (const { tile, summary, kind } of groups.values()) {
+      if (kind === "hud" && !draft) {
+        const mode = snapshot?.fields?.[masterField];
+        const age = Number.isFinite(mode?.age_ms) ? mode.age_ms + elapsed : NaN;
+        const current = online && selected.has(masterField) && mode && !mode.last_known && Number.isFinite(age) && age < 2000
+          ? mode.value === "VEHICLE_MASTER_MODE_SCM" ? hudScm :
+            mode.value === "VEHICLE_MASTER_MODE_NAVIGATION" ? hudNav : null
+          : null;
+        const modeEntry = cards.get(tile.components.find(component => component.field === masterField).id);
+        const scmEntry = cards.get(tile.components.find(component => component.field === hudScm).id);
+        const navEntry = cards.get(tile.components.find(component => component.field === hudNav).id);
+        modeEntry.card.hidden = !!current;
+        scmEntry.card.hidden = current !== hudScm;
+        navEntry.card.hidden = current !== hudNav;
+        if (!current) {
+          modeEntry.value.textContent = "Mode unavailable";
+          modeEntry.meta.textContent = "Select and receive a current SCM or NAV master mode";
+        }
+      }
       const controls = tile.components.filter(component => component.widget === "action");
       const warnings = [];
       const entries = controls.map(component => cards.get(component.id)).filter(Boolean);
@@ -441,8 +502,6 @@ const MfdWorkspace = (() => {
         warnings.push("CONTROLS / " + reason.toUpperCase());
         for (const entry of entries) entry.meta.textContent = "";
       }
-      if (!draft && online && controls.some(component => actions.find(action => action.action_name === component.action)?.mapping_verified === false))
-        warnings.push("SOME FIELD LINKS ARE NOT LIVE-VERIFIED");
       const message = warnings.join(" / ");
       if (summary.textContent !== message) summary.textContent = message;
     }
@@ -656,8 +715,10 @@ const MfdWorkspace = (() => {
         if (busy) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
         const base = () => ({ id: uuid(), size: "normal", decimals: 2, format: "auto", rules: [] });
+        const fields = preset.kind === "hud" ? [[masterField, "Master mode"], [hudScm, "SCM"], [hudNav, "NAV"]] :
+          preset.kind === "power" ? powerFields : [[preset.field, preset.label]];
         const group = { ...base(), field: "", label: preset.label, widget: "combined", size: "wide", components: [
-          { ...base(), field: preset.field, label: preset.label, widget: "value" },
+          ...fields.map(([field, name]) => ({ ...base(), field, label: name, widget: "value" })),
           ...preset.actions.map(action => ({ ...base(), field: "", label: actionLabel(action), widget: "action", action }))
         ] };
         page().tiles.push(group);
@@ -702,8 +763,7 @@ const MfdWorkspace = (() => {
       button.dataset.enabled = "true";
       button.disabled = busy;
       button.append(node("strong", "", actionLabel(action.action_name)), node("span", "",
-        readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "") +
-        (action.mapping_verified === false ? " / Field link not live-verified" : "")));
+        readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "")));
       button.addEventListener("click", () => {
         if (busy) return;
         const targetGroup = page()?.tiles.find(tile => tile.id === selectedGroup);
@@ -720,8 +780,7 @@ const MfdWorkspace = (() => {
     const select = $("tile-action");
     select.replaceChildren(new Option("Choose a control", ""));
     for (const action of actionLibrary) {
-      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
-        (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
+      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category), action.action_name);
       select.append(option);
     }
     if (current && !actionLibrary.some(item => item.action_name === current))

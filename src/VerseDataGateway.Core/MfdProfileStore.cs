@@ -93,10 +93,13 @@ public sealed class MfdProfileStore(string directory)
             profiles = [];
             return profiles;
         }
-        using var file = stream;
-        if (stream.Length > MfdProfile.MaxStoreBytes) throw new InvalidDataException("Profile store exceeds its size limit.");
-        var document = JsonSerializer.Deserialize<Document>(stream, WireJson.Options)
-            ?? throw new JsonException("Profile store cannot be null.");
+        Document document;
+        using (stream)
+        {
+            if (stream.Length > MfdProfile.MaxStoreBytes) throw new InvalidDataException("Profile store exceeds its size limit.");
+            document = JsonSerializer.Deserialize<Document>(stream, WireJson.Options)
+                ?? throw new JsonException("Profile store cannot be null.");
+        }
         if (document.SchemaVersion != 1 || document.Profiles is null || document.Profiles.Length > MfdProfile.MaxProfiles)
             throw new InvalidDataException("Invalid profile store schema or profile count.");
         var loaded = new Dictionary<Guid, MfdProfile>();
@@ -107,8 +110,29 @@ public sealed class MfdProfileStore(string directory)
             try { profile.Validate(); }
             catch (ArgumentException ex) { throw new InvalidDataException("Invalid saved profile.", ex); }
         }
-        profiles = loaded;
-        return loaded;
+        var migrated = new Dictionary<Guid, MfdProfile>(loaded);
+        var changed = false;
+        foreach (var profile in loaded.Values)
+        {
+            var profileChanged = false;
+            var pages = profile.Pages.Select(page => page with
+            {
+                Tiles = page.Tiles.Select(tile =>
+                {
+                    var result = MfdPresetMigration.Convert(tile);
+                    profileChanged |= !ReferenceEquals(tile, result);
+                    return result;
+                }).ToArray()
+            }).ToArray();
+            if (!profileChanged) continue;
+            var updated = profile with { Pages = pages, Revision = checked(profile.Revision + 1) };
+            updated.Validate();
+            migrated[profile.Id] = updated;
+            changed = true;
+        }
+        if (changed) Persist(migrated);
+        else profiles = loaded;
+        return profiles!;
     }
 
     private void Persist(Dictionary<Guid, MfdProfile> next)
