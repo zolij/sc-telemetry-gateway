@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -56,12 +56,28 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   };
   let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, profileReads = 0;
   const actionRequests = [];
-  if (withAction) {
+  const shieldPower = "vehicle.state.power.shield_generators";
+  const shieldLevel = "vehicle.state.shields.level";
+  const fields = mappedAction ? [
+    { path: shieldPower, repeated: false, numeric: false },
+    { path: shieldLevel, repeated: false, numeric: true },
+    { path: "vehicle.state.lights_enabled", repeated: false, numeric: false }
+  ] : [];
+  let actionCatalog = mappedAction ? [{
+    action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
+    field: shieldPower, fields: [shieldPower, shieldLevel], enabled: true
+  }] : withAction ? [{
+    action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
+  }] : [];
+  if (withAction || mappedAction) {
     remote.pages[0].id = "bb2351a5-6dca-41be-a2e4-e7a33bb93503";
     remote.pages[1].id = "f1fc4de5-0b85-459b-9a7c-020da373a053";
     remote.pages[0].tiles.push({
-    id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323", field: "", label: "Radar", widget: "action", size: "normal",
-    decimals: 2, format: "auto", rules: [], action: "v_invoke_ping", hold_ms: 500
+      id: "cf08801a-1e07-4d0d-b84a-b5cf0e616323",
+      field: mappedAction ? shieldLevel : "", label: mappedAction ? "Shields" : "Radar",
+      widget: mappedAction ? "value" : "action", size: "normal", decimals: 2, format: "auto", rules: [],
+      action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
+      ...(!mappedAction ? { hold_ms: 500 } : {})
     });
   }
   const summaryStatuses = [];
@@ -78,11 +94,9 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     Option: function (text, value) { return Object.assign(element(), { textContent: text, value }); },
     setInterval: callback => { poll = callback; },
     fetch: async (url, options) => {
-      if (url.endsWith("/fields")) return response(200, []);
+      if (url.endsWith("/fields")) return response(200, fields);
       if (url.endsWith("/events")) return response(200, [enter]);
-      if (url.endsWith("/actions")) return response(200, withAction ? [{
-        action_name: "v_invoke_ping", category: "spaceship_radar", holdable: true, field: null, enabled: true
-      }] : []);
+      if (url.endsWith("/actions")) return response(200, actionCatalog);
       if (url.endsWith("/actions/trigger")) {
         actionRequests.push(JSON.parse(options.body));
         return response(200, { status: "Ok", message: "" });
@@ -123,6 +137,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
     workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
+    setActions: value => { actionCatalog = value; },
     update: () => { remote = profile(2); },
     create: () => { remote = profile(1); },
     failNextProfile: () => { failedProfile = true; },
@@ -158,6 +173,64 @@ test("action tile sends a bounded command only when online and reports acceptanc
   assert.match(feedback.textContent, /ACCEPTED.*CHECK GAME STATE/);
   view.workspace.paint(snapshot, false, 0, () => "");
   assert.equal(button.disabled, true);
+});
+
+test("combined controls require their own selected and still-associated field", async () => {
+  const view = await fixture({ mappedAction: true });
+  let button = view.element("custom-cards").children[0].children[3];
+  const power = "vehicle.state.power.shield_generators", level = "vehicle.state.shields.level";
+  const snapshot = { selected_fields: [power], fields: {}, connection_status: "connected" };
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, true);
+  snapshot.selected_fields.push(level);
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, false);
+  view.setActions([{ action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
+    field: power, fields: [power], enabled: true }]);
+  await view.poll();
+  button = view.element("custom-cards").children[0].children[3];
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(button.disabled, true);
+  assert.match(button.title, /no longer linked/);
+});
+
+test("editor links secondary fields and creates combined controls from the library", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  await view.element("custom-cards").children[0].children[3].children[1].click();
+  assert.equal(view.element("tile-field").value, "vehicle.state.shields.level");
+  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
+  assert.ok(view.element("tile-action").options.some(option => option.value === "v_power_toggle_shields"));
+  view.element("tile-field").value = "vehicle.state.power.shield_generators";
+  view.element("tile-field").listeners.get("change")();
+  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
+  view.element("tile-field").value = "vehicle.state.lights_enabled";
+  view.element("tile-field").listeners.get("change")();
+  assert.match(view.element("tile-action").options.at(-1).textContent, /not linked/);
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.match(view.element("tile-message").textContent, /not linked/);
+  view.element("action-results").children[1].click();
+  assert.equal(view.element("tile-widget").value, "value");
+  assert.equal(view.element("tile-field").value, "vehicle.state.power.shield_generators");
+  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("editor supports legacy single-field action catalogs and converting standalone controls", async () => {
+  const view = await fixture({ mappedAction: true });
+  view.setActions([{ action_name: "v_power_toggle_shields", category: "spaceship_power", holdable: false,
+    field: "vehicle.state.power.shield_generators", enabled: true }]);
+  await view.poll();
+  await view.element("edit-profile").click();
+  view.element("action-results").children[1].click();
+  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
+  view.element("tile-widget").value = "action";
+  view.element("tile-widget").listeners.get("change")();
+  assert.equal(view.element("tile-field").disabled, true);
+  view.element("tile-widget").value = "value";
+  view.element("tile-widget").listeners.get("change")();
+  assert.equal(view.element("tile-field").disabled, false);
+  assert.equal(view.element("tile-action").value, "v_power_toggle_shields");
 });
 
 test("editing can add a game control without triggering it", async () => {

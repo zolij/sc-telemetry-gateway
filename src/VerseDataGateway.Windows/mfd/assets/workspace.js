@@ -33,6 +33,7 @@ const MfdWorkspace = (() => {
   }
   const readable = MfdPresentation.readable;
   const actionLabel = name => readable(name.replace(/^v_/, ""));
+  const actionFields = action => Array.isArray(action.fields) ? action.fields : action.field ? [action.field] : [];
   function label(path) {
     return path.split(".").filter(part => !["state", "flight", "instruments", "actor", "vehicle"].includes(part))
       .map(readable).join(" / ").slice(0, 80);
@@ -275,10 +276,13 @@ const MfdWorkspace = (() => {
     for (const { tile, card, value, meta, actionButton, mappingNote } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
+        const fieldSelected = tile.widget === "action" || selected.has(tile.field);
+        const fieldMatches = tile.widget === "action" || !action || actionFields(action).includes(tile.field);
         actionButton.disabled = !online || busy || !action?.enabled ||
-          (tile.hold_ms != null && !action.holdable) || actionPending.has(tile.id);
+          !fieldSelected || !fieldMatches || (tile.hold_ms != null && !action.holdable) || actionPending.has(tile.id);
         actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
-          !action.enabled ? "Enable the matching field on the PC" :
+          !fieldSelected || !action.enabled ? "Enable the matching field on the PC" :
+          !fieldMatches ? "This control is no longer linked to this field" :
           tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" : "";
         mappingNote.textContent = action?.mapping_verified === false ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
       }
@@ -544,7 +548,9 @@ const MfdWorkspace = (() => {
       button.addEventListener("click", () => {
         if (busy || !action.enabled) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
-        openTile({ id: uuid(), field: "", label: actionLabel(action.action_name).slice(0, 80), widget: "action",
+        const field = actionFields(action).map(path => catalog.find(item => item.path === path)).find(Boolean);
+        openTile({ id: uuid(), field: field?.path ?? "", label: actionLabel(action.action_name).slice(0, 80),
+          widget: field ? (field.repeated ? "list" : "value") : "action",
           size: "normal", decimals: 2, format: "auto", rules: [], action: action.action_name }, true);
       });
       $("action-results").append(button);
@@ -555,14 +561,15 @@ const MfdWorkspace = (() => {
     const field = $("tile-field").value;
     const select = $("tile-action");
     select.replaceChildren(new Option(standalone ? "Choose a control" : "No control", ""));
-    for (const action of actions.filter(item => standalone || item.field === field)) {
+    for (const action of actions.filter(item => standalone || actionFields(item).includes(field))) {
       const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
         (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
       option.disabled = !action.enabled;
       select.append(option);
     }
-    if (current && !actions.some(item => item.action_name === current))
-      select.append(new Option(current + " (unavailable)", current));
+    if (current && ![...select.options].some(option => option.value === current))
+      select.append(new Option(current + (actions.some(item => item.action_name === current)
+        ? " (not linked to this field)" : " (unavailable)"), current));
     select.value = current ?? "";
     holdOptions();
   }
@@ -576,14 +583,15 @@ const MfdWorkspace = (() => {
     const standalone = $("tile-widget").value === "action";
     $("tile-field").hidden = $("tile-field-label").hidden = standalone;
     $("tile-field").disabled = standalone;
+    $("tile-field").required = !standalone;
     const field = catalog.find(item => item.path === $("tile-field").value);
     const repeated = field?.repeated ?? page()?.tiles.find(item => item.id === tileId)?.widget === "list";
-    for (const option of $("tile-widget").options) option.disabled = standalone ? option.value !== "action" :
-      option.value === "action" || (repeated ? option.value !== "list" : option.value === "list");
+    for (const option of $("tile-widget").options) option.disabled = option.value !== "action" &&
+      !standalone && (repeated ? option.value !== "list" : option.value === "list");
     if ($("tile-widget").selectedOptions[0].disabled) $("tile-widget").value = repeated ? "list" : "value";
     $("status-settings").hidden = $("tile-widget").value !== "status";
     for (const option of $("tile-format").options)
-      option.disabled = !!field && (
+      option.disabled = standalone ? !["auto", "number"].includes(option.value) : !!field && (
         !["auto", "number"].includes(option.value) && !field.numeric ||
         option.value === "percent_max" && !field.maximum_field
       );
@@ -619,7 +627,8 @@ const MfdWorkspace = (() => {
     $("tile-dialog").dataset.newId = tile.id;
     $("tile-field").replaceChildren();
     for (const field of catalog) $("tile-field").append(new Option(label(field.path) + " / " + field.path, field.path));
-    if (!catalog.some(field => field.path === tile.field)) $("tile-field").append(new Option(tile.field + " (not selected on PC)", tile.field));
+    if (tile.field && !catalog.some(field => field.path === tile.field))
+      $("tile-field").append(new Option(tile.field + " (not selected on PC)", tile.field));
     $("tile-field").value = tile.field;
     $("tile-label").value = tile.label; $("tile-widget").value = tile.widget;
     $("tile-size").value = tile.size; $("tile-decimals").value = tile.decimals;
@@ -780,8 +789,19 @@ const MfdWorkspace = (() => {
       run(() => { draft.pages = draft.pages.filter(item => item.id !== pageId); pageId = draft.pages[0].id; render(); });
     });
     $("field-search").addEventListener("input", renderLibrary);
-    $("tile-field").addEventListener("change", () => { widgetOptions(); actionOptions(); });
-    $("tile-widget").addEventListener("change", widgetOptions);
+    $("tile-field").addEventListener("change", () => {
+      const current = $("tile-action").value;
+      widgetOptions(); actionOptions(current);
+    });
+    $("tile-widget").addEventListener("change", () => {
+      const current = $("tile-action").value;
+      if ($("tile-widget").value !== "action" && !$("tile-field").value) {
+        const action = actions.find(item => item.action_name === current);
+        $("tile-field").value = (action ? actionFields(action).find(path => catalog.some(field => field.path === path)) : null)
+          ?? catalog[0]?.path ?? "";
+      }
+      widgetOptions(); actionOptions(current);
+    });
     $("tile-format").addEventListener("change", widgetOptions);
     $("tile-action").addEventListener("change", holdOptions);
     $("add-rule").addEventListener("click", () => addRule());
@@ -800,6 +820,9 @@ const MfdWorkspace = (() => {
         };
         if ($("tile-action").value) tile.action = $("tile-action").value;
         if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
+        const action = actions.find(item => item.action_name === tile.action);
+        if (tile.widget !== "action" && action && !actionFields(action).includes(tile.field))
+          throw new Error("This control is not linked to the selected field. Choose a matching field or control.");
         const next = clone(draft);
         const target = next.pages.find(item => item.id === pageId);
         if (tileId) target.tiles[target.tiles.findIndex(item => item.id === tileId)] = tile;

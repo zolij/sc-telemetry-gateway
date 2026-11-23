@@ -145,9 +145,12 @@ handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
 values to your own labels and a fixed color palette. No graphs or arbitrary
 formulas are included; measurement units are not inferred.
 
-The editor lists the game's available controls by category. Add a standalone
-control, or attach a matching control to a telemetry tile. Associated controls
-require their field to be shared in PC MFD settings. Vehicle lights on/off were
+The editor lists the game's available controls by category. A control with a
+shared matching field starts as a combined telemetry/control tile; you can also
+attach a matching control to a telemetry tile or choose **Game control only**.
+Some controls relate to several fields: select the one you want to display.
+A combined tile requires its own field to be shared in PC MFD settings, even
+when another associated field enables the control. Vehicle lights on/off were
 verified against live PTU telemetry; other field associations are based on
 names and are marked as not live-verified. Game-listed actions without a known
 field association are available as standalone controls. Availability depends on the game,
