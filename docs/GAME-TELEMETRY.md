@@ -25,9 +25,12 @@ For local development, run the separate terminal tool from the repository root:
 ```sh
 dotnet run --project tools/TelemetryDebug
 dotnet run --project tools/TelemetryDebug -- 29420
+dotnet run --project tools/TelemetryDebug -- 29420 vehicle
 ```
 
-The optional argument is the game gRPC port, defaulting to `29420`. The tool
+The optional arguments are the game gRPC port (default `29420`) and a section
+filter: `vehicle`, `weapons`, `events`, `actor`, `force_feedback` or `turret`.
+The tool
 connects directly to `127.0.0.1`, independently of the gateway and its MFD
 field selection. It requires the .NET SDK and the game's telemetry service to
 be enabled; see [setup](../README.md#windows-quick-start). Stop with Ctrl+C.

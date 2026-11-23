@@ -42,7 +42,7 @@ internal sealed class TelemetryDebugView
         }
     }
 
-    public string Render(DateTimeOffset now)
+    public string Render(DateTimeOffset now, string? sectionFilter = null)
     {
         lock (gate)
         {
@@ -51,6 +51,7 @@ internal sealed class TelemetryDebugView
             output.AppendLine($"Status: {status} | UTC: {now:HH:mm:ss.fff}");
             foreach (var field in TelemetryStreamResponse.Descriptor.Fields.InFieldNumberOrder())
             {
+                if (sectionFilter is not null && sectionFilter != field.Name) continue;
                 if (!sections.TryGetValue(field.Name, out var section))
                 {
                     output.AppendLine($"\n[{field.Name}] waiting");
