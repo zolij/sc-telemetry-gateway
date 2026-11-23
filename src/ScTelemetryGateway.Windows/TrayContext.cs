@@ -41,16 +41,18 @@ internal sealed class TrayContext : ApplicationContext
     private string updateStatus = "Not checked";
     private readonly ToolStripMenuItem checkUpdates;
 
-    public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null, bool? installationUsageChoice = null)
+    public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null)
     {
         this.smokeTest = smokeTest;
         usageReporter = new UsageReporter(usageClient, usageIdentity, UsageReporter.Endpoint);
         store = settingsStore ?? new SettingsStore();
         (options, key) = store.Load();
-        if (!smokeTest && installationUsageChoice.HasValue)
+        var installationUsageChoice = smokeTest ? null : InstallationChoiceFile.Read(InstallationChoiceFile.DefaultPath);
+        if (installationUsageChoice.HasValue)
         {
             options = InstallationUsageChoice.Apply(options, installationUsageChoice.Value);
             store.Save(options, key);
+            File.Delete(InstallationChoiceFile.DefaultPath);
         }
         else if (!smokeTest && !options.UsageNoticeShown)
         {

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using ScTelemetryGateway.Windows;
 
 namespace ScTelemetryGateway.Installer;
 
@@ -64,10 +65,10 @@ internal static class Program
 
             if (usageEnabled.HasValue)
             {
+                InstallationChoiceFile.Write(InstallationChoiceFile.DefaultPath, usageEnabled.Value);
                 var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Spaceling.StarCitizenTelemetryGateway", "current", "StarCitizenTelemetryGateway.exe");
-                var choice = usageEnabled.Value ? "enabled" : "disabled";
-                using var application = Process.Start(new ProcessStartInfo(executable, $"--installation-usage-statistics={choice}")
+                using var application = Process.Start(new ProcessStartInfo(executable)
                 {
                     UseShellExecute = false
                 }) ?? throw new InvalidOperationException("The installed application could not be started.");

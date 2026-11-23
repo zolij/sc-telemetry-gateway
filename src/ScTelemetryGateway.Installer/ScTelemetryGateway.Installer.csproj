@@ -13,6 +13,7 @@
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../ScTelemetryGateway.Windows/InstallationChoiceFile.cs" Link="InstallationChoiceFile.cs" />
     <EmbeddedResource Include="$(InstallerPayload)" LogicalName="VelopackSetup.exe" />
   </ItemGroup>
   <Target Name="ValidateInstallerPayload" BeforeTargets="PrepareForBuild">

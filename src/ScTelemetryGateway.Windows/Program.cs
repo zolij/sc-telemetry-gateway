@@ -22,8 +22,7 @@ internal static class Program
         try
         {
             using var context = new TrayContext(args.Contains("--smoke-test", StringComparer.Ordinal) ||
-                Environment.GetEnvironmentVariable("SCTG_INSTALLER_TEST") == "1",
-                installationUsageChoice: InstallationUsageChoice.Parse(args));
+                Environment.GetEnvironmentVariable("SCTG_INSTALLER_TEST") == "1");
             Application.Run(context);
             return 0;
         }

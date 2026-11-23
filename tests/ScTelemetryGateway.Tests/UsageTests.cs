@@ -8,14 +8,21 @@ namespace ScTelemetryGateway.Tests;
 public sealed class UsageTests
 {
     [Fact]
-    public void InstallationChoiceIsExplicitAndRejectsInvalidOrDuplicateValues()
+    public void InstallationChoiceFilePersistsAndRejectsInvalidValues()
     {
-        Assert.Null(InstallationUsageChoice.Parse([]));
-        Assert.True(InstallationUsageChoice.Parse(["--installation-usage-statistics=enabled"]));
-        Assert.False(InstallationUsageChoice.Parse(["--installation-usage-statistics=disabled"]));
-        Assert.Throws<ArgumentException>(() => InstallationUsageChoice.Parse(["--installation-usage-statistics=other"]));
-        Assert.Throws<ArgumentException>(() => InstallationUsageChoice.Parse(
-            ["--installation-usage-statistics=enabled", "--installation-usage-statistics=disabled"]));
+        var directory = Path.Combine(Path.GetTempPath(), "sctg-choice-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "choice");
+        try
+        {
+            Assert.Null(InstallationChoiceFile.Read(path));
+            InstallationChoiceFile.Write(path, true);
+            Assert.True(InstallationChoiceFile.Read(path));
+            InstallationChoiceFile.Write(path, false);
+            Assert.False(InstallationChoiceFile.Read(path));
+            File.WriteAllText(path, "invalid");
+            Assert.Throws<InvalidDataException>(() => InstallationChoiceFile.Read(path));
+        }
+        finally { Clean(directory); }
     }
 
     [Theory]
