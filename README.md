@@ -167,7 +167,7 @@ Observations are correlations, not proof that a command caused a state change.
 Combined cards show values and controls together, with shared availability
 warnings and separate feedback for each control. Existing combined profiles
 also use this compact display. The built-in templates use short control labels
-and show Boolean state as On/Off or Active/Inactive.
+and show Boolean state as On/Off or Active/Inactive in automatic format.
 
 The editor lists known controls by category even when the game is unavailable.
 The library includes a documented PTU snapshot and controls learned from the

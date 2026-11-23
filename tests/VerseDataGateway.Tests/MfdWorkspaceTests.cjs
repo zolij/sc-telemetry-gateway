@@ -38,7 +38,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false, actionsOnly = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -118,6 +118,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       if (twoActions) remote.pages[0].tiles[0].components.push({
         ...control, id: "092eb896-64a8-457b-8ec6-05c8765c368f", label: "Other", action: "v_other"
       });
+      if (actionsOnly) remote.pages[0].tiles[0].components.shift();
     }
   }
   const summaryStatuses = [];
@@ -383,6 +384,17 @@ test("built-in boolean states remain distinct from unavailable values", async ()
   snapshot.fields[path].value = null;
   view.workspace.paint(snapshot, true, 0, () => "");
   assert.equal(value.textContent, "Unknown");
+  await view.element("edit-profile").click();
+  const editorGroup = view.element("custom-cards").children[1];
+  const setup = editorGroup.children[2].children[0].children.at(-1).children.find(button => button.textContent === "SETUP");
+  await setup.click();
+  view.element("tile-format").value = "number";
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
+  await view.element("save-profile").click();
+  snapshot.fields[path].value = true;
+  view.workspace.paint(snapshot, true, 0, () => "");
+  assert.equal(view.element("custom-cards").children[1].children[1].children[0].children[0].textContent, "Yes");
 });
 
 test("combined controls and telemetry update independently", async () => {
@@ -421,6 +433,24 @@ test("combined controls show shared and individual unavailability without losing
   assert.doesNotMatch(group.children[2].textContent, /GAME DISCONNECTED/);
   await first.children[0].click();
   assert.match(first.children[2].textContent, /ACCEPTED/);
+});
+
+test("action-only combined cards retain unknown-outcome feedback after a refresh", async () => {
+  const view = await fixture({ mappedAction: true, combined: true, actionsOnly: true });
+  let group = view.element("custom-cards").children[0];
+  view.workspace.paint({ selected_fields: [], fields: {} }, false, 0, () => "");
+  assert.match(group.children[2].textContent, /GAME DISCONNECTED/);
+  view.workspace.paint({ selected_fields: [], fields: {} }, true, 0, () => "");
+  const blocked = view.blockNextAction(true);
+  const pending = group.children[1].children[0].children[0].click();
+  await blocked.waiting;
+  view.changeActionCatalog();
+  await view.poll();
+  group = view.element("custom-cards").children[0];
+  assert.equal(group.children[1].children[0].children[2].textContent, "SENDING");
+  blocked.release();
+  await pending;
+  assert.match(group.children[1].children[0].children[2].textContent, /may have executed.*check the game/);
 });
 
 test("import rejects invalid tile properties before sending them to the PC", async () => {

@@ -413,7 +413,8 @@ const MfdWorkspace = (() => {
       } else {
         const preset = parent && presets.find(item => item.label === parent.label && item.field === tile.field);
         const booleanLabels = preset && presetBooleanLabels[preset.label];
-        value.textContent = rule?.label ?? (tile.widget === "value" && booleanLabels && typeof field.value === "boolean"
+        value.textContent = rule?.label ?? (tile.widget === "value" && (!tile.format || tile.format === "auto") &&
+          booleanLabels && typeof field.value === "boolean"
           ? booleanLabels[field.value ? 0 : 1]
           : MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type));
         delete value.dataset.signature;
