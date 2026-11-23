@@ -67,6 +67,70 @@ The analysis counts a field at most once per frame, even when it occurs in
 multiple repeated entries. The raw protobuf payload, not a JSON conversion, was
 used to determine presence. Receive times are local and are not game timestamps.
 
+## Action and stream observations
+
+On 2026-11-23, PTU `5.0.202.10025` was tested directly through the local game
+gRPC service. The test did not exercise gateway authorization, pairing, field
+selection or MFD clients. The game advertised 112 actions; all but `v_eject`,
+`v_emergency_exit` and `v_self_destruct` were sent once, without `hold_ms`.
+The 109 requests were sequential, with about two seconds of stream observation
+after each. The 221.11-second recording contained 4,268 frames, all with actor
+locomotion `SEATED`, `vehicle` and `weapons`. All responses had an empty
+`message`:
+
+| Response | Count | Actions |
+|---|---:|---|
+| `OK` | 59 | All attempted actions except those listed below |
+| `FAILED` | 9 | `v_close_all_doors`, `v_open_all_doors`, `v_lock_all_doors`, `v_unlock_all_doors`, `v_toggle_all_doors`, `v_toggle_all_doorlocks`, `v_lock_all_ports`, `v_unlock_all_ports`, `v_toggle_all_portlocks` |
+| `FILTERED` | 3 | `v_enter_remote_turret_1`, `v_enter_remote_turret_2`, `v_enter_remote_turret_3` |
+| `MAP_INACTIVE` | 38 | All four `player` actions and all 34 `player_emotes` actions in the catalogue below |
+
+After the user manually left the seat, the 38 inactive actions were retried,
+emotes first and then `player` actions, without `hold_ms`. This 78.48-second
+recording contained 1,515 frames, all with actor locomotion `ON_FOOT`; only
+the `actor` section was observed. All 34 emotes, `mobiglas`,
+`toggle_flashlight` and `v_starmap` returned `OK`; `visor_wipe` returned
+`FILTERED`. All response messages were empty. Neither recording contained an
+`events` section. The previously observed 500 ms `v_invoke_ping` hold was a
+separate test, not part of these two runs.
+
+Notable decoded changes during the seated actions' observation windows were:
+
+| Actions | Observed telemetry changes |
+|---|---|
+| `v_lights`, `v_lights_off`, `v_lights_on` | `vehicle.state.lights_enabled`: false → true, true → false, false → true respectively |
+| `v_deploy_landing_system`, `v_retract_landing_system` | `vehicle.state.flight.state.gear`: RETRACTED → DEPLOYING and DEPLOYED → RETRACTING respectively |
+| `v_flight_advanced_hud_on`, `v_flight_advanced_hud_toggle` | `advanced_hud_enabled_scm`: false → true and true → false |
+| `v_ifcs_gsafe_off`, `v_ifcs_gsafe_on`, `v_ifcs_toggle_gforce_safety` | `ifcs_g_safe.enabled` and `.active`: true → false, false → true, true → false respectively |
+| `v_ifcs_proximity_assist_toggle` | `ifcs_proximity_assist.enabled`: true → false |
+| `v_ifcs_vector_decoupling_off`, `_on`, `_toggle` | `ifcs_coupled.enabled` and `.active`: true → false, false → true, true → false respectively |
+| `v_master_mode_cycle`, `v_master_mode_set_scm` | `master_mode.mode`: SCM → NAVIGATION and NAVIGATION → SCM respectively; shield power and annunciators also changed |
+| `v_power_set_off`, `v_power_set_on`, `v_power_toggle` | Several `vehicle.state.power` fields, annunciators and weapon power/readiness changed |
+| `v_power_set_shields_off`, `_on` | Shield generator/emitter power and shield annunciator changed |
+| `v_power_set_weapons_off`, `_on`, `v_power_toggle_weapons` | Weapon power and the two observed weapons' power/readiness changed |
+| `v_light_amplification_on`, `_toggle` | `flight_light_amplification`: false → true and true → false |
+| `v_operator_mode_cycle_back`, `_forward`, `v_set_scan_mode` | Both observed weapons' `ready_to_fire` changed; the schema has no separate operator-mode state |
+
+Unqualified field names in the table are under `vehicle.state.flight.settings`,
+except `master_mode.mode`, which is under `vehicle.state`. During the on-foot
+run, no discrete decoded field changes were observed in the action windows;
+actor hunger, thirst and heart rate changed throughout both runs. Other numeric
+fields also changed in some seated windows. These values can change naturally,
+so they cannot be attributed to an action merely from timing.
+
+The table reports time correlation, **not proof of causation**: adjacent actions
+can have delayed effects. For example, gear DEPLOYING → DEPLOYED occurred during
+the subsequent `v_ifcs_gsafe_off` window, and gear RETRACTING → RETRACTED
+occurred during `v_transform_retract`. A response of `OK` does not prove a
+visible or persistent state change; an unchanged decoded field does not prove
+the action did nothing. Values were compared when the same decoded field was
+available in successive section snapshots; absent messages and repeated-entry
+additions/removals are not interpreted as value changes. Ordinary proto3
+scalars decode to defaults when omitted, so a decoded `false` is not proof of
+an explicitly transmitted false value. Empty response messages do not explain
+the `FAILED` or `FILTERED` results. The raw recordings remain local because
+they may contain player and vehicle data.
+
 ## Developer terminal viewer
 
 For local development, run the separate terminal tool from the repository root:
@@ -373,8 +437,8 @@ spaceship_target_hailing (1)
   v_target_hail
 ```
 
-In live tests, vehicle lights on/off and a 500 ms radar ping were exercised;
-listing the other entries does not verify their behavior. The game controls
-permission and other operational constraints are described in the
+For live test results and their limitations, see
+[Action and stream observations](#action-and-stream-observations). The game
+controls permission and other operational constraints are described in the
 [setup guide](../README.md#windows-quick-start) and
 [gateway protocol](PROTOCOL.md#game-controls).
