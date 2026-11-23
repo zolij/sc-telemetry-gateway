@@ -33,8 +33,15 @@ dotnet vpk pack --packId Spaceling.StarCitizenTelemetryGateway --packVersion $Ve
     --packDir $PublishDirectory --outputDir $OutputDirectory --channel $Channel --runtime win-x64 `
     --packTitle 'Star Citizen Telemetry Gateway' --packAuthors 'Star Citizen Telemetry Gateway contributors' `
     --mainExe StarCitizenTelemetryGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
-    --instLicense LICENSE --instReadme docs/INSTALLATION.md --noPortable --delta None --skip-updates
+    --noPortable --delta None --skip-updates
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }
+$setups = @(Get-ChildItem (Join-Path $OutputDirectory '*Setup.exe'))
+if ($setups.Count -ne 1) { throw 'Expected exactly one Velopack installer.' }
+dotnet publish src/ScTelemetryGateway.Installer -c Release -r win-x64 `
+    -o artifacts/installer-wrapper "-p:Version=$Version" "-p:InstallerPayload=$($setups[0].FullName)" `
+    -p:RestoreLockedMode=true
+if ($LASTEXITCODE -ne 0) { throw 'Installer wrapper publish failed.' }
+Copy-Item artifacts/installer-wrapper/StarCitizenTelemetryGateway.Installer.exe $setups[0].FullName -Force
 if ($Channel -eq 'win') {
     Copy-Item (Join-Path $OutputDirectory 'releases.win.json') (Join-Path $OutputDirectory 'releases.preview.json') -Force
 }

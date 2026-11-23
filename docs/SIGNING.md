@@ -39,11 +39,8 @@ This is the proposed credit, not a claim that the project has been accepted.
 
 - Confirm whether the single maintainer can hold all proposed roles.
 - Confirm whether the Velopack-generated Setup is eligible for signing.
-- The current Windows Setup is a one-click installer. The usage statistics
-  notice and Yes/No choice appear on first launch, before any report, not
-  during installation. Confirm whether this meets the provider's installation
-  notice and disable-option requirements; otherwise change the installer before
-  enabling signing.
+- Confirm that the installer's privacy notice and statistics checkbox satisfy
+  the installation notice and disable-option requirements.
 
 ## Repository setup after approval
 
@@ -53,8 +50,9 @@ configurations with explicit PE file paths:
 
 1. Application: `StarCitizenTelemetryGateway.exe`,
    `StarCitizenTelemetryGateway.dll`, `ScTelemetryGateway.Core.dll`.
-2. Installer: the single `*Setup.exe` produced by Velopack. Confirm with
-   SignPath that its provenance and use of the Velopack installer are eligible.
+2. Installer: the single `*Setup.exe` produced by the project, containing the
+   Velopack installer. Confirm with SignPath that its provenance and use of the
+   Velopack installer are eligible.
 
 Configure SignPath file metadata restrictions to enforce the product name
 `Star Citizen Telemetry Gateway` and the same product version for all signed
@@ -93,8 +91,9 @@ never marked latest, and uses the `preview` feed. With signing enabled, the
 version must be stable `X.Y.Z` and uses the `win` feed. Existing release
 versions must not be overwritten.
 
-The workflow signs only project-owned binaries first, then packages them,
-then separately signs the final Setup. It verifies Windows trust, an approved
+The workflow signs only project-owned binaries first, then packages them in
+Velopack and a project-owned installer, then separately signs the final Setup.
+It verifies Windows trust, an approved
 certificate thumbprint, timestamp, product/version metadata, and the unchanged
 signed project binaries inside the full update package. The package is not
 modified after Velopack calculates update checksums. Installer checksums are

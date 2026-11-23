@@ -45,6 +45,12 @@ function Run-App([string[]]$AppArguments) {
     if ($process.ExitCode -ne 0) { throw "Installed application exited with $($process.ExitCode)." }
 }
 try {
+    $uiTest = Start-Process (Resolve-Path $Installer).Path -ArgumentList '--privacy-ui-smoke-test' -PassThru
+    if (-not $uiTest.WaitForExit(30000)) {
+        Stop-Process -Id $uiTest.Id
+        throw 'Installer privacy dialog test timed out.'
+    }
+    if ($uiTest.ExitCode -ne 0) { throw 'Installer privacy dialog did not preserve both choices.' }
     $process = Start-Process (Resolve-Path $Installer).Path -ArgumentList '--silent' -PassThru
     if (-not $process.WaitForExit(60000)) {
         Stop-Process -Id $process.Id

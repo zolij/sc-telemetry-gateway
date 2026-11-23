@@ -18,6 +18,19 @@ public sealed class UsageTests
             ["--installation-usage-statistics=enabled", "--installation-usage-statistics=disabled"]));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InstallationChoicePersistsWithoutChangingOtherSettings(bool enabled)
+    {
+        var existing = new GatewayOptions { GamePort = 12345 };
+        var updated = InstallationUsageChoice.Apply(existing, enabled);
+        var restored = JsonSerializer.Deserialize<GatewayOptions>(JsonSerializer.Serialize(updated, WireJson.Options), WireJson.Options)!;
+        Assert.Equal(enabled, restored.UsageStatisticsEnabled);
+        Assert.True(restored.UsageNoticeShown);
+        Assert.Equal(12345, restored.GamePort);
+    }
+
     [Fact]
     public void ExistingSettingsRequireNoticeAndPersistDisabledChoice()
     {

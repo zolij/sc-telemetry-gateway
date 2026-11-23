@@ -1,3 +1,5 @@
+using ScTelemetryGateway.Core;
+
 namespace ScTelemetryGateway.Windows;
 
 internal static class InstallationUsageChoice
@@ -20,4 +22,7 @@ internal static class InstallationUsageChoice
         }
         return choice;
     }
+
+    public static GatewayOptions Apply(GatewayOptions options, bool choice) =>
+        options with { UsageStatisticsEnabled = choice, UsageNoticeShown = true };
 }

@@ -49,7 +49,7 @@ internal sealed class TrayContext : ApplicationContext
         (options, key) = store.Load();
         if (!smokeTest && installationUsageChoice.HasValue)
         {
-            options = options with { UsageStatisticsEnabled = installationUsageChoice.Value, UsageNoticeShown = true };
+            options = InstallationUsageChoice.Apply(options, installationUsageChoice.Value);
             store.Save(options, key);
         }
         else if (!smokeTest && !options.UsageNoticeShown)

@@ -13,7 +13,7 @@ Use the `Setup.exe` asset from the project's GitHub Releases page. A preview
 release is explicitly labelled **UNSIGNED PREVIEW** until trusted code signing
 has been approved. Do not treat a checksum as a publisher signature.
 
-Close any running portable copy first. Setup installs for the current Windows
+Close any running copy first. Setup installs for the current Windows
 user under `%LOCALAPPDATA%\Spaceling.StarCitizenTelemetryGateway`, creates a Start
 menu shortcut and an uninstall entry, and does not require elevation. There is
 no system service or automatic startup with Windows.
@@ -26,10 +26,12 @@ fields and enable local MFD access; then start collection and pair your display
 from the dashboard. Local traffic is unencrypted. Remote upload is optional and
 has its own field selection. Neither destination starts automatically.
 
-On the first launch after installing or upgrading to a version with usage
-statistics, a separate notice asks whether to send application usage statistics.
-The default choice is enabled. Choose **No** to disable them before the first
-report, or change the setting later in **Settings > Privacy**. See
+Before installing, Setup explains application usage statistics and offers a
+checkbox to disable them. The default choice is enabled. Clear **Send
+application usage statistics** to disable them before the first report, or
+change the setting later in **Settings > Privacy**. Portable copies, silent
+installations and upgrades from versions without the notice ask on first
+launch instead; choose **No** to disable reporting. See
 [usage statistics](USAGE-STATISTICS.md) for the transmitted fields, Cloudflare
 processing and retention. This does not start game telemetry collection.
 

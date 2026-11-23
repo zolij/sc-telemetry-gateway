@@ -216,9 +216,11 @@ never auto-install on startup. Unsigned preview updates require an explicit
 Settings opt-in. See [installation and update privacy](docs/INSTALLATION.md)
 and the [Code signing policy](docs/SIGNING.md).
 
-The application also asks on first launch whether to send usage statistics.
-The default choice is enabled; select **No** or turn off **Send application
-usage statistics** in Settings > Privacy to disable it. When enabled, it sends
+The installer asks whether to send usage statistics before installation.
+Portable copies and silent installations ask on first launch instead.
+The default choice is enabled; clear **Send application usage statistics**
+in the installer, select **No** at first launch, or turn it off in
+Settings > Privacy to disable it. When enabled, it sends
 a random installation ID, app version and collection-running state to the
 project's Cloudflare-hosted usage service. No game telemetry, receiver URL or
 API key is included. Cloudflare sees network metadata, including IP addresses.
