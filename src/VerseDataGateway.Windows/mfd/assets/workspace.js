@@ -150,7 +150,7 @@ const MfdWorkspace = (() => {
       notice(error.message, true);
       if (error.status === 412 && draft) $("conflict-actions").hidden = false;
     } finally {
-      busy = false; controls();
+      busy = false; controls(); repaint?.();
       if (focusTile && focusLabel && !$("tile-dialog").open)
         $("custom-cards").querySelector(`[data-tile-id="${CSS.escape(focusTile)}"] [aria-label="${CSS.escape(focusLabel)}"]`)?.focus();
     }
@@ -257,7 +257,13 @@ const MfdWorkspace = (() => {
             const row = node("section", "power-row");
             row.append(node("span", "instrument-label", title));
             const values = node("div", "power-values");
-            for (const field of fields) values.append(renderCard(tile.components.find(child => child.field === field), tile));
+            for (const field of fields) {
+              const child = tile.components.find(item => item.field === field);
+              const valueCard = renderCard(child, tile);
+              if (fields.length === 1 && child.label.trim().toLowerCase() === title.toLowerCase())
+                valueCard.classList.add("power-single-value");
+              values.append(valueCard);
+            }
             row.append(values, renderCard(tile.components.find(child => child.action === action), tile));
             components.append(row);
           }

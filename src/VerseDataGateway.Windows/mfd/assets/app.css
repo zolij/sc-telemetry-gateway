@@ -105,7 +105,9 @@ h1 span { color: var(--accent); }
 .power-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; width: 100%; }
 .power-row { display: flex; flex-direction: column; min-width: 0; gap: 8px; padding: 10px; border-left: 2px solid var(--line); background: #101c16; }
 .power-values { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.power-values .combined-component { flex: 0 0 auto; }
 .power-values .instrument-label { font-size: 9px; }
+.power-single-value > .instrument-label { display: none; }
 .power-row > .combined-component[data-widget="action"] { flex: 0 0 auto; }
 .editing .combined-component { padding: 8px; border: 1px dashed var(--line); }
 .editing .combined-component .tile-controls { margin-top: 8px; }

@@ -265,6 +265,13 @@ test("action tile sends a bounded command only when online and reports acceptanc
   assert.equal(button.disabled, true);
 });
 
+test("available controls are re-enabled after a profile operation without another telemetry frame", async () => {
+  const view = await fixture({ withAction: true });
+  const button = view.element("custom-cards").children[0].children[3];
+  assert.equal(button.disabled, false);
+  assert.equal(button.title, "");
+});
+
 for (const fail of [false, true]) {
   test(`action feedback survives navigation and polling rebuilds (${fail ? "unknown outcome" : "accepted"})`, async () => {
     const view = await fixture({ withAction: true });
