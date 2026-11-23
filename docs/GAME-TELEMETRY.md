@@ -5,14 +5,18 @@ the gateway's [MFD and receiver APIs](PROTOCOL.md). The repository's
 [`api.proto`](../proto/sc/game/telemetry/v1/api.proto) and
 [`types.proto`](../proto/sc/game/telemetry/v1/types.proto) are reconstructed
 from descriptors embedded in the game executable, not official source files
-or an SDK. They are the authoritative field-by-field reference for this
+or an SDK. They are the field-by-field reference for this
 project; this document is a navigable summary, not an independent schema.
 
-The telemetry definitions were recovered from PTU `5.0.202.205` (changelist
-`13238477`), and the action RPC definitions from PTU `5.0.202.10025`
-(changelist `13248297`). Do not assume the older telemetry schema is an
-exhaustive description of newer builds. Recheck the embedded descriptors and
-test against the running game after an update. See [NOTICE](../NOTICE).
+The installed PTU manifest reports `5.0.202.10025` (changelist `13248297`,
+build date 2026-11-20). On 2026-11-23 both repository definitions were checked
+against the corresponding descriptors embedded in that build's
+`Bin64/StarCitizen.exe`. Package, syntax, imports, message and nested enum
+definitions, field names, numbers, types, labels and explicit presence,
+reserved ranges and names, enum values, and service method input/output and
+streaming flags matched. This comparison does not establish runtime semantics
+or compatibility with other builds. Recheck descriptors and test against the
+running game after an update. See [NOTICE](../NOTICE).
 
 ## Service and wire contract
 

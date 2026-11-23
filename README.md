@@ -23,12 +23,12 @@ permitted by law. See the [disclaimer](docs/DISCLAIMER.md).
 ## Compatibility
 
 The application targets **PTU only**; LIVE is unsupported. The PTU installation
-checked on November 22, 2026 reported build `5.0.202.10025` (changelist
-`13248297`; manifest dated November 20, 2026). The build-specific telemetry
-mapping was recovered from PTU `5.0.202.205` (changelist `13238477`), and
-the action RPC definitions from the checked PTU build. Neither is an official
-or stable SDK. Compatibility with other builds, game terms, or
-anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
+checked on November 23, 2026 reported build `5.0.202.10025` (changelist
+`13248297`; manifest dated November 20, 2026). The reconstructed telemetry
+and action definitions were checked against the descriptors embedded in that
+build. They are not an official or stable SDK. Compatibility with other builds,
+game terms, or anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for
+provenance.
 For the recovered game-side schema, see the
 [PTU telemetry protocol reference](docs/GAME-TELEMETRY.md).
 

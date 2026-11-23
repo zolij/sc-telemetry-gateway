@@ -5,11 +5,9 @@ This is an independent community project, not affiliated with, endorsed by,
 sponsored by, or supported by Cloud Imperium Games.
 Star Citizen and related marks belong to their respective owners.
 
-The telemetry protocol definitions describe an interoperability interface
-recovered from embedded descriptors in Star Citizen PTU 5.0.202.205,
-changelist 13238477, through the author's sctelemetrypoc research project.
-The game-action RPC definitions were recovered from embedded descriptors in
-Star Citizen PTU 5.0.202.10025, changelist 13248297.
+The telemetry protocol definitions describe a reconstructed interoperability
+interface checked against embedded descriptors in Star Citizen PTU
+5.0.202.10025, changelist 13248297.
 They are not an official SDK or a representation of permission from the game
 publisher. This project's license does not grant rights to third-party game
 assets or trademarks. No game binaries or live gameplay logs are distributed.
