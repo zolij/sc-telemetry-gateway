@@ -244,7 +244,9 @@ The editor requests confirmation before moving an assigned event to another
 page, and cancelling leaves both pages unchanged. Moves are draft changes
 until saved; no game commands or subscription changes are sent.
 
-The browser has no built-in layouts. Named, multi-page profiles are separate
+The browser has no built-in layouts. The editor offers optional combined-card
+templates based on observed PTU correlations, not proof of causation.
+Named, multi-page profiles are separate
 from the telemetry snapshot and the gateway's field allowlist. Profile editing
 does not change subscriptions, enable fields or send game commands.
 
@@ -382,10 +384,16 @@ page and tile IDs and starts the revision at 1. Names and tile labels contain
 with 0–64 tiles; at most 32 profiles can be stored.
 
 Widgets are `value` or `status` for scalar fields, `list` for repeated fields,
-and `action` for a standalone control. An action tile has an empty `field` and
+`action` for a standalone control, and `combined` for a card containing 1–16
+ordered `components`. A combined card has an empty `field`, no action or rules,
+and components use the same schema as individual non-combined tiles. Nested
+combined cards are not supported. Component IDs are unique within the profile.
+An action tile has an empty `field` and
 one `action` name; telemetry tiles cannot have an action. Optional `hold_ms`
 is bounded as described above. Saved actions that are absent from the current
 game catalogue remain in the profile but cannot be triggered.
+Older gateway versions do not recognize combined cards and cannot open profiles
+containing them; export a backup before downgrading.
 Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive
 width clamping. Decimal precision is 0–6; int64/uint64 wire strings are not
 converted to imprecise JavaScript numbers. A status tile can have at most 32

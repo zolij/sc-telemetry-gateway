@@ -42,7 +42,7 @@ public sealed class MfdProfileStore(string directory)
                 Pages = draft.Pages.Select(page => page with
                 {
                     Id = Guid.NewGuid(),
-                    Tiles = page.Tiles.Select(tile => tile with { Id = Guid.NewGuid() }).ToArray()
+                    Tiles = page.Tiles.Select(NewTileIds).ToArray()
                 }).ToArray()
             };
             profile.Validate();
@@ -137,4 +137,10 @@ public sealed class MfdProfileStore(string directory)
     private static T Copy<T>(T value) =>
         JsonSerializer.Deserialize<T>(JsonSerializer.SerializeToUtf8Bytes(value, WireJson.Options), WireJson.Options)
         ?? throw new JsonException("Profile copy cannot be null.");
+
+    private static MfdTile NewTileIds(MfdTile tile) => tile with
+    {
+        Id = Guid.NewGuid(),
+        Components = tile.Components?.Select(NewTileIds).ToArray()
+    };
 }

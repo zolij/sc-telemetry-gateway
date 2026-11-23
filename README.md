@@ -158,10 +158,17 @@ handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
 values to your own labels and a fixed color palette. No graphs or arbitrary
 formulas are included; measurement units are not inferred.
 
+Use **COMBINE** on a tile to turn it into a combined card, then select that card
+to add more library items, or move existing tiles into it. Each card can contain
+up to 16 independently configured values, status indicators, lists and controls.
+The library also offers editable combined templates for observed relationships.
+Templates do not enable fields; unavailable components remain visible.
+Observations are correlations, not proof that a command caused a state change.
+
 The editor lists known controls by category even when the game is unavailable.
 The library includes a documented PTU snapshot and controls learned from the
-game; it may be outdated and does not authorize actions. Each tile either
-displays one telemetry field or triggers one game action. Controls with known
+game; it may be outdated and does not authorize actions. Individual components
+either display one telemetry field or trigger one game action. Controls with known
 field associations require at least one associated field to be shared in PC MFD
 settings. Vehicle lights on/off were verified against live PTU telemetry;
 other field associations are based on names and marked as not live-verified.

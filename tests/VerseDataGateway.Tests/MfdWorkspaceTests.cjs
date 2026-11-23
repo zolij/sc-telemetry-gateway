@@ -17,13 +17,13 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
     return {
       children: [], dataset: {}, value: "", hidden: false, disabled: false, textContent: "", listeners: new Map(),
-      classList: { toggle() {} },
+      classList: { toggle() {}, add() {}, remove() {} },
       append(...items) { this.children.push(...items); },
       replaceChildren(...items) { this.children = items; },
       get childElementCount() { return this.children.length; },
@@ -56,6 +56,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   };
   let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, blockedAction = null, profileReads = 0;
   const actionRequests = [];
+  const savedBodies = [];
   const shieldPower = "vehicle.state.power.shield_generators";
   const shieldLevel = "vehicle.state.shields.level";
   const fields = mappedAction ? [
@@ -79,6 +80,18 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       action: mappedAction ? "v_power_toggle_shields" : "v_invoke_ping",
       ...(!mappedAction ? { hold_ms: 500 } : {})
     });
+    if (combined) {
+      const control = remote.pages[0].tiles[0];
+      remote.pages[0].tiles = [{
+        id: "14a8e3ae-a346-4d86-bdc0-58d0db8984e4", field: "", label: "Shields",
+        widget: "combined", size: "wide", decimals: 2, format: "auto", rules: [],
+        components: [
+          { id: "8bf4dcd1-f27e-48dd-8804-b707b01ec8ba", field: shieldPower, label: "Power",
+            widget: "value", size: "normal", decimals: 2, format: "auto", rules: [] },
+          control
+        ]
+      }];
+    }
   }
   const summaryStatuses = [];
   const response = (status, data, etag = null) => ({
@@ -117,6 +130,12 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
         return response(status, remote ? [{ id: remote.id, name: remote.name, revision: remote.revision }] : [], etag);
       }
       assert.equal(url, "/api/mfd/profiles/ship");
+      if (options.method === "PUT") {
+        const body = JSON.parse(options.body);
+        savedBodies.push(body);
+        remote = { ...body, revision: body.revision + 1 };
+        return response(200, remote);
+      }
       if (options.method === "DELETE") {
         assert.equal(options.headers["If-Match"], '"' + remote.revision + '"');
         remote = null;
@@ -151,7 +170,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
   await workspace.start();
   assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
-    workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
+    workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests, savedBodies,
     setActions: value => { actionCatalog = value; },
     changeActionCatalog: () => { actionCatalog = actionCatalog.map(action => ({ ...action, mapping_verified: true })); },
     update: () => { remote = profile(2); },
@@ -265,6 +284,58 @@ test("the editor keeps mapped controls and telemetry on separate tiles", async (
   assert.equal(view.element("tile-action").disabled, true);
   assert.ok(view.element("tile-widget").options.find(option => option.value === "action").disabled);
   assert.deepEqual(view.actionRequests, []);
+});
+
+test("the editor combines existing tiles and adds a field without triggering controls", async () => {
+  const view = await fixture({ mappedAction: true });
+  await view.element("edit-profile").click();
+  const actionCard = view.element("custom-cards").children[0];
+  const combine = actionCard.children.at(-1).children.find(button => button.textContent === "COMBINE");
+  await combine.click();
+  let group = view.element("custom-cards").children[0];
+  assert.equal(group.dataset.widget, "combined");
+  assert.equal(group.children[2].children.length, 1);
+  view.element("field-results").children[0].children[1].click();
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
+  group = view.element("custom-cards").children[0];
+  assert.equal(group.children[2].children.length, 2);
+  await view.element("save-profile").click();
+  assert.equal(view.savedBodies[0].pages[0].tiles[0].components.length, 2);
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("the lights template includes the observed field and controls even if unselected", async () => {
+  const view = await fixture({ withAction: true, gameUnavailable: true });
+  await view.element("edit-profile").click();
+  const template = view.element("preset-results").children[1];
+  assert.equal(template.children[0].textContent, "Vehicle lights");
+  template.click();
+  await view.element("save-profile").click();
+  const group = view.savedBodies[0].pages[0].tiles[1];
+  assert.equal(group.widget, "combined");
+  assert.equal(group.components[0].field, "vehicle.state.lights_enabled");
+  assert.deepEqual(group.components.slice(1).map(item => item.action), ["v_lights", "v_lights_on", "v_lights_off"]);
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("combined controls and telemetry update independently", async () => {
+  const view = await fixture({ mappedAction: true, combined: true });
+  const group = view.element("custom-cards").children[0];
+  const [value, action] = group.children[1].children;
+  const snapshot = {
+    selected_fields: ["vehicle.state.power.shield_generators"],
+    fields: { "vehicle.state.power.shield_generators": { value: true, age_ms: 0, last_known: false } }
+  };
+  view.workspace.paint(snapshot, true, 0, () => "now");
+  assert.equal(value.children[1].textContent, "Yes");
+  assert.equal(action.children[3].disabled, false);
+  await action.children[3].click();
+  assert.equal(view.actionRequests.length, 1);
+  assert.match(action.children[5].textContent, /ACCEPTED/);
+  view.workspace.paint(snapshot, false, 0, () => "now");
+  assert.equal(action.children[3].disabled, true);
+  assert.equal(value.dataset.state, "offline");
 });
 
 test("import rejects invalid tile properties before sending them to the PC", async () => {

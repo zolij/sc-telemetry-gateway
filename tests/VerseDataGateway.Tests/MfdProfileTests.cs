@@ -36,6 +36,48 @@ public sealed class MfdProfileTests : IDisposable
     }
 
     [Fact]
+    public void CombinedTilesRoundTripAndRejectInvalidComponents()
+    {
+        var draft = Draft();
+        var value = draft.Pages[0].Tiles[0];
+        var action = value with { Id = Guid.NewGuid(), Field = "", Widget = "action", Action = "v_lights_on" };
+        var combined = value with { Id = Guid.NewGuid(), Field = "", Label = "Controls", Widget = "combined",
+            Components = [value, action] };
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [combined] }] });
+        var restored = Store.Get(saved.Id)!.Pages[0].Tiles[0];
+        Assert.Equal(2, restored.Components!.Length);
+        Assert.NotEqual(value.Id, restored.Components[0].Id);
+        Assert.NotEqual(action.Id, restored.Components[1].Id);
+        Assert.Equal("v_lights_on", restored.Components[1].Action);
+        foreach (var invalid in new[]
+        {
+            combined with { Components = [] },
+            combined with { Components = [combined] },
+            combined with { Components = [value, value] },
+            combined with { Components = Enumerable.Range(0, 17).Select(_ => value with { Id = Guid.NewGuid() }).ToArray() },
+            combined with { Field = value.Field },
+            value with { Components = [action] }
+        })
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.lights_enabled", "v_lights_on")]
+    [InlineData("vehicle.state.flight.state.gear", "v_deploy_landing_system")]
+    [InlineData("vehicle.state.flight.settings.ifcs_g_safe.active", "v_ifcs_gsafe_on")]
+    [InlineData("vehicle.state.flight.settings.ifcs_coupled.active", "v_ifcs_vector_decoupling_on")]
+    [InlineData("vehicle.state.master_mode.mode", "v_master_mode_set_scm")]
+    [InlineData("vehicle.state.flight.settings.advanced_hud_enabled_scm", "v_flight_advanced_hud_on")]
+    [InlineData("vehicle.state.flight.settings.flight_light_amplification", "v_light_amplification_on")]
+    [InlineData("vehicle.state.power.weapons", "v_power_set_weapons_on")]
+    public void DocumentedTemplateFieldsAndActionsExist(string field, string action)
+    {
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+        Assert.Contains(field, MfdActions.FieldsForAction(action));
+        Assert.Contains(new MfdActionLibrary(root).List(new MfdSnapshotStore([])), item => item.ActionName == action);
+    }
+
+    [Fact]
     public void ActionTilesPersistAndRejectInvalidBindingsAndHolds()
     {
         var draft = Draft();

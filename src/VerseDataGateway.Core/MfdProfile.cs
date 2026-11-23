@@ -26,6 +26,8 @@ public sealed record MfdTile
     public string? Action { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public uint? HoldMs { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MfdTile[]? Components { get; init; }
 }
 
 public sealed record MfdPage
@@ -48,6 +50,7 @@ public sealed record MfdProfile
     public const int MaxProfiles = 32;
     public const int MaxPages = 16;
     public const int MaxTiles = 64;
+    public const int MaxComponents = 16;
     public const int MaxRequestBytes = 512 * 1024;
     public const int MaxStoreBytes = 16 * 1024 * 1024;
     public static IReadOnlyList<string> TriggerEvents { get; } = Array.AsReadOnly(
@@ -79,10 +82,27 @@ public sealed record MfdProfile
             if (page.Tiles is null || page.Tiles.Length > MaxTiles)
                 throw new ArgumentException($"Pages may contain at most {MaxTiles} tiles.");
             foreach (var tile in page.Tiles)
-            {
+                ValidateTile(tile, false);
+        }
+        if (JsonSerializer.SerializeToUtf8Bytes(this, WireJson.Options).Length > MaxRequestBytes)
+            throw new ArgumentException("Profile exceeds the 512 KiB size limit.");
+
+        void ValidateTile(MfdTile tile, bool component)
+        {
                 if (tile is null) throw new ArgumentException("Tiles cannot be null.");
                 Identity(tile.Id, ids);
                 Text(tile.Label, 80, "Tile label");
+                if (tile.Widget == "combined")
+                {
+                    if (component || tile.Field != "" || tile.Action is not null || tile.HoldMs is not null ||
+                        tile.Format is not ("auto" or "number") || tile.Rules is null || tile.Rules.Length != 0 ||
+                        tile.Size is not ("normal" or "wide" or "large") || tile.Decimals is < 0 or > 6 ||
+                        tile.Components is null || tile.Components.Length is < 1 or > MaxComponents)
+                        throw new ArgumentException("Invalid combined tile.");
+                    foreach (var child in tile.Components) ValidateTile(child, true);
+                    return;
+                }
+                if (tile.Components is not null) throw new ArgumentException("Only combined tiles can contain components.");
                 var actionOnly = tile.Widget == "action";
                 if (tile.Action is null && tile.HoldMs is not null ||
                     tile.Action is not null && !MfdActions.ValidName(tile.Action) ||
@@ -121,10 +141,7 @@ public sealed record MfdProfile
                     if (!values.Add(rule.Value) || rule.Color is not ("neutral" or "green" or "amber" or "red" or "blue"))
                         throw new ArgumentException("Status rules need unique values and a supported color.");
                 }
-            }
         }
-        if (JsonSerializer.SerializeToUtf8Bytes(this, WireJson.Options).Length > MaxRequestBytes)
-            throw new ArgumentException("Profile exceeds the 512 KiB size limit.");
     }
 
     private static void Text(string? value, int maximum, string label)
