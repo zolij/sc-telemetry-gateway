@@ -12,6 +12,13 @@ public sealed record MfdStatusRule
     public required string Color { get; init; }
 }
 
+public sealed record MfdControl
+{
+    public required string Action { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public uint? HoldMs { get; init; }
+}
+
 public sealed record MfdTile
 {
     public required Guid Id { get; init; }
@@ -26,6 +33,8 @@ public sealed record MfdTile
     public string? Action { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public uint? HoldMs { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MfdControl[]? Controls { get; init; }
 }
 
 public sealed record MfdPage
@@ -84,14 +93,20 @@ public sealed record MfdProfile
                 Identity(tile.Id, ids);
                 Text(tile.Label, 80, "Tile label");
                 var actionOnly = tile.Widget == "action";
-                if (tile.Action is not null && !MfdActions.ValidName(tile.Action) ||
-                    tile.HoldMs is 0 or > MfdActions.MaxHoldMilliseconds ||
-                    tile.Action is null && tile.HoldMs is not null)
-                    throw new ArgumentException("Invalid action or hold duration.");
+                if (tile.Controls is not null && (tile.Action is not null || tile.HoldMs is not null ||
+                    tile.Controls.Length is < 1 or > 64))
+                    throw new ArgumentException("Control groups require 1-64 controls and cannot contain a legacy action.");
+                var controls = tile.Controls ?? (tile.Action is null ? [] :
+                    [new MfdControl { Action = tile.Action, HoldMs = tile.HoldMs }]);
+                if (tile.Action is null && tile.HoldMs is not null ||
+                    controls.Any(control => control is null || !MfdActions.ValidName(control.Action) ||
+                        control.HoldMs is 0 or > MfdActions.MaxHoldMilliseconds) ||
+                    controls.Select(control => control.Action).Distinct(StringComparer.Ordinal).Count() != controls.Length)
+                    throw new ArgumentException("Invalid, duplicate action or hold duration.");
                 TelemetryField? field = null;
                 if (actionOnly)
                 {
-                    if (tile.Field != "" || tile.Action is null || tile.Format is not ("auto" or "number"))
+                    if (tile.Field != "" || controls.Length == 0 || tile.Format is not ("auto" or "number"))
                         throw new ArgumentException("An action tile requires an action and no telemetry field.");
                 }
                 else
@@ -101,7 +116,7 @@ public sealed record MfdProfile
                     if (tile.Widget is not ("value" or "status" or "list") ||
                         field.Repeated != (tile.Widget == "list"))
                         throw new ArgumentException("Widget is incompatible with the telemetry field.");
-                    if (tile.Action is not null && !MfdActions.FieldsForAction(tile.Action).Contains(tile.Field, StringComparer.Ordinal))
+                    if (controls.Any(control => !MfdActions.FieldsForAction(control.Action).Contains(tile.Field, StringComparer.Ordinal)))
                         throw new ArgumentException("The action does not match the telemetry field.");
                 }
                 if (tile.Size is not ("normal" or "wide" or "large") || tile.Decimals is < 0 or > 6)

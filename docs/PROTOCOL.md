@@ -374,7 +374,11 @@ with 0–64 tiles; at most 32 profiles can be stored.
 Widgets are `value` or `status` for scalar fields, `list` for repeated fields,
 and `action` for a standalone control. An action tile has an empty `field` and
 an `action` name; other widgets can use `action` only when it matches their
-field. Optional `hold_ms` is bounded as described above. Existing profiles
+field. Alternatively, `controls` is an array of 1–64 unique
+`{"action":"...", "hold_ms":500}` objects, with optional per-control `hold_ms`;
+it cannot be combined with the legacy `action` or `hold_ms` properties. Each
+control on a telemetry tile must match its field. Optional holds are bounded
+as described above. Existing profiles
 without these properties remain valid. Saved actions that are absent from the
 current game catalogue remain in the profile but cannot be triggered.
 Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive

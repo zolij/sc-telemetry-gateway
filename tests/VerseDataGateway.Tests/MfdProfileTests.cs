@@ -47,6 +47,32 @@ public sealed class MfdProfileTests : IDisposable
         JsonSerializer.Deserialize<MfdProfile>(legacy, WireJson.Options)!.Validate();
     }
 
+    [Fact]
+    public void ControlGroupsPersistAndValidateEachAction()
+    {
+        var draft = Draft();
+        var tile = draft.Pages[0].Tiles[0] with
+        {
+            Field = "vehicle.state.master_mode.mode",
+            Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_scm" }]
+        };
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] });
+        Assert.Equal(2, Store.Get(saved.Id)!.Pages[0].Tiles[0].Controls!.Length);
+        foreach (var invalid in new[]
+        {
+            tile with { Controls = [] },
+            tile with { Action = "v_master_mode_cycle" },
+            tile with { Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_nav" }] },
+            tile with { Controls = [new() { Action = "v_invoke_ping" }] },
+            tile with { Controls = [new() { Action = "v_master_mode_set_nav", HoldMs = 5001 }] },
+            tile with { Controls = Enumerable.Range(0, 65).Select(index => new MfdControl { Action = $"v_{index}" }).ToArray() }
+        })
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+        var standalone = tile with { Field = "", Widget = "action", Controls =
+            [new() { Action = "emote_wave" }, new() { Action = "v_invoke_ping", HoldMs = 500 }] };
+        (draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }).Validate();
+    }
+
     [Theory]
     [InlineData("v_toggle_landing_system", "vehicle.state.flight.state.gear")]
     [InlineData("v_open_all_doors", "vehicle.state.doors.open_state")]
