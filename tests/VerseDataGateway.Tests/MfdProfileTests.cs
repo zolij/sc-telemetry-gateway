@@ -36,6 +36,17 @@ public sealed class MfdProfileTests : IDisposable
     }
 
     [Fact]
+    public void ActionLibraryReportsCorruptStorageWithoutReplacingIt()
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "mfd-actions.json");
+        File.WriteAllText(path, "{invalid");
+        var library = new MfdActionLibrary(root);
+        Assert.Throws<InvalidDataException>(() => library.List(new MfdSnapshotStore([])));
+        Assert.Equal("{invalid", File.ReadAllText(path));
+    }
+
+    [Fact]
     public void CombinedTilesRoundTripAndRejectInvalidComponents()
     {
         var draft = Draft();

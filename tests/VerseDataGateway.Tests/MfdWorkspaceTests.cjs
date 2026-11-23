@@ -9,6 +9,27 @@ const assets = path.join(__dirname, "../../src/VerseDataGateway.Windows/mfd/asse
 const source = ["presentation.js", "triggers.js", "workspace.js"]
   .map(file => fs.readFileSync(path.join(assets, file), "utf8")).join("\n");
 const enter = "GAME_EVENT_TYPE_ACTOR_ENTER_SEAT";
+test("offline catalog matches the documented PTU snapshot", () => {
+  const docs = fs.readFileSync(path.join(__dirname, "../../docs/GAME-TELEMETRY.md"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "../../src/VerseDataGateway.Core/MfdActionLibrary.cs"), "utf8");
+  const documented = docs.split("## Observed action catalogue (not part of the proto)")[1]
+    .split("```text")[1].split("```")[0];
+  const baseline = source.split('private const string Baseline = """')[1].split('"""')[0];
+  const expected = new Map();
+  let category;
+  for (const line of documented.split("\n")) {
+    const header = /^(\w+) \(\d+\)$/.exec(line);
+    if (header) category = header[1];
+    else if (/^  \w+$/.test(line)) expected.set(line.trim(), category);
+  }
+  const actual = new Map();
+  for (const line of baseline.trim().split("\n")) {
+    const [group, names] = line.trim().split(": ");
+    for (const name of names.split(" ")) actual.set(name, group);
+  }
+  assert.equal(actual.size, 112);
+  assert.deepEqual([...actual].sort(), [...expected].sort());
+});
 const profile = revision => ({
   schema_version: 1, id: "ship", name: "Ship", revision,
   pages: [
