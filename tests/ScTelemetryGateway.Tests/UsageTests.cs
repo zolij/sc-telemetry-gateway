@@ -8,6 +8,17 @@ namespace ScTelemetryGateway.Tests;
 public sealed class UsageTests
 {
     [Fact]
+    public void InstallationChoiceIsExplicitAndRejectsInvalidOrDuplicateValues()
+    {
+        Assert.Null(InstallationUsageChoice.Parse([]));
+        Assert.True(InstallationUsageChoice.Parse(["--installation-usage-statistics=enabled"]));
+        Assert.False(InstallationUsageChoice.Parse(["--installation-usage-statistics=disabled"]));
+        Assert.Throws<ArgumentException>(() => InstallationUsageChoice.Parse(["--installation-usage-statistics=other"]));
+        Assert.Throws<ArgumentException>(() => InstallationUsageChoice.Parse(
+            ["--installation-usage-statistics=enabled", "--installation-usage-statistics=disabled"]));
+    }
+
+    [Fact]
     public void ExistingSettingsRequireNoticeAndPersistDisabledChoice()
     {
         var existing = JsonSerializer.Deserialize<GatewayOptions>("""{}""", WireJson.Options)!;

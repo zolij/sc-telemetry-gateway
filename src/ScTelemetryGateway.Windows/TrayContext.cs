@@ -41,13 +41,18 @@ internal sealed class TrayContext : ApplicationContext
     private string updateStatus = "Not checked";
     private readonly ToolStripMenuItem checkUpdates;
 
-    public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null)
+    public TrayContext(bool smokeTest = false, SettingsStore? settingsStore = null, bool? installationUsageChoice = null)
     {
         this.smokeTest = smokeTest;
         usageReporter = new UsageReporter(usageClient, usageIdentity, UsageReporter.Endpoint);
         store = settingsStore ?? new SettingsStore();
         (options, key) = store.Load();
-        if (!smokeTest && !options.UsageNoticeShown)
+        if (!smokeTest && installationUsageChoice.HasValue)
+        {
+            options = options with { UsageStatisticsEnabled = installationUsageChoice.Value, UsageNoticeShown = true };
+            store.Save(options, key);
+        }
+        else if (!smokeTest && !options.UsageNoticeShown)
         {
             var enabled = MessageBox.Show(
                 "This application sends usage statistics to the project service hosted by Cloudflare: " +
