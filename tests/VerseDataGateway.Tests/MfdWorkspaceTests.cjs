@@ -54,7 +54,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     }
     return elements.get(id);
   };
-  let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, profileReads = 0;
+  let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, blockedAction = null, profileReads = 0;
   const actionRequests = [];
   const shieldPower = "vehicle.state.power.shield_generators";
   const shieldLevel = "vehicle.state.shields.level";
@@ -99,6 +99,13 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       if (url.endsWith("/actions")) return response(200, actionCatalog);
       if (url.endsWith("/actions/trigger")) {
         actionRequests.push(JSON.parse(options.body));
+        if (blockedAction) {
+          const blocked = blockedAction;
+          blockedAction = null;
+          blocked.started();
+          await blocked.wait;
+          if (blocked.fail) throw new Error("Connection lost");
+        }
         return response(200, { status: "Ok", message: "" });
       }
       if (url.endsWith("/profiles")) {
@@ -137,12 +144,14 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       return response(200, data);
     }
   });
-  workspace.init(() => "test-token", () => {});
+  workspace.init(() => "test-token", () =>
+    workspace.paint({ selected_fields: [], fields: {}, connection_status: "connected" }, true, 0, () => ""));
   await workspace.start();
   assert.equal(getElement("page-title").textContent, startEmpty ? "Your flight deck" : "Flight");
   return {
     workspace, element: getElement, poll: () => poll(), summaryStatuses, actionRequests,
     setActions: value => { actionCatalog = value; },
+    changeActionCatalog: () => { actionCatalog = actionCatalog.map(action => ({ ...action, mapping_verified: true })); },
     update: () => { remote = profile(2); },
     create: () => { remote = profile(1); },
     failNextProfile: () => { failedProfile = true; },
@@ -159,6 +168,13 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       const waiting = new Promise(resolve => { started = resolve; });
       const wait = new Promise(resolve => { release = resolve; });
       blockedBody = { started, wait };
+      return { waiting, release };
+    },
+    blockNextAction: fail => {
+      let started, release;
+      const waiting = new Promise(resolve => { started = resolve; });
+      const wait = new Promise(resolve => { release = resolve; });
+      blockedAction = { started, wait, fail };
       return { waiting, release };
     }
   };
@@ -179,6 +195,36 @@ test("action tile sends a bounded command only when online and reports acceptanc
   view.workspace.paint(snapshot, false, 0, () => "");
   assert.equal(button.disabled, true);
 });
+
+for (const fail of [false, true]) {
+  test(`action feedback survives navigation and polling rebuilds (${fail ? "unknown outcome" : "accepted"})`, async () => {
+    const view = await fixture({ withAction: true });
+    view.workspace.paint({ selected_fields: [], fields: {}, connection_status: "connected" }, true, 0, () => "");
+    const blocked = view.blockNextAction(fail);
+    const pending = view.element("custom-cards").children[0].children[3].click();
+    await blocked.waiting;
+    assert.equal(view.element("custom-cards").children[0].children[5].textContent, "SENDING");
+    view.element("page-navigation").children[1].click();
+    view.element("page-navigation").children[0].click();
+    let card = view.element("custom-cards").children[0];
+    assert.equal(card.children[5].textContent, "SENDING");
+    assert.equal(card.children[3].disabled, true);
+    view.changeActionCatalog();
+    await view.poll();
+    card = view.element("custom-cards").children[0];
+    assert.equal(card.children[5].textContent, "SENDING");
+    assert.equal(card.children[3].disabled, true);
+    blocked.release();
+    await pending;
+    assert.match(card.children[5].textContent, fail ? /may have executed.*check the game/ : /ACCEPTED.*CHECK GAME STATE/);
+    view.element("page-navigation").children[1].click();
+    view.element("page-navigation").children[0].click();
+    card = view.element("custom-cards").children[0];
+    assert.match(card.children[5].textContent, fail ? /may have executed.*check the game/ : /ACCEPTED.*CHECK GAME STATE/);
+    assert.equal(card.children[3].disabled, false);
+    assert.equal(view.actionRequests.length, 1);
+  });
+}
 
 test("editing can add a game control without triggering it", async () => {
   const view = await fixture({ withAction: true });

@@ -166,11 +166,12 @@ const MfdWorkspace = (() => {
       card.append(node("span", "instrument-label", tile.label), value, meta);
       let actionButton = null;
       let mappingNote = null;
+      let feedback = null;
       if (tile.widget === "action" && tile.action && !draft) {
         actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
         actionButton.type = "button";
         actionButton.disabled = true;
-        const feedback = node("span", "game-action-result", actionFeedback.get(tile.id) ?? "");
+        feedback = node("span", "game-action-result");
         feedback.setAttribute("role", "status");
         actionButton.addEventListener("click", async () => {
           if (busy || draft || actionButton.disabled || actionPending.has(tile.id)) return;
@@ -180,7 +181,6 @@ const MfdWorkspace = (() => {
           const requestEpoch = epoch;
           actionButton.disabled = true;
           repaint?.();
-          feedback.textContent = "SENDING";
           try {
             const body = { action_name: tile.action };
             if (tile.hold_ms != null) body.hold_ms = tile.hold_ms;
@@ -194,7 +194,6 @@ const MfdWorkspace = (() => {
           } finally {
             if (requestEpoch === epoch) {
               actionPending.delete(tile.id);
-              feedback.textContent = actionFeedback.get(tile.id);
               repaint?.();
             }
           }
@@ -203,7 +202,7 @@ const MfdWorkspace = (() => {
         card.append(actionButton, mappingNote, feedback);
       }
       if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote });
+      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote, feedback });
       $("custom-cards").append(card);
     }
     controls();
@@ -273,7 +272,7 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton, mappingNote } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton, mappingNote, feedback } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
         actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
@@ -283,6 +282,7 @@ const MfdWorkspace = (() => {
         actionButton.disabled = !!actionButton.title;
         mappingNote.textContent = action?.mapping_verified === false
           ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
+        feedback.textContent = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
       }
       if (tile.widget === "action") {
         const available = actionButton && !actionButton.disabled;
