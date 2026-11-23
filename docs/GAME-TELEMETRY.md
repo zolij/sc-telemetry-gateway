@@ -85,19 +85,16 @@ locomotion `SEATED`, `vehicle` and `weapons`. All responses had an empty
 | `FILTERED` | 3 | `v_enter_remote_turret_1`, `v_enter_remote_turret_2`, `v_enter_remote_turret_3` |
 | `MAP_INACTIVE` | 38 | All four `player` actions and all 34 `player_emotes` actions in the catalogue below |
 
-After the user manually left the seat, the 38 inactive actions were retried,
-emotes first and then `player` actions, without `hold_ms`. This 78.48-second
-recording contained 1,515 frames, all with actor locomotion `ON_FOOT`; only
-the `actor` section was observed. All 34 emotes, `mobiglas`,
-`toggle_flashlight` and `v_starmap` returned `OK`; `visor_wipe` returned
-`FILTERED`. All response messages were empty. Neither recording contained an
-`events` section. The previously observed 500 ms `v_invoke_ping` hold was a
-separate test, not part of these two runs.
+After the user manually left the seat, a 78.48-second on-foot recording
+contained 1,515 frames, all with actor locomotion `ON_FOOT`; only the `actor`
+section was observed. All 34 emotes, `mobiglas`, `toggle_flashlight` and
+`v_starmap` returned `OK` without `hold_ms`. All response messages were empty.
+Neither recording contained an `events` section. The previously observed
+500 ms `v_invoke_ping` hold was a separate test, not part of these two runs.
 
-A subsequent `visor_wipe` retry returned `OK` with an empty message. The next
-38 frames contained `actor` with `ON_FOOT` locomotion and no other sections.
-The user confirmed that the earlier `FILTERED` response occurred because
-mobiglas was open. The retry did not establish a visible animation.
+In a separate on-foot test, `visor_wipe` returned `OK` with an empty message.
+The next 38 frames contained `actor` with `ON_FOOT` locomotion and no other
+sections. This test did not establish a visible animation.
 
 Notable decoded changes during the seated actions' observation windows were:
 
