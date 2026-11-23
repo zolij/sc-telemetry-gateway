@@ -6,7 +6,7 @@ namespace ScTelemetryGateway.Installer;
 
 internal static class Program
 {
-    private const string ProductName = "Star Citizen Telemetry Gateway";
+    private const string ProductName = "Verse Data Gateway";
 
     [STAThread]
     private static int Main(string[] args)

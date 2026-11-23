@@ -1,5 +1,5 @@
 {
-  "name": "sc-telemetry-gateway-usage",
+  "name": "verse-data-gateway-usage",
   "private": true,
   "type": "module",
   "scripts": {

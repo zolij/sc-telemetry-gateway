@@ -176,9 +176,9 @@ jobs:
           Use at your own risk. Provided AS IS; authors and contributors disclaim liability to the fullest extent permitted by law.
           Independent community project, not affiliated with Cloud Imperium Games.
 
-          Installation and privacy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/INSTALLATION.md
-          Disclaimer: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/DISCLAIMER.md
-          Code signing policy: https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/SIGNING.md
+          Installation and privacy: https://github.com/zolij/verse-data-gateway/blob/main/docs/INSTALLATION.md
+          Disclaimer: https://github.com/zolij/verse-data-gateway/blob/main/docs/DISCLAIMER.md
+          Code signing policy: https://github.com/zolij/verse-data-gateway/blob/main/docs/SIGNING.md
           "@ | Set-Content artifacts/release-notes.txt
       - uses: actions/upload-artifact@v7
         with:
@@ -189,7 +189,7 @@ jobs:
         shell: pwsh
         run: |
           $tag = "v$env:RELEASE_VERSION"
-          $title = "Star Citizen Telemetry Gateway $env:RELEASE_VERSION"
+          $title = "Verse Data Gateway $env:RELEASE_VERSION"
           $flags = @('--latest=true')
           if ($env:SIGNED_RELEASE -ne 'true') {
             $title += ' - UNSIGNED PREVIEW'

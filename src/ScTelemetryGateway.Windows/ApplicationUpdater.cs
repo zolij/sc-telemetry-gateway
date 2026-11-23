@@ -5,7 +5,7 @@ namespace ScTelemetryGateway.Windows;
 
 public sealed class ApplicationUpdater(UpdateManager manager)
 {
-    public const string Repository = "https://github.com/zolij/sc-telemetry-gateway";
+    public const string Repository = "https://github.com/zolij/verse-data-gateway";
     private UpdateInfo? available;
     private bool downloaded;
 

@@ -55,7 +55,7 @@ configurations with explicit PE file paths:
    Velopack installer are eligible.
 
 Configure SignPath file metadata restrictions to enforce the product name
-`Star Citizen Telemetry Gateway` and the same product version for all signed
+`Verse Data Gateway` and the same product version for all signed
 files in a build.
 
 Do not recursively sign every DLL/EXE in the self-contained publish directory.

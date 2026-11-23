@@ -4,7 +4,7 @@ namespace ScTelemetryGateway.Windows;
 
 internal sealed class TrayContext : ApplicationContext
 {
-    public const string ProductName = "Star Citizen Telemetry Gateway";
+    public const string ProductName = "Verse Data Gateway";
     private readonly Icon appIcon;
     private readonly NotifyIcon icon;
     private readonly ContextMenuStrip menu;

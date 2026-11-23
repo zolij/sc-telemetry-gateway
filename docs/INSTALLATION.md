@@ -18,6 +18,9 @@ user under `%LOCALAPPDATA%\Spaceling.StarCitizenTelemetryGateway`, creates a Sta
 menu shortcut and an uninstall entry, and does not require elevation. There is
 no system service or automatic startup with Windows.
 
+The application was renamed to Verse Data Gateway. Existing installation and
+settings paths retain their original names for update and data compatibility.
+
 The dashboard opens on launch and the app stays in the notification area when
 the window is closed. Double-click the tray icon to reopen the dashboard.
 Telemetry collection is always paused on launch, including after an update.
@@ -71,7 +74,7 @@ does not support managed updates: install Setup to enable them.
 
 ## Uninstall
 
-Use Windows **Settings > Apps > Installed apps > Star Citizen Telemetry Gateway >
+Use Windows **Settings > Apps > Installed apps > Verse Data Gateway >
 Uninstall**. Close the tray app first. Uninstall removes program files and
 shortcuts, but retains user settings, the encrypted API key, MFD profiles and
 approved device records. To remove those too, delete the

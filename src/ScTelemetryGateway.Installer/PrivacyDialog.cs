@@ -14,7 +14,7 @@ internal sealed class PrivacyDialog : Form
 
     public PrivacyDialog(Func<bool, Task> installApplication)
     {
-        Text = "Install Star Citizen Telemetry Gateway";
+        Text = "Install Verse Data Gateway";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -44,7 +44,7 @@ internal sealed class PrivacyDialog : Form
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://github.com/zolij/sc-telemetry-gateway/blob/main/docs/USAGE-STATISTICS.md")
+                    "https://github.com/zolij/verse-data-gateway/blob/main/docs/USAGE-STATISTICS.md")
                 { UseShellExecute = true })?.Dispose();
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)

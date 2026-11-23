@@ -31,7 +31,7 @@ if ($Channel -eq 'preview') {
 }
 dotnet vpk pack --packId Spaceling.StarCitizenTelemetryGateway --packVersion $Version `
     --packDir $PublishDirectory --outputDir $OutputDirectory --channel $Channel --runtime win-x64 `
-    --packTitle 'Star Citizen Telemetry Gateway' --packAuthors 'Star Citizen Telemetry Gateway contributors' `
+    --packTitle 'Verse Data Gateway' --packAuthors 'Verse Data Gateway contributors' `
     --mainExe StarCitizenTelemetryGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
     --noPortable --delta None --skip-updates
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }

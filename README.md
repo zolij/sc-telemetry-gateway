@@ -1,12 +1,12 @@
-<p align="center"><img src="src/ScTelemetryGateway.Windows/mfd/assets/app-icon.png" alt="Star Citizen Telemetry Gateway icon" width="160"></p>
+<p align="center"><img src="src/ScTelemetryGateway.Windows/mfd/assets/app-icon.png" alt="Verse Data Gateway icon" width="160"></p>
 
-# Star Citizen Telemetry Gateway
+# Verse Data Gateway
 
 A read-only Windows tray application that turns selected local Star Citizen
 telemetry into a customizable phone or tablet MFD. Optionally, it can also
 forward a separate selection of aggregated telemetry to a WebSocket receiver.
 
-**Documentation: [Project wiki](https://github.com/zolij/sc-telemetry-gateway/wiki)** —
+**Documentation: [Project wiki](https://github.com/zolij/verse-data-gateway/wiki)** —
 setup, local MFD, troubleshooting, and privacy guides.
 
 **Independent community project.** Not affiliated with, endorsed by, sponsored
@@ -40,12 +40,12 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
 
 ## Windows quick start
 
-1. Download `Setup.exe` from [Releases](https://github.com/zolij/sc-telemetry-gateway/releases),
+1. Download `Setup.exe` from [Releases](https://github.com/zolij/verse-data-gateway/releases),
    install it for your Windows user, then launch it from the Start menu/tray.
    Supported target: Windows 11 x64. No separate .NET runtime is required.
    Current previews are explicitly **unsigned**; Windows may show a
    publisher/SmartScreen warning. Trusted signing requires external approval.
-   The ZIP from a successful [Actions run](https://github.com/zolij/sc-telemetry-gateway/actions)
+   The ZIP from a successful [Actions run](https://github.com/zolij/verse-data-gateway/actions)
    remains available for portable use; extract all files before running the EXE.
 2. To configure the game telemetry service persistently, add the following
    assignments to the PTU build's `user.cfg` (usually

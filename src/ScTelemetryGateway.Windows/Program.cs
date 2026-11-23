@@ -15,7 +15,7 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\StarCitizenTelemetryGateway", out var first);
         if (!first)
         {
-            MessageBox.Show("Star Citizen Telemetry Gateway is already running in this session.",
+            MessageBox.Show("Verse Data Gateway is already running in this session.",
                 TrayContext.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
         }
