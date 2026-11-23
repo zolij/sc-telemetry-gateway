@@ -375,7 +375,7 @@ public sealed class MfdTests
             listener.Stop();
             Store = new(fields);
             Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(),
-                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot), gamePort);
+                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot), gamePort, new MfdActionLibrary(profileRoot));
             http.DefaultRequestHeaders.Add("Origin", Origin);
         }
 
@@ -513,6 +513,7 @@ public sealed class MfdTests
                 using var response = JsonDocument.Parse(await result.Content.ReadAsStringAsync(test.Token));
                 Assert.Equal("Ok", response.RootElement.GetProperty("status").GetString());
             }
+
             foreach (var invalid in new object[]
             {
                     new { action_name = "v_invoke_ping", hold_ms = 0 },
@@ -634,6 +635,23 @@ public sealed class MfdTests
             Assert.Equal(3, Volatile.Read(ref gameState.CatalogCalls));
         }
         finally { release.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task ActionLibraryIsAvailableWithoutGameAndRequiresPairing()
+    {
+        await using var test = await MfdTestServer.Start();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        using var denied = await http.GetAsync("/api/mfd/action-library", test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var response = await http.GetAsync("/api/mfd/action-library", test.Token);
+        response.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+        Assert.Equal(112, body.RootElement.GetArrayLength());
+        using var live = await http.GetAsync("/api/mfd/actions", test.Token);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, live.StatusCode);
     }
 
     [Theory]

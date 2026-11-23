@@ -261,6 +261,7 @@ Responses use `Cache-Control: no-store`.
 | GET | `/api/mfd/fields` | Enabled-field metadata, independent of whether values have arrived |
 | GET | `/api/mfd/events` | Known nonzero game-event names for page triggers, independent of field selection |
 | GET | `/api/mfd/actions` | Game action catalogue and local field eligibility |
+| GET | `/api/mfd/action-library` | Known controls for editing, even when the game is unavailable |
 | POST | `/api/mfd/actions/trigger` | Trigger a currently listed, eligible game action |
 | GET | `/api/mfd/profiles` | Array of `{id, name, revision}` summaries |
 | GET | `/api/mfd/profiles/{id}` | Full profile and revision ETag |
@@ -275,6 +276,14 @@ profile API. Existing and newly paired devices can trigger game actions without
 a separate gateway enable switch. HTTP is unencrypted: a network observer or
 attacker may obtain credentials or alter commands. Use only a trusted LAN.
 Remote telemetry receivers have no game-control channel.
+
+`GET /api/mfd/action-library` returns known controls for editing, not a game
+authorization list. It combines the documented PTU 5.0.202.10025 snapshot
+with controls learned from successful live queries, saved in
+`mfd-actions.json` under the gateway data directory. Entries may be outdated.
+The editor can add them even if the corresponding field is not selected;
+execution still requires the live checks described below. An unreadable or
+unwritable action library is reported as an error rather than discarded.
 
 `GET /api/mfd/actions` queries the game over loopback and returns entries
 `{action_name, category, holdable, fields, enabled, mapping_verified}`.

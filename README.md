@@ -158,7 +158,9 @@ handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
 values to your own labels and a fixed color palette. No graphs or arbitrary
 formulas are included; measurement units are not inferred.
 
-The editor lists the game's available controls by category. Each tile either
+The editor lists known controls by category even when the game is unavailable.
+The library includes a documented PTU snapshot and controls learned from the
+game; it may be outdated and does not authorize actions. Each tile either
 displays one telemetry field or triggers one game action. Controls with known
 field associations require at least one associated field to be shared in PC MFD
 settings. Vehicle lights on/off were verified against live PTU telemetry;

@@ -95,10 +95,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
             {
                 if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
                     throw new InvalidDataException("The game returned an invalid action list.");
-                var fields = FieldsForAction(action.ActionName);
-                result.Add(new(action.ActionName, action.Category, action.Holdable,
-                    fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
-                    fields.Count == 0 ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
+                result.Add(Describe(action.ActionName, action.Category, action.Holdable, snapshot));
             }
             return result;
         }
@@ -143,6 +140,14 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
     internal static IReadOnlyList<string> FieldsForAction(string name) =>
         FieldsByAction.TryGetValue(name, out var fields) ? fields :
         FieldByAction.TryGetValue(name, out var field) ? [field] : [];
+
+    internal static MfdAction Describe(string name, string category, bool holdable, MfdSnapshotStore snapshot)
+    {
+        var fields = FieldsForAction(name);
+        return new(name, category, holdable,
+            fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
+            fields.Count == 0 ? null : name is "v_lights_on" or "v_lights_off", fields);
+    }
 
     internal static bool ValidName(string? value) => value is { Length: > 0 and <= 128 } &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');

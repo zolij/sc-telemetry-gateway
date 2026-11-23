@@ -17,7 +17,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -96,7 +96,9 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     fetch: async (url, options) => {
       if (url.endsWith("/fields")) return response(200, fields);
       if (url.endsWith("/events")) return response(200, [enter]);
-      if (url.endsWith("/actions")) return response(200, actionCatalog);
+      if (url.endsWith("/actions")) return gameUnavailable
+        ? response(503, { message: "Game unavailable" }) : response(200, actionCatalog);
+      if (url.endsWith("/action-library")) return response(200, actionCatalog);
       if (url.endsWith("/actions/trigger")) {
         actionRequests.push(JSON.parse(options.body));
         if (blockedAction) {
@@ -237,6 +239,17 @@ test("editing can add a game control without triggering it", async () => {
   view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
   assert.equal(view.element("tile-message").textContent, "");
   assert.equal(view.element("custom-cards").children.length, 2);
+  assert.deepEqual(view.actionRequests, []);
+});
+
+test("known controls remain editable when the game is unavailable", async () => {
+  const view = await fixture({ withAction: true, gameUnavailable: true });
+  await view.element("edit-profile").click();
+  assert.match(view.element("action-results").children[1].textContent, /Game unavailable/);
+  view.element("action-results").children[2].click();
+  assert.equal(view.element("tile-action").value, "v_invoke_ping");
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
   assert.deepEqual(view.actionRequests, []);
 });
 

@@ -19,6 +19,23 @@ public sealed class MfdProfileTests : IDisposable
     };
 
     [Fact]
+    public void ActionLibraryIncludesBaselineAndPersistsNewLiveActions()
+    {
+        var snapshot = new MfdSnapshotStore([]);
+        var library = new MfdActionLibrary(root);
+        var baseline = library.List(snapshot);
+        Assert.Equal(112, baseline.Count);
+        Assert.True(baseline.Single(action => action.ActionName == "v_invoke_ping").Holdable);
+        Assert.False(baseline.Single(action => action.ActionName == "v_lights_on").Enabled);
+        library.Remember([MfdActions.Describe("future_control", "future_category", true, snapshot)]);
+        var reopened = new MfdActionLibrary(root).List(snapshot);
+        Assert.Equal(113, reopened.Count);
+        Assert.True(reopened.Single(action => action.ActionName == "future_control").Holdable);
+        library.Remember([]);
+        Assert.Equal(113, new MfdActionLibrary(root).List(snapshot).Count);
+    }
+
+    [Fact]
     public void ActionTilesPersistAndRejectInvalidBindingsAndHolds()
     {
         var draft = Draft();

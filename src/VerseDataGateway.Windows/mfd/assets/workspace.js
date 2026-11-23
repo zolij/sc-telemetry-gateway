@@ -5,7 +5,7 @@ const MfdWorkspace = (() => {
   const limits = { profiles: 32, pages: 16, tiles: 64, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
   let getToken, repaint;
-  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
+  let catalog = [], actions = [], actionLibrary = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, preference = null;
@@ -402,7 +402,7 @@ const MfdWorkspace = (() => {
     viewVersion++;
     saved = draft = null;
     pageId = null;
-    summaries = catalog = actions = [];
+    summaries = catalog = actions = actionLibrary = [];
     actionError = "";
     actionFeedback.clear();
     actionPending.clear();
@@ -415,19 +415,21 @@ const MfdWorkspace = (() => {
   }
 
   async function refreshActions() {
+    const previous = JSON.stringify([actions, actionLibrary, actionError]);
+    let error = "";
     try {
       const next = (await api("actions")).data;
       if (!Array.isArray(next)) throw new Error("Invalid game action catalog.");
-      const changed = JSON.stringify(actions) !== JSON.stringify(next) || !!actionError;
       actions = next;
-      actionError = "";
-      if (changed) { renderLibrary(); render(); }
-    } catch (error) {
-      const changed = actions.length > 0 || actionError !== error.message;
+    } catch (failure) {
       actions = [];
-      actionError = error.message;
-      if (changed) { renderLibrary(); render(); }
+      error = failure.message;
     }
+    const next = (await api("action-library")).data;
+    if (!Array.isArray(next)) throw new Error("Invalid saved action library.");
+    actionLibrary = next;
+    actionError = error;
+    if (previous !== JSON.stringify([actions, actionLibrary, actionError])) { renderLibrary(); render(); }
   }
 
   // Editor functions are kept separate from the telemetry paint path.
@@ -535,18 +537,18 @@ const MfdWorkspace = (() => {
     if (!$("field-results").childElementCount)
       $("field-results").append(node("p", "library-note", catalog.length ? "No matching fields." : "Enable shared fields in gateway settings, then restart collection."));
     $("action-results").replaceChildren(node("h3", "", "GAME CONTROLS"));
-    if (actionError) $("action-results").append(node("p", "library-note", "Controls unavailable: " + actionError));
-    for (const action of [...actions].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
+    if (actionError) $("action-results").append(node("p", "library-note", "Live controls unavailable: " + actionError + " / Known controls remain available for editing."));
+    for (const action of [...actionLibrary].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
       if (query && !(action.category + " " + action.action_name + " " + actionLabel(action.action_name)).toLowerCase().includes(query)) continue;
       const button = node("button", "field-item");
       button.type = "button";
-      button.dataset.enabled = String(action.enabled);
-      button.disabled = busy || !action.enabled;
+      button.dataset.enabled = "true";
+      button.disabled = busy;
       button.append(node("strong", "", actionLabel(action.action_name)), node("span", "",
         readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "") +
         (action.mapping_verified === false ? " / Field link not live-verified" : "")));
       button.addEventListener("click", () => {
-        if (busy || !action.enabled) return;
+        if (busy) return;
         if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
         openTile({ id: uuid(), field: "", label: actionLabel(action.action_name).slice(0, 80), widget: "action",
           size: "normal", decimals: 2, format: "auto", rules: [], action: action.action_name }, true);
@@ -557,19 +559,18 @@ const MfdWorkspace = (() => {
   function actionOptions(current) {
     const select = $("tile-action");
     select.replaceChildren(new Option("Choose a control", ""));
-    for (const action of actions) {
+    for (const action of actionLibrary) {
       const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
         (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
-      option.disabled = !action.enabled;
       select.append(option);
     }
-    if (current && !actions.some(item => item.action_name === current))
+    if (current && !actionLibrary.some(item => item.action_name === current))
       select.append(new Option(current + " (unavailable)", current));
     select.value = current ?? "";
     holdOptions();
   }
   function holdOptions() {
-    const action = actions.find(item => item.action_name === $("tile-action").value);
+    const action = actionLibrary.find(item => item.action_name === $("tile-action").value);
     const show = $("tile-widget").value === "action" && (!!action?.holdable || !!$("tile-hold").value && !action);
     $("tile-hold").hidden = $("hold-label").hidden = !show;
     if (action && !action.holdable) $("tile-hold").value = "";
@@ -810,7 +811,7 @@ const MfdWorkspace = (() => {
         if (tile.widget === "action") {
           tile.action = $("tile-action").value;
           if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
-          const action = actions.find(item => item.action_name === tile.action);
+          const action = actionLibrary.find(item => item.action_name === tile.action);
           if (action && tile.hold_ms != null && !action.holdable)
             throw new Error("This control does not support a hold duration.");
         }
