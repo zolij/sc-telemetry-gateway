@@ -66,14 +66,14 @@ public sealed record MfdProfile
     public bool IsAtomic() => Pages.All(page => page.Tiles.All(tile =>
         tile.Controls is null && (tile.Widget == "action" || tile.Action is null)));
 
-    public void ValidateAtomic()
+    public void Validate()
     {
-        Validate();
+        ValidateLegacy();
         if (!IsAtomic())
             throw new ArgumentException("Combined or grouped tiles are no longer supported. Delete this profile or replace it with an atomic profile.");
     }
 
-    public void Validate()
+    internal void ValidateLegacy()
     {
         if (SchemaVersion != 1) throw new ArgumentException("Unsupported profile schema version.");
         Text(Name, 80, "Profile name");

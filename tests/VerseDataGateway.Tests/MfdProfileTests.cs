@@ -61,7 +61,7 @@ public sealed class MfdProfileTests : IDisposable
             Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_scm" }]
         };
         var combined = draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] };
-        combined.Validate();
+        combined.ValidateLegacy();
         Assert.Throws<ArgumentException>(() => Store.Create(combined));
         foreach (var invalid in new[]
         {
@@ -72,10 +72,10 @@ public sealed class MfdProfileTests : IDisposable
             tile with { Controls = [new() { Action = "v_master_mode_set_nav", HoldMs = 5001 }] },
             tile with { Controls = Enumerable.Range(0, 65).Select(index => new MfdControl { Action = $"v_{index}" }).ToArray() }
         })
-            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).ValidateLegacy());
         var standalone = tile with { Field = "", Widget = "action", Controls =
             [new() { Action = "emote_wave" }, new() { Action = "v_invoke_ping", HoldMs = 500 }] };
-        (draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }).Validate();
+        (draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }).ValidateLegacy();
         Assert.Throws<ArgumentException>(() => Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }));
     }
 
