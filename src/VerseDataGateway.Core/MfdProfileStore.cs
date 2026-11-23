@@ -20,17 +20,12 @@ public sealed class MfdProfileStore(string directory)
     public MfdProfileSummary[] Summaries()
     {
         lock (gate) return Load().Values.OrderBy(p => p.Id)
-            .Select(p => new MfdProfileSummary(p.Id, p.Name, p.Revision, p.IsAtomic())).ToArray();
+            .Select(p => new MfdProfileSummary(p.Id, p.Name, p.Revision)).ToArray();
     }
 
     public MfdProfile? Get(Guid id)
     {
-        lock (gate)
-        {
-            if (!Load().TryGetValue(id, out var profile)) return null;
-            profile.Validate();
-            return Copy(profile);
-        }
+        lock (gate) return Load().TryGetValue(id, out var profile) ? Copy(profile) : null;
     }
 
     public MfdProfile Create(MfdProfile draft)
@@ -109,7 +104,7 @@ public sealed class MfdProfileStore(string directory)
         {
             if (profile is null || profile.Id == Guid.Empty || profile.Revision < 1 || !loaded.TryAdd(profile.Id, profile))
                 throw new InvalidDataException("Invalid or duplicate saved profile identity.");
-            try { profile.ValidateLegacy(); }
+            try { profile.Validate(); }
             catch (ArgumentException ex) { throw new InvalidDataException("Invalid saved profile.", ex); }
         }
         profiles = loaded;

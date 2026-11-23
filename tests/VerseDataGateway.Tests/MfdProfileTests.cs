@@ -51,53 +51,6 @@ public sealed class MfdProfileTests : IDisposable
         JsonSerializer.Deserialize<MfdProfile>(legacy, WireJson.Options)!.Validate();
     }
 
-    [Fact]
-    public void LegacyControlGroupsAreRejectedForNewProfiles()
-    {
-        var draft = Draft();
-        var tile = draft.Pages[0].Tiles[0] with
-        {
-            Field = "vehicle.state.master_mode.mode",
-            Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_scm" }]
-        };
-        var combined = draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] };
-        combined.ValidateLegacy();
-        Assert.Throws<ArgumentException>(() => Store.Create(combined));
-        foreach (var invalid in new[]
-        {
-            tile with { Controls = [] },
-            tile with { Action = "v_master_mode_cycle" },
-            tile with { Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_nav" }] },
-            tile with { Controls = [new() { Action = "v_invoke_ping" }] },
-            tile with { Controls = [new() { Action = "v_master_mode_set_nav", HoldMs = 5001 }] },
-            tile with { Controls = Enumerable.Range(0, 65).Select(index => new MfdControl { Action = $"v_{index}" }).ToArray() }
-        })
-            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).ValidateLegacy());
-        var standalone = tile with { Field = "", Widget = "action", Controls =
-            [new() { Action = "emote_wave" }, new() { Action = "v_invoke_ping", HoldMs = 500 }] };
-        (draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }).ValidateLegacy();
-        Assert.Throws<ArgumentException>(() => Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }));
-    }
-
-    [Fact]
-    public void SavedLegacyProfilesCanBeListedAndDeletedWithoutBlockingAtomicProfiles()
-    {
-        var legacy = Draft() with { Id = Guid.NewGuid(), Revision = 1 };
-        legacy = legacy with { Pages = [legacy.Pages[0] with { Tiles =
-            [legacy.Pages[0].Tiles[0] with { Field = "vehicle.state.lights_enabled", Action = "v_lights" }] }] };
-        Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "mfd-profiles.json"),
-            JsonSerializer.Serialize(new { schema_version = 1, profiles = new[] { legacy } }, WireJson.Options));
-        var store = Store;
-        var atomic = store.Create(Draft());
-        Assert.False(store.Summaries().Single(item => item.Id == legacy.Id).Atomic);
-        Assert.True(store.Summaries().Single(item => item.Id == atomic.Id).Atomic);
-        Assert.Throws<ArgumentException>(() => store.Get(legacy.Id));
-        Assert.NotNull(store.Get(atomic.Id));
-        store.Delete(legacy.Id, legacy.Revision);
-        Assert.Single(store.Summaries());
-    }
-
     [Theory]
     [InlineData("v_toggle_landing_system", "vehicle.state.flight.state.gear")]
     [InlineData("v_open_all_doors", "vehicle.state.doors.open_state")]
