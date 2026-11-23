@@ -14,12 +14,9 @@ release is explicitly labelled **UNSIGNED PREVIEW** until trusted code signing
 has been approved. Do not treat a checksum as a publisher signature.
 
 Close any running copy first. Setup installs for the current Windows
-user under `%LOCALAPPDATA%\Spaceling.StarCitizenTelemetryGateway`, creates a Start
+user under `%LOCALAPPDATA%\Spaceling.VerseDataGateway`, creates a Start
 menu shortcut and an uninstall entry, and does not require elevation. There is
 no system service or automatic startup with Windows.
-
-The application was renamed to Verse Data Gateway. Existing installation and
-settings paths retain their original names for update and data compatibility.
 
 The dashboard opens on launch and the app stays in the notification area when
 the window is closed. Double-click the tray icon to reopen the dashboard.
@@ -38,13 +35,13 @@ launch instead; choose **No** to disable reporting. See
 [usage statistics](USAGE-STATISTICS.md) for the transmitted fields, Cloudflare
 processing and retention. This does not start game telemetry collection.
 
-### Upgrading from 0.2.0-preview.1
+### Previous installations
 
-The first preview used a different package identity. Exit and uninstall that
-version before manually installing `0.2.0-preview.2` or later; do not use its
-built-in updater for this identity change. Keep the settings directory when
-uninstalling: the new installer uses the same settings and DPAPI-protected key.
-Subsequent updates retain the `Spaceling.StarCitizenTelemetryGateway` identity.
+The rename changes the installer identity and settings directory. Exit and
+uninstall an installation under the previous project name, then install
+Verse Data Gateway manually; the previous built-in updater cannot upgrade to
+the new package. Previous settings, keys, profiles, and device permissions are
+not imported automatically.
 
 ## Update checks and consent
 
@@ -63,7 +60,7 @@ for trusted Authenticode signing; see [Code signing policy](SIGNING.md).
 Updates stop collection and discard unsent RAM data only when installation is
 approved. After restart, collection remains paused. Settings, the DPAPI key,
 MFD profiles and approved MFD device records stay in
-`%LOCALAPPDATA%\StarCitizenTelemetryGateway`, outside versioned app files.
+`%LOCALAPPDATA%\VerseDataGateway`, outside versioned app files.
 
 Stable is the default update channel. **Include unsigned preview updates** is
 an explicit opt-in; previews are not stable and may have no trusted signature.
@@ -78,7 +75,7 @@ Use Windows **Settings > Apps > Installed apps > Verse Data Gateway >
 Uninstall**. Close the tray app first. Uninstall removes program files and
 shortcuts, but retains user settings, the encrypted API key, MFD profiles and
 approved device records. To remove those too, delete the
-`StarCitizenTelemetryGateway` folder under your own LocalAppData after exiting
+`VerseDataGateway` folder under your own LocalAppData after exiting
 the app. This also removes the local usage statistics ID. Browser-stored MFD
 tokens and identifiers are separate. Previously sent usage records remain on
 the service until their scheduled cleanup. No game telemetry archive needs to

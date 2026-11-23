@@ -1,10 +1,12 @@
-<p align="center"><img src="src/ScTelemetryGateway.Windows/mfd/assets/app-icon.png" alt="Verse Data Gateway icon" width="160"></p>
+<p align="center"><img src="src/VerseDataGateway.Windows/mfd/assets/app-icon.png" alt="Verse Data Gateway icon" width="160"></p>
 
 # Verse Data Gateway
 
-A read-only Windows tray application that turns selected local Star Citizen
-telemetry into a customizable phone or tablet MFD. Optionally, it can also
-forward a separate selection of aggregated telemetry to a WebSocket receiver.
+Verse Data Gateway is an unofficial, independent community project for
+Star Citizen. This read-only Windows telemetry gateway turns selected game
+data into a customizable phone or tablet MFD (multi-function display).
+Optionally, it forwards separately selected, aggregated telemetry to a
+WebSocket receiver.
 
 **Documentation: [Project wiki](https://github.com/zolij/verse-data-gateway/wiki)** —
 setup, local MFD, troubleshooting, and privacy guides.
@@ -68,8 +70,8 @@ anti-cheat systems is not guaranteed. See [NOTICE](NOTICE) for provenance.
    ```
 
    The gateway defaults to game port `29420`. Keep its game port equal to the
-   configured port and `external` set to `0`. Existing saved port settings are
-   preserved on upgrade; check the gateway setting and `user.cfg` together.
+   configured port and `external` set to `0`. Check the gateway setting and
+   `user.cfg` together.
 
 3. Open **Settings** in the dashboard. Under **Local MFD**, choose a network
    interface and port on a trusted network and enable local MFD access. The
@@ -99,7 +101,7 @@ local displays; Start again when ready. Already sent data cannot be recalled.
 Receiver protocol or authentication errors are shown in collection status; when
 the MFD is also enabled, remote delivery stops without stopping the local MFD.
 
-Settings live in `%LOCALAPPDATA%\StarCitizenTelemetryGateway\settings.json`;
+Settings live in `%LOCALAPPDATA%\VerseDataGateway\settings.json`;
 the separately DPAPI-encrypted key is `api-key.bin`, and approved local display
 permissions are in `mfd-devices.json` (the file contains token hashes, not the
 display credentials). Do not share these files.
@@ -184,7 +186,7 @@ restrictions cannot be overridden by the gateway.
 
 Select **Save to PC** to publish a layout, or **Cancel** to discard its draft.
 Profiles are stored in `mfd-profiles.json` under
-`%LOCALAPPDATA%\StarCitizenTelemetryGateway`, survive gateway restarts, and are
+`%LOCALAPPDATA%\VerseDataGateway`, survive gateway restarts, and are
 shared by all approved displays. Each browser chooses its own active profile
 and page; when only one profile exists, it is selected automatically. Every
 approved display can edit or delete shared profiles. If another
@@ -266,9 +268,9 @@ Dependabot update schedules do not enable those repository-level alerts.
 Install the SDK selected in [global.json](global.json), then:
 
 ```sh
-dotnet test tests/ScTelemetryGateway.Tests
-RUN_PROXY_TESTS=1 dotnet test tests/ScTelemetryGateway.Tests
-dotnet publish src/ScTelemetryGateway.Windows -c Release -r win-x64 --self-contained true -o artifacts/win-x64
+dotnet test tests/VerseDataGateway.Tests
+RUN_PROXY_TESTS=1 dotnet test tests/VerseDataGateway.Tests
+dotnet publish src/VerseDataGateway.Windows -c Release -r win-x64 --self-contained true -o artifacts/win-x64
 ```
 
 The second command requires Docker and runs a temporary Nginx reverse proxy;

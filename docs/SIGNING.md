@@ -48,8 +48,8 @@ Create a SignPath project linked to this repository's verified GitHub build
 provenance and an approval-required signing policy. Configure two ZIP artifact
 configurations with explicit PE file paths:
 
-1. Application: `StarCitizenTelemetryGateway.exe`,
-   `StarCitizenTelemetryGateway.dll`, `ScTelemetryGateway.Core.dll`.
+1. Application: `VerseDataGateway.exe`,
+   `VerseDataGateway.dll`, `VerseDataGateway.Core.dll`.
 2. Installer: the single `*Setup.exe` produced by the project, containing the
    Velopack installer. Confirm with SignPath that its provenance and use of the
    Velopack installer are eligible.

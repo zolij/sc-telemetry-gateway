@@ -15,11 +15,11 @@ if (($Channel -eq 'preview') -ne $Version.Contains('-preview.')) {
 dotnet tool restore
 if ($LASTEXITCODE -ne 0) { throw 'Could not restore the pinned packager.' }
 if (-not $SkipPublish) {
-    dotnet publish src/ScTelemetryGateway.Windows -c Release -r win-x64 --self-contained true `
+    dotnet publish src/VerseDataGateway.Windows -c Release -r win-x64 --self-contained true `
         -o $PublishDirectory "-p:Version=$Version" -p:RestoreLockedMode=true
     if ($LASTEXITCODE -ne 0) { throw 'Application publish failed.' }
 }
-$application = (Resolve-Path (Join-Path $PublishDirectory 'StarCitizenTelemetryGateway.exe')).Path
+$application = (Resolve-Path (Join-Path $PublishDirectory 'VerseDataGateway.exe')).Path
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($application).ProductVersion.Split('+')[0] -ne $Version) {
     throw 'Published application version does not match the installer version.'
 }
@@ -29,19 +29,19 @@ if ($Channel -eq 'preview') {
 } elseif (Test-Path $marker) {
     Remove-Item -LiteralPath $marker
 }
-dotnet vpk pack --packId Spaceling.StarCitizenTelemetryGateway --packVersion $Version `
+dotnet vpk pack --packId Spaceling.VerseDataGateway --packVersion $Version `
     --packDir $PublishDirectory --outputDir $OutputDirectory --channel $Channel --runtime win-x64 `
     --packTitle 'Verse Data Gateway' --packAuthors 'Verse Data Gateway contributors' `
-    --mainExe StarCitizenTelemetryGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
+    --mainExe VerseDataGateway.exe --instLocation PerUser --shortcuts StartMenuRoot `
     --noPortable --delta None --skip-updates
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }
 $setups = @(Get-ChildItem (Join-Path $OutputDirectory '*Setup.exe'))
 if ($setups.Count -ne 1) { throw 'Expected exactly one Velopack installer.' }
-dotnet publish src/ScTelemetryGateway.Installer -c Release -r win-x64 `
+dotnet publish src/VerseDataGateway.Installer -c Release -r win-x64 `
     -o artifacts/installer-wrapper "-p:Version=$Version" "-p:InstallerPayload=$($setups[0].FullName)" `
     -p:RestoreLockedMode=true
 if ($LASTEXITCODE -ne 0) { throw 'Installer wrapper publish failed.' }
-Copy-Item artifacts/installer-wrapper/StarCitizenTelemetryGateway.Installer.exe $setups[0].FullName -Force
+Copy-Item artifacts/installer-wrapper/VerseDataGateway.Installer.exe $setups[0].FullName -Force
 if ($Channel -eq 'win') {
     Copy-Item (Join-Path $OutputDirectory 'releases.win.json') (Join-Path $OutputDirectory 'releases.preview.json') -Force
 }

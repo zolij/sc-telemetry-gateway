@@ -5,22 +5,22 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'Installer verification requires Windows.' }
-$root = Join-Path $env:LOCALAPPDATA 'Spaceling.StarCitizenTelemetryGateway'
-$settingsRoot = Join-Path $env:LOCALAPPDATA 'StarCitizenTelemetryGateway'
+$root = Join-Path $env:LOCALAPPDATA 'Spaceling.VerseDataGateway'
+$settingsRoot = Join-Path $env:LOCALAPPDATA 'VerseDataGateway'
 if ((Test-Path $root) -or (Test-Path $settingsRoot)) {
     throw 'Installer smoke test requires a clean CI profile; it will not overwrite an existing installation or settings.'
 }
-$exe = Join-Path $root 'current/StarCitizenTelemetryGateway.exe'
-$dll = Join-Path $root 'current/StarCitizenTelemetryGateway.dll'
+$exe = Join-Path $root 'current/VerseDataGateway.exe'
+$dll = Join-Path $root 'current/VerseDataGateway.dll'
 $settings = Join-Path $settingsRoot 'settings.json'
 $key = Join-Path $settingsRoot 'api-key.bin'
-$oldTestMode = $env:SCTG_INSTALLER_TEST
-$env:SCTG_INSTALLER_TEST = '1'
+$oldTestMode = $env:VDG_INSTALLER_TEST
+$env:VDG_INSTALLER_TEST = '1'
 $verified = $false
 function Run-App([string[]]$AppArguments) {
     $updaterPath = Join-Path $root 'Update.exe'
     for ($i = 0; $i -lt 300; $i++) {
-        $active = @(Get-Process -Name StarCitizenTelemetryGateway, Update -ErrorAction SilentlyContinue |
+        $active = @(Get-Process -Name VerseDataGateway, Update -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -eq $exe -or $_.Path -eq $updaterPath })
         if ($active.Count -eq 0) { break }
         Start-Sleep -Milliseconds 200
@@ -31,8 +31,8 @@ function Run-App([string[]]$AppArguments) {
     }
     $argumentLine = ($AppArguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
     Write-Output "Running installed app: $argumentLine"
-    $stdout = Join-Path $env:TEMP 'sctg-installer-test.stdout'
-    $stderr = Join-Path $env:TEMP 'sctg-installer-test.stderr'
+    $stdout = Join-Path $env:TEMP 'vdg-installer-test.stdout'
+    $stderr = Join-Path $env:TEMP 'vdg-installer-test.stderr'
     $process = Start-Process $exe -ArgumentList $argumentLine -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if (-not $process.WaitForExit(60000)) {
         $process.Refresh()
@@ -101,7 +101,7 @@ try {
                 Get-Content $_.FullName -Tail 40
             }
         }
-        Get-Process -Name StarCitizenTelemetryGateway -ErrorAction SilentlyContinue |
+        Get-Process -Name VerseDataGateway -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -eq $exe } |
             ForEach-Object { Stop-Process -Id $_.Id }
         $updater = Join-Path $root 'Update.exe'
@@ -118,7 +118,7 @@ try {
             throw 'Uninstall did not preserve user settings and the protected API key.'
         }
     } finally {
-        $env:SCTG_INSTALLER_TEST = $oldTestMode
+        $env:VDG_INSTALLER_TEST = $oldTestMode
         if (Test-Path $settings) { Remove-Item -LiteralPath $settings }
         if (Test-Path $key) { Remove-Item -LiteralPath $key }
         if ((Test-Path $settingsRoot) -and @(Get-ChildItem -Force $settingsRoot).Count -eq 0) {
