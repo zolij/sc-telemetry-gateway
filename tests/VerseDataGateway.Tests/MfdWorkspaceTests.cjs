@@ -234,6 +234,26 @@ test("editing grouped controls preserves the group and rejects duplicates", asyn
   assert.deepEqual(view.actionRequests, []);
 });
 
+test("editing converts a legacy control into a group without losing its hold", async () => {
+  const view = await fixture({ withAction: true });
+  view.setActions([
+    { action_name: "v_invoke_ping", category: "radar", holdable: true, field: null, enabled: true },
+    { action_name: "emote_wave", category: "emote", holdable: false, field: null, enabled: true }
+  ]);
+  await view.poll();
+  await view.element("edit-profile").click();
+  await view.element("custom-cards").children[0].children[3].children[1].click();
+  view.element("add-tile-control").click();
+  assert.match(view.element("tile-controls-list").children[0].children[0].textContent, /500 MS/);
+  view.element("tile-action").value = "emote_wave";
+  view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+  assert.equal(view.element("tile-message").textContent, "");
+  await view.element("custom-cards").children[0].children[3].children[1].click();
+  assert.equal(view.element("tile-controls-list").children.length, 2);
+  assert.match(view.element("tile-controls-list").children[0].children[0].textContent, /500 MS/);
+  assert.deepEqual(view.actionRequests, []);
+});
+
 test("combined controls require their own selected and still-associated field", async () => {
   const view = await fixture({ mappedAction: true });
   let button = view.element("custom-cards").children[0].children[3];
