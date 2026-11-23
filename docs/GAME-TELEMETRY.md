@@ -72,18 +72,19 @@ used to determine presence. Receive times are local and are not game timestamps.
 On 2026-11-23, PTU `5.0.202.10025` was tested directly through the local game
 gRPC service. The test did not exercise gateway authorization, pairing, field
 selection or MFD clients. The game advertised 112 actions; all but `v_eject`,
-`v_emergency_exit` and `v_self_destruct` were sent once, without `hold_ms`.
-The 109 requests were sequential, with about two seconds of stream observation
-after each. The 221.11-second recording contained 4,268 frames, all with actor
-locomotion `SEATED`, `vehicle` and `weapons`. All responses had an empty
-`message`:
+`v_emergency_exit` and `v_self_destruct` were tested without `hold_ms`.
+The combined results below use the on-foot results for player actions and the
+seated results for all other actions. The responses had an empty `message`:
 
 | Response | Count | Actions |
 |---|---:|---|
-| `OK` | 59 | All attempted actions except those listed below |
+| `OK` | 97 | All attempted actions except those listed below, including all 38 player and emote actions |
 | `FAILED` | 9 | `v_close_all_doors`, `v_open_all_doors`, `v_lock_all_doors`, `v_unlock_all_doors`, `v_toggle_all_doors`, `v_toggle_all_doorlocks`, `v_lock_all_ports`, `v_unlock_all_ports`, `v_toggle_all_portlocks` |
 | `FILTERED` | 3 | `v_enter_remote_turret_1`, `v_enter_remote_turret_2`, `v_enter_remote_turret_3` |
-| `MAP_INACTIVE` | 38 | All four `player` actions and all 34 `player_emotes` actions in the catalogue below |
+
+The seated recording contained 4,268 frames over 221.11 seconds, all with actor
+locomotion `SEATED`, `vehicle` and `weapons`. Actions were sent sequentially
+with about two seconds of stream observation after each.
 
 After the user manually left the seat, a 78.48-second on-foot recording
 contained 1,515 frames, all with actor locomotion `ON_FOOT`; only the `actor`
