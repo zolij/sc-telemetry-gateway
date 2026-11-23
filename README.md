@@ -214,7 +214,7 @@ Installed copies check GitHub for updates automatically (configurable).
 Downloading and installation each require confirmation; downloaded updates
 never auto-install on startup. Unsigned preview updates require an explicit
 Settings opt-in. See [installation and update privacy](docs/INSTALLATION.md)
-and the [code signing policy and setup](docs/SIGNING.md).
+and the [Code signing policy](docs/SIGNING.md).
 
 The application also asks on first launch whether to send usage statistics.
 The default choice is enabled; select **No** or turn off **Send application
