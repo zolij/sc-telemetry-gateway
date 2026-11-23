@@ -20,17 +20,22 @@ public sealed class MfdProfileStore(string directory)
     public MfdProfileSummary[] Summaries()
     {
         lock (gate) return Load().Values.OrderBy(p => p.Id)
-            .Select(p => new MfdProfileSummary(p.Id, p.Name, p.Revision)).ToArray();
+            .Select(p => new MfdProfileSummary(p.Id, p.Name, p.Revision, p.IsAtomic())).ToArray();
     }
 
     public MfdProfile? Get(Guid id)
     {
-        lock (gate) return Load().TryGetValue(id, out var profile) ? Copy(profile) : null;
+        lock (gate)
+        {
+            if (!Load().TryGetValue(id, out var profile)) return null;
+            profile.ValidateAtomic();
+            return Copy(profile);
+        }
     }
 
     public MfdProfile Create(MfdProfile draft)
     {
-        draft.Validate();
+        draft.ValidateAtomic();
         lock (gate)
         {
             var current = Load();
@@ -54,7 +59,7 @@ public sealed class MfdProfileStore(string directory)
 
     public MfdProfile Update(Guid id, long expectedRevision, MfdProfile draft)
     {
-        draft.Validate();
+        draft.ValidateAtomic();
         lock (gate)
         {
             var current = Load();

@@ -63,6 +63,16 @@ public sealed record MfdProfile
         GameEvent.Descriptor.FindFieldByNumber(1).EnumType.Values
             .Where(value => value.Number != 0).Select(value => value.Name).ToArray());
 
+    public bool IsAtomic() => Pages.All(page => page.Tiles.All(tile =>
+        tile.Controls is null && (tile.Widget == "action" || tile.Action is null)));
+
+    public void ValidateAtomic()
+    {
+        Validate();
+        if (!IsAtomic())
+            throw new ArgumentException("Combined or grouped tiles are no longer supported. Delete this profile or replace it with an atomic profile.");
+    }
+
     public void Validate()
     {
         if (SchemaVersion != 1) throw new ArgumentException("Unsupported profile schema version.");
@@ -169,7 +179,7 @@ public sealed record MfdCatalogField(string Path, string Type, bool Repeated, st
 
 }
 
-public sealed record MfdProfileSummary(Guid Id, string Name, long Revision);
+public sealed record MfdProfileSummary(Guid Id, string Name, long Revision, bool Atomic = true);
 
 public static class MfdFieldFormats
 {

@@ -25,11 +25,11 @@ public sealed class MfdProfileTests : IDisposable
         var tile = draft.Pages[0].Tiles[0];
         var control = tile with { Id = Guid.NewGuid(), Field = "", Label = "Radar ping",
             Widget = "action", Action = "v_invoke_ping", HoldMs = 1000 };
-        var light = tile with { Field = "vehicle.state.lights_enabled", Action = "v_lights_on" };
+        var light = tile with { Field = "vehicle.state.lights_enabled" };
         var configured = draft with { Pages = [draft.Pages[0] with { Tiles = [light, control] }] };
         var saved = Store.Create(configured);
         var restored = Store.Get(saved.Id)!;
-        Assert.Equal("v_lights_on", restored.Pages[0].Tiles[0].Action);
+        Assert.Null(restored.Pages[0].Tiles[0].Action);
         Assert.Equal((uint)1000, restored.Pages[0].Tiles[1].HoldMs);
         foreach (var invalid in new[]
         {
@@ -41,6 +41,10 @@ public sealed class MfdProfileTests : IDisposable
             light with { Action = null, HoldMs = 100 }
         })
             Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+        Assert.Throws<ArgumentException>(() => Store.Create(draft with { Pages = [draft.Pages[0] with
+        {
+            Tiles = [light with { Action = "v_lights_on" }]
+        }] }));
         var legacy = JsonSerializer.Serialize(draft, WireJson.Options);
         Assert.DoesNotContain("\"action\"", legacy);
         Assert.DoesNotContain("\"hold_ms\"", legacy);
@@ -48,7 +52,7 @@ public sealed class MfdProfileTests : IDisposable
     }
 
     [Fact]
-    public void ControlGroupsPersistAndValidateEachAction()
+    public void LegacyControlGroupsAreRejectedForNewProfiles()
     {
         var draft = Draft();
         var tile = draft.Pages[0].Tiles[0] with
@@ -56,8 +60,9 @@ public sealed class MfdProfileTests : IDisposable
             Field = "vehicle.state.master_mode.mode",
             Controls = [new() { Action = "v_master_mode_set_nav" }, new() { Action = "v_master_mode_set_scm" }]
         };
-        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] });
-        Assert.Equal(2, Store.Get(saved.Id)!.Pages[0].Tiles[0].Controls!.Length);
+        var combined = draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] };
+        combined.Validate();
+        Assert.Throws<ArgumentException>(() => Store.Create(combined));
         foreach (var invalid in new[]
         {
             tile with { Controls = [] },
@@ -71,6 +76,26 @@ public sealed class MfdProfileTests : IDisposable
         var standalone = tile with { Field = "", Widget = "action", Controls =
             [new() { Action = "emote_wave" }, new() { Action = "v_invoke_ping", HoldMs = 500 }] };
         (draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }).Validate();
+        Assert.Throws<ArgumentException>(() => Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [standalone] }] }));
+    }
+
+    [Fact]
+    public void SavedLegacyProfilesCanBeListedAndDeletedWithoutBlockingAtomicProfiles()
+    {
+        var legacy = Draft() with { Id = Guid.NewGuid(), Revision = 1 };
+        legacy = legacy with { Pages = [legacy.Pages[0] with { Tiles =
+            [legacy.Pages[0].Tiles[0] with { Field = "vehicle.state.lights_enabled", Action = "v_lights" }] }] };
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.Serialize(new { schema_version = 1, profiles = new[] { legacy } }, WireJson.Options));
+        var store = Store;
+        var atomic = store.Create(Draft());
+        Assert.False(store.Summaries().Single(item => item.Id == legacy.Id).Atomic);
+        Assert.True(store.Summaries().Single(item => item.Id == atomic.Id).Atomic);
+        Assert.Throws<ArgumentException>(() => store.Get(legacy.Id));
+        Assert.NotNull(store.Get(atomic.Id));
+        store.Delete(legacy.Id, legacy.Revision);
+        Assert.Single(store.Summaries());
     }
 
     [Theory]
@@ -90,18 +115,10 @@ public sealed class MfdProfileTests : IDisposable
     [InlineData("vehicle.state.power.shield_emitters")]
     [InlineData("vehicle.state.shields.level")]
     [InlineData("vehicle.state.shields.faces")]
-    public void ShieldControlCanBeAttachedToAnyRelatedField(string field)
+    public void ShieldControlMapsToRelatedFields(string field)
     {
-        var draft = Draft();
-        var tile = draft.Pages[0].Tiles[0] with { Field = field, Action = "v_power_toggle_shields",
-            Widget = field == "vehicle.state.shields.faces" ? "list" : "value" };
-        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [tile] }] });
-        Assert.Equal(field, Store.Get(saved.Id)!.Pages[0].Tiles[0].Field);
+        Assert.Contains(field, MfdActions.FieldsForAction("v_power_toggle_shields"));
         Assert.True(FieldCatalog.All.ContainsKey(field));
-        Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with
-        {
-            Tiles = [tile with { Field = "actor.vitals.heart_rate", Widget = "value" }]
-        }] }).Validate());
     }
 
     [Fact]
