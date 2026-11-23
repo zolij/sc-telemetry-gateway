@@ -10,6 +10,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
     private readonly GrpcChannel channel = GrpcChannel.ForAddress($"http://127.0.0.1:{port}",
         new GrpcChannelOptions { MaxReceiveMessageSize = 1024 * 1024 });
     private readonly SemaphoreSlim triggerLock = new(1, 1);
+    private readonly SemaphoreSlim catalogLock = new(1, 1);
     private long lastTrigger;
 
     private static readonly IReadOnlyDictionary<string, string> FieldByAction =
@@ -79,23 +80,29 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
 
     public async Task<IReadOnlyList<MfdAction>> ListAsync(CancellationToken cancellationToken)
     {
-        var client = new GameTelemetryService.GameTelemetryServiceClient(channel);
-        var response = await client.ListTriggerableActionsAsync(new(),
-            deadline: DateTime.UtcNow.AddSeconds(5), cancellationToken: cancellationToken);
-        if (response.Actions.Count > 512)
-            throw new InvalidDataException("The game returned too many actions.");
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var result = new List<MfdAction>();
-        foreach (var action in response.Actions)
+        if (!await catalogLock.WaitAsync(0, cancellationToken))
+            throw new MfdActionBusyException();
+        try
         {
-            if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
-                throw new InvalidDataException("The game returned an invalid action list.");
-            var fields = FieldsForAction(action.ActionName);
-            result.Add(new(action.ActionName, action.Category, action.Holdable,
-                fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
-                fields.Count == 0 ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
+            var client = new GameTelemetryService.GameTelemetryServiceClient(channel);
+            var response = await client.ListTriggerableActionsAsync(new(),
+                deadline: DateTime.UtcNow.AddSeconds(5), cancellationToken: cancellationToken);
+            if (response.Actions.Count > 512)
+                throw new InvalidDataException("The game returned too many actions.");
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<MfdAction>();
+            foreach (var action in response.Actions)
+            {
+                if (!ValidName(action.ActionName) || !ValidName(action.Category) || !seen.Add(action.ActionName))
+                    throw new InvalidDataException("The game returned an invalid action list.");
+                var fields = FieldsForAction(action.ActionName);
+                result.Add(new(action.ActionName, action.Category, action.Holdable,
+                    fields.Count == 0 || fields.Any(item => snapshot.SelectedFields.Contains(item, StringComparer.Ordinal)),
+                    fields.Count == 0 ? null : action.ActionName is "v_lights_on" or "v_lights_off", fields));
+            }
+            return result;
         }
-        return result;
+        finally { catalogLock.Release(); }
     }
 
     public async Task<TriggerGameActionResponse> TriggerAsync(string name, uint? holdMs,
@@ -144,6 +151,7 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
     {
         channel.Dispose();
         triggerLock.Dispose();
+        catalogLock.Dispose();
     }
 }
 

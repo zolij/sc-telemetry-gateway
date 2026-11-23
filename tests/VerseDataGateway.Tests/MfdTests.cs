@@ -518,6 +518,77 @@ public sealed class MfdTests
     public sealed class ActionGameState
     {
         public ConcurrentQueue<TriggerGameActionRequest> Requests { get; } = new();
+        public TaskCompletionSource? CatalogEntered { get; set; }
+        public TaskCompletionSource? CatalogRelease { get; set; }
+        public int CatalogCalls;
+    }
+
+    [Fact]
+    public async Task GameActionCatalogLimitsConcurrentDiscoveryAndTriggerChecks()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        var gameState = new ActionGameState();
+        builder.Services.AddSingleton(gameState);
+        await using var game = builder.Build();
+        game.MapGrpcService<ActionGame>();
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start(["vehicle.state.lights_enabled"], gamePort);
+        test.Store.StartStream();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+
+        async Task AssertBusy(HttpResponseMessage response)
+        {
+            using (response)
+            {
+                Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+                Assert.Equal("action_busy", body.RootElement.GetProperty("error").GetString());
+            }
+        }
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gameState.CatalogEntered = entered;
+        gameState.CatalogRelease = release;
+        try
+        {
+            var firstGet = http.GetAsync("/api/mfd/actions", test.Token);
+            await entered.Task.WaitAsync(test.Token);
+            await AssertBusy(await http.GetAsync("/api/mfd/actions", test.Token));
+            await AssertBusy(await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token));
+            Assert.Equal(1, Volatile.Read(ref gameState.CatalogCalls));
+            Assert.Empty(gameState.Requests);
+            release.SetResult();
+            using var firstResponse = await firstGet;
+            firstResponse.EnsureSuccessStatusCode();
+
+            entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            gameState.CatalogEntered = entered;
+            gameState.CatalogRelease = release;
+            var trigger = http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token);
+            await entered.Task.WaitAsync(test.Token);
+            await AssertBusy(await http.GetAsync("/api/mfd/actions", test.Token));
+            Assert.Equal(2, Volatile.Read(ref gameState.CatalogCalls));
+            release.SetResult();
+            using var triggerResponse = await trigger;
+            triggerResponse.EnsureSuccessStatusCode();
+            Assert.Single(gameState.Requests);
+            using var finalGet = await http.GetAsync("/api/mfd/actions", test.Token);
+            finalGet.EnsureSuccessStatusCode();
+            Assert.Equal(3, Volatile.Read(ref gameState.CatalogCalls));
+        }
+        finally { release.TrySetResult(); }
     }
 
     [Theory]
@@ -563,9 +634,14 @@ public sealed class MfdTests
 
     public sealed class ActionGame(ActionGameState state) : GameTelemetryService.GameTelemetryServiceBase
     {
-        public override Task<ListTriggerableActionsResponse> ListTriggerableActions(
-            ListTriggerableActionsRequest request, ServerCallContext context) => Task.FromResult(
-                new ListTriggerableActionsResponse
+        public override async Task<ListTriggerableActionsResponse> ListTriggerableActions(
+            ListTriggerableActionsRequest request, ServerCallContext context)
+        {
+            Interlocked.Increment(ref state.CatalogCalls);
+            var release = state.CatalogRelease;
+            state.CatalogEntered?.TrySetResult();
+            if (release is not null) await release.Task.WaitAsync(context.CancellationToken);
+            return new ListTriggerableActionsResponse
                 {
                     Actions =
                     {
@@ -574,7 +650,8 @@ public sealed class MfdTests
                         new TriggerableAction { ActionName = "v_power_toggle_shields", Category = "spaceship_power" },
                         new TriggerableAction { ActionName = "v_invoke_ping", Category = "spaceship_radar", Holdable = true }
                     }
-                });
+                };
+        }
 
         public override Task<TriggerGameActionResponse> TriggerGameAction(
             TriggerGameActionRequest request, ServerCallContext context)

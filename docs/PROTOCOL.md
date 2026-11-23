@@ -285,6 +285,8 @@ Unmapped actions do not require a field. `mapping_verified` is
 `false` for name-based associations not live-verified, and `null` for
 unmapped actions. Other listed actions are available as standalone controls.
 The list and game-side allowlist can change independently of gateway profiles.
+Only one catalogue query, including the trigger-time eligibility check, can be
+in flight at a time; concurrent requests receive HTTP 429 `action_busy`.
 
 The explicit field associations cover vehicle lights, landing gear, VTOL,
 transformation, door opening and locking, IFCS G-safe, ESP, proximity assist

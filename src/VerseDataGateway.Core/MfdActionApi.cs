@@ -99,7 +99,7 @@ public sealed partial class MfdServer
         }
         catch (MfdActionBusyException)
         {
-            await ProfileError(context, 429, "action_busy", "Wait before sending another game action.");
+            await ProfileError(context, 429, "action_busy", "Game controls are busy. Try again shortly.");
         }
         catch (RpcException ex)
         {
