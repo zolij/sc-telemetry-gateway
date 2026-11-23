@@ -61,7 +61,8 @@ internal sealed class MfdActions(int port, MfdSnapshotStore snapshot) : IDisposa
             foreach (var action in actions) mappings.Add(action, fields);
         }
 
-        Add(["vehicle.state.power.shield_generators", "vehicle.state.power.shield_emitters", "vehicle.state.shields.level"],
+        Add(["vehicle.state.power.shield_generators", "vehicle.state.power.shield_emitters",
+                "vehicle.state.shields.level", "vehicle.state.shields.faces"],
             "v_power_toggle_shields", "v_power_set_shields_on", "v_power_set_shields_off");
         Add(["vehicle.state.power.engines"],
             "v_power_toggle_thrusters", "v_power_set_thrusters_on", "v_power_set_thrusters_off");
