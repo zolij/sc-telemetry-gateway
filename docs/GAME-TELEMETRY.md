@@ -94,6 +94,11 @@ the `actor` section was observed. All 34 emotes, `mobiglas`,
 `events` section. The previously observed 500 ms `v_invoke_ping` hold was a
 separate test, not part of these two runs.
 
+A subsequent `visor_wipe` retry returned `OK` with an empty message. The next
+38 frames contained `actor` with `ON_FOOT` locomotion and no other sections.
+The mobiglas state was not verified, so it is unknown whether it caused the
+earlier `FILTERED` response. The retry did not establish a visible animation.
+
 Notable decoded changes during the seated actions' observation windows were:
 
 | Actions | Observed telemetry changes |
