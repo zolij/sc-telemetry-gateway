@@ -11,6 +11,19 @@ namespace ScTelemetryGateway.Tests;
 public sealed class ContractTests
 {
     [Fact]
+    public void MissingPortsUseDefaultsAndSavedPortsRemainUnchanged()
+    {
+        var defaults = JsonSerializer.Deserialize<GatewayOptions>("""{}""", WireJson.Options)!;
+        Assert.Equal(29420, defaults.GamePort);
+        Assert.Equal(29421, defaults.MfdPort);
+
+        var saved = JsonSerializer.Deserialize<GatewayOptions>(
+            """{"game_port":50051,"mfd_port":50052}""", WireJson.Options)!;
+        Assert.Equal(50051, saved.GamePort);
+        Assert.Equal(50052, saved.MfdPort);
+    }
+
+    [Fact]
     public void SerializedBatchesAndAcksMatchPublishedSchema()
     {
         var schema = JsonSchema.FromText(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "telemetry.schema.json")));
