@@ -159,6 +159,68 @@ Empty repeated fields appear as `[]`; unknown protobuf fields are not displayed.
 The output can include sensitive in-game information; it is not written to a
 file by the tool, but terminal scrollback or redirection can retain it.
 
+## Developer game mock
+
+The standalone mock provides synthetic game-side gRPC telemetry and controls
+without running Star Citizen. Install the .NET SDK selected by
+[`global.json`](../global.json), then run from the repository root:
+
+```sh
+dotnet run --project tools/TelemetryMock
+dotnet run --project tools/TelemetryMock -- 29422
+```
+
+The optional argument is the port (`1024`–`65535`, default `29420`). Configure
+the gateway's **Game** port to match and explicitly start collection as usual.
+Keep the game service stopped or use a different port: only one process can
+listen on the same address and port. The mock listens exclusively on
+`127.0.0.1` using unencrypted HTTP/2. Run it on the same operating system as
+the gateway: WSL/Linux loopback is not the Windows gateway's loopback. It is a
+developer tool, not bundled with the Windows installer.
+
+The mock starts with a seated synthetic pilot, a fictional ship and changing
+flight and actor values. It streams roughly every 52 ms, accepts multiple
+clients, and shares state across them. On foot, vehicle and weapon sections
+are omitted. Values, timing, action effects and the included extra sections
+are synthetic, not a game recording or claims about game behavior. Proto3
+ordinary scalar defaults may be omitted on the wire, so the gateway may show
+zero numeric values as **Unknown**, as with a real game stream.
+
+Enter these commands in the mock's terminal; `help` repeats the list:
+
+| Command | Effect |
+|---|---|
+| `seat` | Set the simulated pilot seated; emit `ACTOR_ENTER_SEAT` on a transition. |
+| `foot` | Set the simulated pilot on foot; emit `ACTOR_LEAVE_SEAT` on a transition. |
+| `event spawn`, `event dead`, `event respawn`, `event downed` | Emit the corresponding actor event. |
+| `event enter-seat`, `event leave-seat` | Emit that event without changing the simulated seat state. |
+
+Events reach streams active at the time of the command once each; new streams
+do not receive past events. If a client cannot consume its bounded event
+queue, its stream fails explicitly and must reconnect. Console EOF leaves the
+server running without interactive commands. Stop with Ctrl+C.
+
+The mock lists the 112 actions from the observed catalogue below. It models
+lights, gear, VTOL, transformation, doors and door locks, IFCS G-safe, ESP,
+proximity assist and coupling, master mode, advanced HUD, light amplification,
+and whole-ship, weapon, thruster and shield power. Their state changes are
+visible in subsequent telemetry while seated. These are deliberately simplified
+simulations, including immediate deployment transitions and simulated door
+responses, not evidence that the game behaves identically. Other listed
+actions return `FAILED` with a message that they are not simulated; they do
+not pretend to succeed. Unknown actions return `UNKNOWN_ACTION`, holds on
+non-holdable actions return `HOLD_NOT_ALLOWED`, and simulated vehicle actions
+on foot return `MAP_INACTIVE`. The catalogue marks only `v_invoke_ping` as
+holdable; it is not otherwise simulated. The mock validates a supplied hold as
+1–5000 ms, matching the gateway's limits rather than asserting game limits.
+
+Use the gateway's normal local MFD field selection and pairing to exercise the
+full path, or connect the [terminal viewer](#developer-terminal-viewer) to
+the mock's port. Telemetry and simulated actions stay in memory; no game
+telemetry or player data is loaded from the PTU installation. The existing
+MFD network and privacy warnings still apply. The mock cannot establish
+compatibility with the current PTU; repeat live tests when available.
+
 ## Service and wire contract
 
 The proto3 package is `sc.game.telemetry.v1`; the service is

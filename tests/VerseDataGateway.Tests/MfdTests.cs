@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Text;
 using Sc.Game.Telemetry.V1;
 using VerseDataGateway.Core;
+using VerseDataGateway.TelemetryMock;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Builder;
@@ -417,6 +418,50 @@ public sealed class MfdTests
             http.Dispose();
             deadline.Dispose();
             if (Directory.Exists(profileRoot)) Directory.Delete(profileRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MockGameControlsFlowThroughPairedMfdAndGatewayReader()
+    {
+        await using var game = MockHost.Build(0);
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start(["vehicle.state.lights_enabled"], gamePort);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(test.Token);
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reader = new GameTelemetryReader(gamePort);
+        var run = reader.RunAsync([], _ => { }, stop.Token, test.Store.Disconnected, test.Store.StartStream, (frame, payload) =>
+        {
+            test.Store.Ingest(frame, payload);
+            received.TrySetResult();
+        });
+        try
+        {
+            await received.Task.WaitAsync(test.Token);
+            using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+            http.DefaultRequestHeaders.Add("Origin", test.Origin);
+            http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+            using var catalog = await http.GetAsync("/api/mfd/actions", test.Token);
+            catalog.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(test.Token));
+            Assert.True(body.RootElement.EnumerateArray().Single(
+                item => item.GetProperty("action_name").GetString() == "v_lights_on").GetProperty("enabled").GetBoolean());
+            using var trigger = await http.PostAsJsonAsync("/api/mfd/actions/trigger",
+                new { action_name = "v_lights_on" }, test.Token);
+            trigger.EnsureSuccessStatusCode();
+            using var result = JsonDocument.Parse(await trigger.Content.ReadAsStringAsync(test.Token));
+            Assert.Equal("Ok", result.RootElement.GetProperty("status").GetString());
+            while (!test.Store.Current().Fields.TryGetValue("vehicle.state.lights_enabled", out var value) ||
+                   value.Value?.GetValue<bool>() != true)
+                await Task.Delay(20, test.Token);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            try { await run; }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
         }
     }
 

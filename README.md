@@ -1,3 +1,11 @@
+> [!CAUTION]
+> ### Currently unusable with Star Citizen
+>
+> **The required game-side telemetry feature is currently unavailable in PTU
+> and cannot be enabled.** The application cannot be used with the actual
+> game for telemetry or controls. The development mock provides synthetic
+> data only.
+
 <p align="center"><img src="src/VerseDataGateway.Windows/mfd/assets/app-icon.png" alt="Verse Data Gateway icon" width="160"></p>
 
 # Verse Data Gateway
@@ -45,6 +53,9 @@ For the recovered game-side schema, see the
 - Separate, configurable application usage statistics with first-run notice.
 
 ## Windows quick start
+
+The game configuration below is retained for when the required feature becomes
+available again; it cannot currently enable the game-side service.
 
 1. Download `Setup.exe` from [Releases](https://github.com/zolij/verse-data-gateway/releases),
    install it for your Windows user, then launch it from the Start menu/tray.
@@ -296,10 +307,18 @@ Dependabot update schedules do not enable those repository-level alerts.
 Install the SDK selected in [global.json](global.json), then:
 
 ```sh
+dotnet run --project tools/TelemetryMock
 dotnet test tests/VerseDataGateway.Tests
 RUN_PROXY_TESTS=1 dotnet test tests/VerseDataGateway.Tests
 dotnet publish src/VerseDataGateway.Windows -c Release -r win-x64 --self-contained true -o artifacts/win-x64
 ```
+
+The standalone mock replaces the game's local gRPC service with synthetic,
+interactive telemetry for development. It listens only on `127.0.0.1:29420`
+by default; run it on the same OS as the gateway and configure matching game
+ports. It cannot share a port with the game. It is not included in the
+installer and does not prove PTU compatibility. For commands, simulated
+controls and limitations, see [the mock guide](docs/GAME-TELEMETRY.md#developer-game-mock).
 
 The second command requires Docker and runs a temporary Nginx reverse proxy;
 the test removes its own container and temporary files. On unusual Docker/WSL
