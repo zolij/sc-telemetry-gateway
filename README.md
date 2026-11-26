@@ -2,6 +2,12 @@
 
 # Verse Data Gateway
 
+> [!WARNING]
+> The required game-side telemetry feature is currently unavailable in PTU
+> and cannot be enabled. As a result, this application cannot currently be
+> used with the actual game for telemetry or controls. The development mock
+> provides synthetic data only.
+
 Verse Data Gateway is an unofficial, independent community project for
 Star Citizen. This Windows telemetry gateway turns selected game data into a
 customizable phone or tablet MFD (multi-function display), with optional
@@ -45,6 +51,9 @@ For the recovered game-side schema, see the
 - Separate, configurable application usage statistics with first-run notice.
 
 ## Windows quick start
+
+The game configuration below is retained for when the required feature becomes
+available again; it cannot currently enable the game-side service.
 
 1. Download `Setup.exe` from [Releases](https://github.com/zolij/verse-data-gateway/releases),
    install it for your Windows user, then launch it from the Start menu/tray.
