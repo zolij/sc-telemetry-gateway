@@ -5,14 +5,17 @@ using Sc.Game.Telemetry.V1;
 
 namespace VerseDataGateway.TelemetryMock;
 
-public sealed class MockState
+public sealed class MockState(TimeProvider? timeProvider = null)
 {
     private readonly object gate = new();
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     private readonly long started = Stopwatch.GetTimestamp();
     private bool seated = true, lights, gSafe = true, esp = true, proximity = true, coupled = true;
-    private bool hud, lightAmplification, power = true, weaponsPower = true, enginesPower = true, shieldsPower = true;
+    private bool hudScm, hudNav, lightAmplification, power = true, weaponsPower = true, enginesPower = true;
+    private bool shieldGenerators = true, shieldEmitters = true;
     private bool doorsOpen, doorsLocked;
     private bool gear, vtol, transformation;
+    private long? gearTransitionStarted;
     private VehicleMasterMode mode = VehicleMasterMode.Scm;
     private readonly HashSet<Channel<GameEvent.Types.GameEventType>> subscribers = [];
 
@@ -34,6 +37,11 @@ public sealed class MockState
             seated = value;
             Publish(value ? GameEvent.Types.GameEventType.ActorEnterSeat : GameEvent.Types.GameEventType.ActorLeaveSeat);
         }
+    }
+
+    public void SetShields(bool generators, bool emitters)
+    {
+        lock (gate) { shieldGenerators = generators; shieldEmitters = emitters; }
     }
 
     public void Emit(GameEvent.Types.GameEventType type)
@@ -97,6 +105,7 @@ public sealed class MockState
         {
             var elapsed = Stopwatch.GetElapsedTime(started).TotalSeconds;
             var wave = (float)Math.Sin(elapsed / 5);
+            var shieldsOperational = shieldGenerators && shieldEmitters;
             var result = new TelemetryStreamResponse
             {
                 Actor = new()
@@ -134,11 +143,11 @@ public sealed class MockState
                     },
                     Flight = new()
                     {
-                        State = new() { Gear = Deployment(gear), Vtol = Deployment(vtol), Transformation = Deployment(transformation) },
+                        State = new() { Gear = GearDeployment(), Vtol = Deployment(vtol), Transformation = Deployment(transformation) },
                         Settings = new()
                         {
                             IfcsGSafe = Available(gSafe), IfcsEsp = Available(esp), IfcsProximityAssist = Available(proximity),
-                            IfcsCoupled = Available(coupled), AdvancedHudEnabledScm = hud, AdvancedHudEnabledNav = hud,
+                            IfcsCoupled = Available(coupled), AdvancedHudEnabledScm = hudScm, AdvancedHudEnabledNav = hudNav,
                             FlightLightAmplification = lightAmplification, IfcsGravityCompensation = Available(true),
                             IfcsCruiseMode = Available(false), IfcsSpeedLimiter = Available(true),
                             IfcsProximityAssistLanding = Available(true), IfcsStability = Available(true),
@@ -159,21 +168,21 @@ public sealed class MockState
                     {
                         Powerplants = power, Engines = enginesPower, Weapons = weaponsPower,
                         Coolers = power, LifeSupport = power, GravityGenerators = power, Sensors = power,
-                        ShieldGenerators = shieldsPower, ShieldEmitters = shieldsPower
+                        ShieldGenerators = shieldGenerators, ShieldEmitters = shieldEmitters
                     },
                     Annunciators = new()
                     {
                         Pwr = Annunciation(power), Wpn = Annunciation(weaponsPower), Thr = Annunciation(enginesPower),
-                        Shld = Annunciation(shieldsPower), Cool = Annunciation(power), Qdrv = Annunciation(power),
+                        Shld = Annunciation(shieldsOperational), Cool = Annunciation(power), Qdrv = Annunciation(power),
                         Radr = Annunciation(power), Prox = Annunciation(proximity),
                         Hit = VehicleAnnunciator.Types.AnnunciatorState.Nominal,
                         Misl = VehicleAnnunciator.Types.AnnunciatorState.Nominal
                     },
                     Shields = new()
                     {
-                        Level = shieldsPower ? 0.75f : 0,
-                        Faces = { shieldsPower ? 0.8f : 0, shieldsPower ? 0.7f : 0,
-                            shieldsPower ? 0.75f : 0, shieldsPower ? 0.75f : 0 }
+                        Level = shieldsOperational ? 0.75f : 0,
+                        Faces = { shieldsOperational ? 0.8f : 0, shieldsOperational ? 0.7f : 0,
+                            shieldsOperational ? 0.75f : 0, shieldsOperational ? 0.75f : 0 }
                     },
                     MasterMode = new() { Mode = mode }
                 }
@@ -216,9 +225,9 @@ public sealed class MockState
                 "v_lights" => () => lights = !lights,
                 "v_lights_on" => () => lights = true,
                 "v_lights_off" => () => lights = false,
-                "v_toggle_landing_system" => () => gear = !gear,
-                "v_deploy_landing_system" => () => gear = true,
-                "v_retract_landing_system" => () => gear = false,
+                "v_toggle_landing_system" => () => SetGear(!gear),
+                "v_deploy_landing_system" => () => SetGear(true),
+                "v_retract_landing_system" => () => SetGear(false),
                 "v_vtol_toggle" => () => vtol = !vtol,
                 "v_vtol_on" => () => vtol = true,
                 "v_vtol_off" => () => vtol = false,
@@ -239,14 +248,14 @@ public sealed class MockState
                 "v_ifcs_proximity_assist_on" => () => proximity = true,
                 "v_ifcs_proximity_assist_off" => () => proximity = false,
                 "v_ifcs_vector_decoupling_toggle" => () => coupled = !coupled,
-                "v_ifcs_vector_decoupling_on" => () => coupled = true,
-                "v_ifcs_vector_decoupling_off" => () => coupled = false,
+                "v_ifcs_vector_decoupling_on" => () => coupled = false,
+                "v_ifcs_vector_decoupling_off" => () => coupled = true,
                 "v_master_mode_cycle" => () => mode = mode == VehicleMasterMode.Scm ? VehicleMasterMode.Navigation : VehicleMasterMode.Scm,
                 "v_master_mode_set_nav" => () => mode = VehicleMasterMode.Navigation,
                 "v_master_mode_set_scm" => () => mode = VehicleMasterMode.Scm,
-                "v_flight_advanced_hud_toggle" => () => hud = !hud,
-                "v_flight_advanced_hud_on" => () => hud = true,
-                "v_flight_advanced_hud_off" => () => hud = false,
+                "v_flight_advanced_hud_toggle" => () => SetHud(!(mode == VehicleMasterMode.Scm ? hudScm : hudNav)),
+                "v_flight_advanced_hud_on" => () => SetHud(true),
+                "v_flight_advanced_hud_off" => () => SetHud(false),
                 "v_light_amplification_toggle" => () => lightAmplification = !lightAmplification,
                 "v_light_amplification_on" => () => lightAmplification = true,
                 "v_light_amplification_off" => () => lightAmplification = false,
@@ -259,9 +268,9 @@ public sealed class MockState
                 "v_power_toggle_thrusters" => () => enginesPower = !enginesPower,
                 "v_power_set_thrusters_on" => () => enginesPower = true,
                 "v_power_set_thrusters_off" => () => enginesPower = false,
-                "v_power_toggle_shields" => () => shieldsPower = !shieldsPower,
-                "v_power_set_shields_on" => () => shieldsPower = true,
-                "v_power_set_shields_off" => () => shieldsPower = false,
+                "v_power_toggle_shields" => () => SetShields(!(shieldGenerators && shieldEmitters), !(shieldGenerators && shieldEmitters)),
+                "v_power_set_shields_on" => () => SetShields(true, true),
+                "v_power_set_shields_off" => () => SetShields(false, false),
                 _ => null
             };
             if (apply is null) return Response(TriggerGameActionStatus.Failed, "This action is not simulated by the mock.");
@@ -271,7 +280,25 @@ public sealed class MockState
         }
     }
 
-    private void SetAllPower(bool value) => power = weaponsPower = enginesPower = shieldsPower = value;
+    private void SetAllPower(bool value) => power = weaponsPower = enginesPower = shieldGenerators = shieldEmitters = value;
+    private void SetHud(bool value)
+    {
+        if (mode == VehicleMasterMode.Scm) hudScm = value;
+        else hudNav = value;
+    }
+    private void SetGear(bool value)
+    {
+        if (gear == value) return;
+        gear = value;
+        gearTransitionStarted = clock.GetTimestamp();
+    }
+    private VehicleComponentDeploymentState GearDeployment()
+    {
+        if (gearTransitionStarted is long started && clock.GetElapsedTime(started) < TimeSpan.FromSeconds(2))
+            return gear ? VehicleComponentDeploymentState.Deploying : VehicleComponentDeploymentState.Retracting;
+        gearTransitionStarted = null;
+        return Deployment(gear);
+    }
     private static VehicleAnnunciator.Types.AnnunciatorState Annunciation(bool enabled) => enabled
         ? VehicleAnnunciator.Types.AnnunciatorState.Nominal : VehicleAnnunciator.Types.AnnunciatorState.Off;
     private static FeedbackAxes Feedback() => new()

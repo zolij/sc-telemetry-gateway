@@ -4,7 +4,7 @@ namespace VerseDataGateway.TelemetryMock;
 
 public static class MockConsole
 {
-    public const string Help = "Commands: seat, foot, event <spawn|dead|enter-seat|leave-seat|respawn|downed>, help";
+    public const string Help = "Commands: seat, foot, shields <on|off|mixed>, event <spawn|dead|enter-seat|leave-seat|respawn|downed>, help";
 
     private static readonly IReadOnlyDictionary<string, GameEvent.Types.GameEventType> EventTypes =
         new Dictionary<string, GameEvent.Types.GameEventType>(StringComparer.OrdinalIgnoreCase)
@@ -30,6 +30,17 @@ public static class MockConsole
         {
             state.SetSeated(false);
             return "Simulated actor on foot.";
+        }
+        if (parts.Length == 2 && parts[0].Equals("shields", StringComparison.OrdinalIgnoreCase))
+        {
+            switch (parts[1].ToLowerInvariant())
+            {
+                case "on": state.SetShields(true, true); break;
+                case "off": state.SetShields(false, false); break;
+                case "mixed": state.SetShields(true, false); break;
+                default: return "Invalid command. " + Help;
+            }
+            return $"Simulated shield power: {parts[1]}.";
         }
         if (parts.Length == 2 && parts[0].Equals("event", StringComparison.OrdinalIgnoreCase) &&
             EventTypes.TryGetValue(parts[1], out var type))
