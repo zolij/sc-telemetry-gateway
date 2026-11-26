@@ -8,12 +8,21 @@ public sealed class MockTelemetryService(MockState state) : GameTelemetryService
     public override async Task TelemetryStream(TelemetryStreamRequest request,
         IServerStreamWriter<TelemetryStreamResponse> responseStream, ServerCallContext context)
     {
+        using var subscription = state.Subscribe();
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(52));
         try
         {
             do
             {
-                await responseStream.WriteAsync(state.Frame(), context.CancellationToken);
+                var frame = state.Frame();
+                while (subscription.Events.TryRead(out var type))
+                {
+                    frame.Events ??= new EventsFrame();
+                    frame.Events.Events.Add(new GameEvent { Type = type });
+                }
+                if (subscription.Events.Completion.IsCompleted)
+                    await subscription.Events.Completion;
+                await responseStream.WriteAsync(frame, context.CancellationToken);
             } while (await timer.WaitForNextTickAsync(context.CancellationToken));
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested) { }

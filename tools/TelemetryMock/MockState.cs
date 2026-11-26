@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Threading.Channels;
+using Grpc.Core;
 using Sc.Game.Telemetry.V1;
 
 namespace VerseDataGateway.TelemetryMock;
@@ -12,6 +14,68 @@ public sealed class MockState
     private bool doorsOpen, doorsLocked;
     private bool gear, vtol, transformation;
     private VehicleMasterMode mode = VehicleMasterMode.Scm;
+    private readonly HashSet<Channel<GameEvent.Types.GameEventType>> subscribers = [];
+
+    public Subscription Subscribe()
+    {
+        lock (gate)
+        {
+            var channel = Channel.CreateBounded<GameEvent.Types.GameEventType>(256);
+            subscribers.Add(channel);
+            return new Subscription(this, channel);
+        }
+    }
+
+    public void SetSeated(bool value)
+    {
+        lock (gate)
+        {
+            if (seated == value) return;
+            seated = value;
+            Publish(value ? GameEvent.Types.GameEventType.ActorEnterSeat : GameEvent.Types.GameEventType.ActorLeaveSeat);
+        }
+    }
+
+    public void Emit(GameEvent.Types.GameEventType type)
+    {
+        if (type is GameEvent.Types.GameEventType.Unspecified || !Enum.IsDefined(type))
+            throw new ArgumentOutOfRangeException(nameof(type));
+        lock (gate) Publish(type);
+    }
+
+    private void Publish(GameEvent.Types.GameEventType type)
+    {
+        foreach (var channel in subscribers.ToArray())
+        {
+            if (channel.Writer.TryWrite(type)) continue;
+            channel.Writer.TryComplete(new RpcException(new Status(StatusCode.ResourceExhausted,
+                "Mock event queue overflowed; reconnect the stream.")));
+            subscribers.Remove(channel);
+        }
+    }
+
+    public sealed class Subscription : IDisposable
+    {
+        private readonly MockState owner;
+        private readonly Channel<GameEvent.Types.GameEventType> channel;
+
+        internal Subscription(MockState owner, Channel<GameEvent.Types.GameEventType> channel)
+        {
+            this.owner = owner;
+            this.channel = channel;
+        }
+
+        public ChannelReader<GameEvent.Types.GameEventType> Events => channel.Reader;
+
+        public void Dispose()
+        {
+            lock (owner.gate)
+            {
+                owner.subscribers.Remove(channel);
+                channel.Writer.TryComplete();
+            }
+        }
+    }
 
     public TelemetryStreamResponse Frame()
     {
