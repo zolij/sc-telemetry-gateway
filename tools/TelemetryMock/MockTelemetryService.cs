@@ -14,12 +14,7 @@ public sealed class MockTelemetryService(MockState state) : GameTelemetryService
         {
             do
             {
-                var frame = state.Frame();
-                while (subscription.Events.TryRead(out var type))
-                {
-                    frame.Events ??= new EventsFrame();
-                    frame.Events.Events.Add(new GameEvent { Type = type });
-                }
+                var frame = state.FrameWithEvents(subscription);
                 if (subscription.Events.Completion.IsCompleted)
                     await subscription.Events.Completion;
                 await responseStream.WriteAsync(frame, context.CancellationToken);

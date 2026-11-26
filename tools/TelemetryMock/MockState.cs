@@ -77,6 +77,20 @@ public sealed class MockState
         }
     }
 
+    public TelemetryStreamResponse FrameWithEvents(Subscription subscription)
+    {
+        lock (gate)
+        {
+            var frame = Frame();
+            while (subscription.Events.TryRead(out var type))
+            {
+                frame.Events ??= new EventsFrame();
+                frame.Events.Events.Add(new GameEvent { Type = type });
+            }
+            return frame;
+        }
+    }
+
     public TelemetryStreamResponse Frame()
     {
         lock (gate)
@@ -125,7 +139,11 @@ public sealed class MockState
                         {
                             IfcsGSafe = Available(gSafe), IfcsEsp = Available(esp), IfcsProximityAssist = Available(proximity),
                             IfcsCoupled = Available(coupled), AdvancedHudEnabledScm = hud, AdvancedHudEnabledNav = hud,
-                            FlightLightAmplification = lightAmplification
+                            FlightLightAmplification = lightAmplification, IfcsGravityCompensation = Available(true),
+                            IfcsCruiseMode = Available(false), IfcsSpeedLimiter = Available(true),
+                            IfcsProximityAssistLanding = Available(true), IfcsStability = Available(true),
+                            IfcsCore = Available(true), IfcsWindCompensation = Available(true),
+                            IfcsCommandBehaviour = Available(true), AdvancedHudLabels = true, CoursePrediction = true
                         },
                         Instruments = new()
                         {
@@ -143,14 +161,29 @@ public sealed class MockState
                         Coolers = power, LifeSupport = power, GravityGenerators = power, Sensors = power,
                         ShieldGenerators = shieldsPower, ShieldEmitters = shieldsPower
                     },
-                    Shields = new() { Level = shieldsPower ? 0.75f : 0, Faces = { 0.8f, 0.7f, 0.75f, 0.75f } },
+                    Annunciators = new()
+                    {
+                        Pwr = Annunciation(power), Wpn = Annunciation(weaponsPower), Thr = Annunciation(enginesPower),
+                        Shld = Annunciation(shieldsPower), Cool = Annunciation(power), Qdrv = Annunciation(power),
+                        Radr = Annunciation(power), Prox = Annunciation(proximity),
+                        Hit = VehicleAnnunciator.Types.AnnunciatorState.Nominal,
+                        Misl = VehicleAnnunciator.Types.AnnunciatorState.Nominal
+                    },
+                    Shields = new()
+                    {
+                        Level = shieldsPower ? 0.75f : 0,
+                        Faces = { shieldsPower ? 0.8f : 0, shieldsPower ? 0.7f : 0,
+                            shieldsPower ? 0.75f : 0, shieldsPower ? 0.75f : 0 }
+                    },
                     MasterMode = new() { Mode = mode }
                 }
             };
             result.Weapons = new()
             {
+                Settings = new() { PrecisionLines = true, UseLagPips = true },
                 PresetIndex = 1, PresetName = "Synthetic preset",
-                Weapons = { new WeaponState { Name = "Synthetic weapon", IsPowered = weaponsPower, ReadyToFire = weaponsPower } },
+                Weapons = { new WeaponState { Name = "Synthetic weapon", IsPowered = weaponsPower,
+                    ReadyToFire = weaponsPower, ContainedInPreset = true } },
                 Countermeasures =
                 {
                     new Countermeasures { Type = Countermeasures.Types.CountermeasureType.Decoy, Amount = 24 },
@@ -160,8 +193,7 @@ public sealed class MockState
             result.Turret = new() { LightAmplification = lightAmplification };
             result.ForceFeedback = new()
             {
-                Angular = new() { X = new() { Resistance = 0.2f, Damping = 0.1f } },
-                Linear = new() { Z = new() { Resistance = 0.1f, Damping = 0.1f } },
+                Angular = Feedback(), Linear = Feedback(),
                 StickShaker = 0.1f
             };
             return result;
@@ -179,65 +211,75 @@ public sealed class MockState
 
         lock (gate)
         {
-            if (!seated) return Response(TriggerGameActionStatus.MapInactive, "The mock vehicle action map is inactive on foot.");
-            switch (request.ActionName)
+            Action? apply = request.ActionName switch
             {
-                case "v_lights": lights = !lights; break;
-                case "v_lights_on": lights = true; break;
-                case "v_lights_off": lights = false; break;
-                case "v_toggle_landing_system": gear = !gear; break;
-                case "v_deploy_landing_system": gear = true; break;
-                case "v_retract_landing_system": gear = false; break;
-                case "v_vtol_toggle": vtol = !vtol; break;
-                case "v_vtol_on": vtol = true; break;
-                case "v_vtol_off": vtol = false; break;
-                case "v_transform_cycle": transformation = !transformation; break;
-                case "v_transform_deploy": transformation = true; break;
-                case "v_transform_retract": transformation = false; break;
-                case "v_open_all_doors": doorsOpen = true; break;
-                case "v_close_all_doors": doorsOpen = false; break;
-                case "v_toggle_all_doors": doorsOpen = !doorsOpen; break;
-                case "v_lock_all_doors": doorsLocked = true; break;
-                case "v_unlock_all_doors": doorsLocked = false; break;
-                case "v_toggle_all_doorlocks": doorsLocked = !doorsLocked; break;
-                case "v_ifcs_toggle_gforce_safety": gSafe = !gSafe; break;
-                case "v_ifcs_gsafe_on": gSafe = true; break;
-                case "v_ifcs_gsafe_off": gSafe = false; break;
-                case "v_ifcs_toggle_esp": esp = !esp; break;
-                case "v_ifcs_proximity_assist_toggle": proximity = !proximity; break;
-                case "v_ifcs_proximity_assist_on": proximity = true; break;
-                case "v_ifcs_proximity_assist_off": proximity = false; break;
-                case "v_ifcs_vector_decoupling_toggle": coupled = !coupled; break;
-                case "v_ifcs_vector_decoupling_on": coupled = true; break;
-                case "v_ifcs_vector_decoupling_off": coupled = false; break;
-                case "v_master_mode_cycle": mode = mode == VehicleMasterMode.Scm ? VehicleMasterMode.Navigation : VehicleMasterMode.Scm; break;
-                case "v_master_mode_set_nav": mode = VehicleMasterMode.Navigation; break;
-                case "v_master_mode_set_scm": mode = VehicleMasterMode.Scm; break;
-                case "v_flight_advanced_hud_toggle": hud = !hud; break;
-                case "v_flight_advanced_hud_on": hud = true; break;
-                case "v_flight_advanced_hud_off": hud = false; break;
-                case "v_light_amplification_toggle": lightAmplification = !lightAmplification; break;
-                case "v_light_amplification_on": lightAmplification = true; break;
-                case "v_light_amplification_off": lightAmplification = false; break;
-                case "v_power_toggle": SetAllPower(!power); break;
-                case "v_power_set_on": SetAllPower(true); break;
-                case "v_power_set_off": SetAllPower(false); break;
-                case "v_power_toggle_weapons": weaponsPower = !weaponsPower; break;
-                case "v_power_set_weapons_on": weaponsPower = true; break;
-                case "v_power_set_weapons_off": weaponsPower = false; break;
-                case "v_power_toggle_thrusters": enginesPower = !enginesPower; break;
-                case "v_power_set_thrusters_on": enginesPower = true; break;
-                case "v_power_set_thrusters_off": enginesPower = false; break;
-                case "v_power_toggle_shields": shieldsPower = !shieldsPower; break;
-                case "v_power_set_shields_on": shieldsPower = true; break;
-                case "v_power_set_shields_off": shieldsPower = false; break;
-                default: return Response(TriggerGameActionStatus.Failed, "This action is not simulated by the mock.");
-            }
+                "v_lights" => () => lights = !lights,
+                "v_lights_on" => () => lights = true,
+                "v_lights_off" => () => lights = false,
+                "v_toggle_landing_system" => () => gear = !gear,
+                "v_deploy_landing_system" => () => gear = true,
+                "v_retract_landing_system" => () => gear = false,
+                "v_vtol_toggle" => () => vtol = !vtol,
+                "v_vtol_on" => () => vtol = true,
+                "v_vtol_off" => () => vtol = false,
+                "v_transform_cycle" => () => transformation = !transformation,
+                "v_transform_deploy" => () => transformation = true,
+                "v_transform_retract" => () => transformation = false,
+                "v_open_all_doors" => () => doorsOpen = true,
+                "v_close_all_doors" => () => doorsOpen = false,
+                "v_toggle_all_doors" => () => doorsOpen = !doorsOpen,
+                "v_lock_all_doors" => () => doorsLocked = true,
+                "v_unlock_all_doors" => () => doorsLocked = false,
+                "v_toggle_all_doorlocks" => () => doorsLocked = !doorsLocked,
+                "v_ifcs_toggle_gforce_safety" => () => gSafe = !gSafe,
+                "v_ifcs_gsafe_on" => () => gSafe = true,
+                "v_ifcs_gsafe_off" => () => gSafe = false,
+                "v_ifcs_toggle_esp" => () => esp = !esp,
+                "v_ifcs_proximity_assist_toggle" => () => proximity = !proximity,
+                "v_ifcs_proximity_assist_on" => () => proximity = true,
+                "v_ifcs_proximity_assist_off" => () => proximity = false,
+                "v_ifcs_vector_decoupling_toggle" => () => coupled = !coupled,
+                "v_ifcs_vector_decoupling_on" => () => coupled = true,
+                "v_ifcs_vector_decoupling_off" => () => coupled = false,
+                "v_master_mode_cycle" => () => mode = mode == VehicleMasterMode.Scm ? VehicleMasterMode.Navigation : VehicleMasterMode.Scm,
+                "v_master_mode_set_nav" => () => mode = VehicleMasterMode.Navigation,
+                "v_master_mode_set_scm" => () => mode = VehicleMasterMode.Scm,
+                "v_flight_advanced_hud_toggle" => () => hud = !hud,
+                "v_flight_advanced_hud_on" => () => hud = true,
+                "v_flight_advanced_hud_off" => () => hud = false,
+                "v_light_amplification_toggle" => () => lightAmplification = !lightAmplification,
+                "v_light_amplification_on" => () => lightAmplification = true,
+                "v_light_amplification_off" => () => lightAmplification = false,
+                "v_power_toggle" => () => SetAllPower(!power),
+                "v_power_set_on" => () => SetAllPower(true),
+                "v_power_set_off" => () => SetAllPower(false),
+                "v_power_toggle_weapons" => () => weaponsPower = !weaponsPower,
+                "v_power_set_weapons_on" => () => weaponsPower = true,
+                "v_power_set_weapons_off" => () => weaponsPower = false,
+                "v_power_toggle_thrusters" => () => enginesPower = !enginesPower,
+                "v_power_set_thrusters_on" => () => enginesPower = true,
+                "v_power_set_thrusters_off" => () => enginesPower = false,
+                "v_power_toggle_shields" => () => shieldsPower = !shieldsPower,
+                "v_power_set_shields_on" => () => shieldsPower = true,
+                "v_power_set_shields_off" => () => shieldsPower = false,
+                _ => null
+            };
+            if (apply is null) return Response(TriggerGameActionStatus.Failed, "This action is not simulated by the mock.");
+            if (!seated) return Response(TriggerGameActionStatus.MapInactive, "The mock vehicle action map is inactive on foot.");
+            apply();
             return Response(TriggerGameActionStatus.Ok, "Simulated action.");
         }
     }
 
     private void SetAllPower(bool value) => power = weaponsPower = enginesPower = shieldsPower = value;
+    private static VehicleAnnunciator.Types.AnnunciatorState Annunciation(bool enabled) => enabled
+        ? VehicleAnnunciator.Types.AnnunciatorState.Nominal : VehicleAnnunciator.Types.AnnunciatorState.Off;
+    private static FeedbackAxes Feedback() => new()
+    {
+        X = new() { Resistance = 0.2f, Damping = 0.1f },
+        Y = new() { Resistance = 0.15f, Damping = 0.1f },
+        Z = new() { Resistance = 0.1f, Damping = 0.1f }
+    };
     private static Availability Available(bool enabled) => new() { Enabled = enabled, Active = enabled };
     private static VehicleComponentDeploymentState Deployment(bool value) => value
         ? VehicleComponentDeploymentState.Deployed : VehicleComponentDeploymentState.Retracted;

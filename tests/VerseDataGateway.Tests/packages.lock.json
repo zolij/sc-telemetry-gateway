@@ -322,6 +322,13 @@
           "Google.Protobuf": "[3.36.2, )",
           "Grpc.Net.Client": "[2.85.0, )"
         }
+      },
+      "VerseDataGateway.TelemetryMock": {
+        "type": "Project",
+        "dependencies": {
+          "Grpc.AspNetCore": "[2.85.0, )",
+          "VerseDataGateway.Core": "[0.2.0-preview.2, )"
+        }
       }
     }
   }

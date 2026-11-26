@@ -52,5 +52,6 @@ public static class MockConsole
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (IOException ex) { Console.Error.WriteLine($"Mock console input failed: {ex.Message}"); }
     }
 }

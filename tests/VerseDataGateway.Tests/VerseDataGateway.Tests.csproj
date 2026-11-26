@@ -26,11 +26,13 @@
     <Compile Include="../../src/VerseDataGateway.Windows/InstallationChoiceFile.cs" Link="InstallationChoiceFile.cs" />
     <Compile Include="../../tools/TelemetryDebug/TelemetryDebugView.cs" Link="TelemetryDebugView.cs" />
     <Content Include="../../docs/telemetry.schema.json" Link="telemetry.schema.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../docs/GAME-TELEMETRY.md" Link="GAME-TELEMETRY.md" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VerseDataGateway.Core\VerseDataGateway.Core.csproj" />
+    <ProjectReference Include="..\..\tools\TelemetryMock\TelemetryMock.csproj" />
   </ItemGroup>
 
 </Project>
