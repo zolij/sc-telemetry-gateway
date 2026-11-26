@@ -20,9 +20,9 @@ public sealed class MockTelemetryService(MockState state) : GameTelemetryService
     }
 
     public override Task<ListTriggerableActionsResponse> ListTriggerableActions(
-        ListTriggerableActionsRequest request, ServerCallContext context) => Task.FromResult(new ListTriggerableActionsResponse());
+        ListTriggerableActionsRequest request, ServerCallContext context) => Task.FromResult(ActionCatalog.List());
 
     public override Task<TriggerGameActionResponse> TriggerGameAction(
         TriggerGameActionRequest request, ServerCallContext context) =>
-        Task.FromResult(new TriggerGameActionResponse { Status = TriggerGameActionStatus.UnknownAction });
+        Task.FromResult(state.Trigger(request));
 }
