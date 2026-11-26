@@ -296,10 +296,18 @@ Dependabot update schedules do not enable those repository-level alerts.
 Install the SDK selected in [global.json](global.json), then:
 
 ```sh
+dotnet run --project tools/TelemetryMock
 dotnet test tests/VerseDataGateway.Tests
 RUN_PROXY_TESTS=1 dotnet test tests/VerseDataGateway.Tests
 dotnet publish src/VerseDataGateway.Windows -c Release -r win-x64 --self-contained true -o artifacts/win-x64
 ```
+
+The standalone mock replaces the game's local gRPC service with synthetic,
+interactive telemetry for development. It listens only on `127.0.0.1:29420`
+by default; run it on the same OS as the gateway and configure matching game
+ports. It cannot share a port with the game. It is not included in the
+installer and does not prove PTU compatibility. For commands, simulated
+controls and limitations, see [the mock guide](docs/GAME-TELEMETRY.md#developer-game-mock).
 
 The second command requires Docker and runs a temporary Nginx reverse proxy;
 the test removes its own container and temporary files. On unusual Docker/WSL

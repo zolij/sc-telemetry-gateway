@@ -150,6 +150,18 @@ public sealed class TelemetryMockTests
     }
 
     [Fact]
+    public async Task SlowEventSubscriberFailsExplicitlyInsteadOfDroppingEvents()
+    {
+        var state = new MockState();
+        using var subscription = state.Subscribe();
+        for (var i = 0; i < 257; i++)
+            state.Emit(GameEvent.Types.GameEventType.ActorDowned);
+        while (subscription.Events.TryRead(out _)) { }
+        var error = await Assert.ThrowsAsync<RpcException>(async () => await subscription.Events.Completion);
+        Assert.Equal(StatusCode.ResourceExhausted, error.StatusCode);
+    }
+
+    [Fact]
     public async Task GatewayReaderConsumesMockStreamAndStops()
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));

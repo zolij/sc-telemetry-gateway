@@ -9,7 +9,12 @@ if (args.Length > 1 || (args.Length == 1 &&
 
 var port = args.Length == 0 ? 29420 : int.Parse(args[0]);
 await using var app = MockHost.Build(port);
-await app.StartAsync();
+try { await app.StartAsync(); }
+catch (IOException ex)
+{
+    Console.Error.WriteLine($"Unable to start the mock server: {ex.Message}");
+    return 1;
+}
 Console.WriteLine($"Synthetic game telemetry mock on 127.0.0.1:{port}. Stop with Ctrl+C.");
 Console.WriteLine(MockConsole.Help);
 var state = app.Services.GetRequiredService<MockState>();
