@@ -1,12 +1,14 @@
+> [!CAUTION]
+> ### Currently unusable with Star Citizen
+>
+> **The required game-side telemetry feature is currently unavailable in PTU
+> and cannot be enabled.** The application cannot be used with the actual
+> game for telemetry or controls. The development mock provides synthetic
+> data only.
+
 <p align="center"><img src="src/VerseDataGateway.Windows/mfd/assets/app-icon.png" alt="Verse Data Gateway icon" width="160"></p>
 
 # Verse Data Gateway
-
-> [!WARNING]
-> The required game-side telemetry feature is currently unavailable in PTU
-> and cannot be enabled. As a result, this application cannot currently be
-> used with the actual game for telemetry or controls. The development mock
-> provides synthetic data only.
 
 Verse Data Gateway is an unofficial, independent community project for
 Star Citizen. This Windows telemetry gateway turns selected game data into a
