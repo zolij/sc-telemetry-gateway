@@ -112,6 +112,7 @@ public sealed class MfdProfileStore(string directory)
         }
         if (document.PresetMigrationComplete) return profiles = loaded;
         var migrated = new Dictionary<Guid, MfdProfile>(loaded);
+        var changed = false;
         foreach (var profile in loaded.Values)
         {
             var profileChanged = false;
@@ -132,8 +133,10 @@ public sealed class MfdProfileStore(string directory)
             migrated[profile.Id] = updated;
             if (Serialize(migrated).Length > MfdProfile.MaxStoreBytes)
                 migrated[profile.Id] = profile;
+            else
+                changed = true;
         }
-        if (Serialize(migrated).Length <= MfdProfile.MaxStoreBytes) Persist(migrated);
+        if (changed) Persist(migrated);
         else profiles = loaded;
         return profiles!;
     }

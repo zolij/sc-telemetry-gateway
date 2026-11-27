@@ -383,7 +383,7 @@ public sealed class MfdProfileTests : IDisposable
         const string empty = "{\"schema_version\":1,\"profiles\":[]}";
         File.WriteAllText(path, empty + new string(' ', MfdProfile.MaxStoreBytes - empty.Length));
         Assert.Empty(Store.List());
-        File.WriteAllText(path, empty + new string(' ', MfdProfile.MaxStoreBytes + 1 - empty.Length));
+        File.AppendAllText(path, " ");
         Assert.Throws<InvalidDataException>(() => Store.List());
         Assert.Equal(MfdProfile.MaxStoreBytes + 1L, new FileInfo(path).Length);
     }
