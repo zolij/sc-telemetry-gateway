@@ -192,6 +192,7 @@ Enter these commands in the mock's terminal; `help` repeats the list:
 |---|---|
 | `seat` | Set the simulated pilot seated; emit `ACTOR_ENTER_SEAT` on a transition. |
 | `foot` | Set the simulated pilot on foot; emit `ACTOR_LEAVE_SEAT` on a transition. |
+| `shields on`, `shields off`, `shields mixed` | Set both shield power fields on or off, or set generator on and emitter off. |
 | `event spawn`, `event dead`, `event respawn`, `event downed` | Emit the corresponding actor event. |
 | `event enter-seat`, `event leave-seat` | Emit that event without changing the simulated seat state. |
 
@@ -204,9 +205,11 @@ The mock lists the 112 actions from the observed catalogue below. It models
 lights, gear, VTOL, transformation, doors and door locks, IFCS G-safe, ESP,
 proximity assist and coupling, master mode, advanced HUD, light amplification,
 and whole-ship, weapon, thruster and shield power. Their state changes are
-visible in subsequent telemetry while seated. These are deliberately simplified
-simulations, including immediate deployment transitions and simulated door
-responses, not evidence that the game behaves identically. Other listed
+visible in subsequent telemetry while seated. The mock simulates a two-second
+landing-gear transition and independently retains the SCM and NAV HUD states.
+Shield toggles turn both fields off when both are on, and otherwise turn both
+on. These are deliberately simplified simulations, not evidence that the game
+behaves identically. Other listed
 actions return `FAILED` with a message that they are not simulated; they do
 not pretend to succeed. Unknown actions return `UNKNOWN_ACTION`, holds on
 non-holdable actions return `HOLD_NOT_ALLOWED`, and simulated vehicle actions

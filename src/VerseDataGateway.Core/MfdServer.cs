@@ -32,6 +32,7 @@ public sealed partial class MfdServer : IAsyncDisposable
     private readonly MfdSnapshotStore snapshot;
     private readonly MfdProfileStore profiles;
     private readonly MfdDeviceStore deviceStore;
+    private readonly MfdActionLibrary actionLibrary;
     private readonly MfdActions? actions;
     private readonly string host;
     private readonly string origin;
@@ -49,7 +50,8 @@ public sealed partial class MfdServer : IAsyncDisposable
     private Task? publisherTask;
 
     public MfdServer(IPAddress address, int port, MfdSnapshotStore snapshot, string assetRoot,
-        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null, int? gamePort = null)
+        MfdProfileStore? profiles = null, MfdDeviceStore? deviceStore = null, int? gamePort = null,
+        MfdActionLibrary? actionLibrary = null)
     {
         this.address = address;
         this.port = port;
@@ -58,6 +60,7 @@ public sealed partial class MfdServer : IAsyncDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VerseDataGateway");
         this.profiles = profiles ?? new MfdProfileStore(dataDirectory);
         this.deviceStore = deviceStore ?? new MfdDeviceStore(dataDirectory);
+        this.actionLibrary = actionLibrary ?? new MfdActionLibrary(dataDirectory);
         actions = gamePort is { } selectedPort ? new MfdActions(selectedPort, snapshot) : null;
         foreach (var device in this.deviceStore.List())
             approved[device.Id] = device;

@@ -13,6 +13,7 @@ public sealed partial class MfdServer
     private void MapActionApi(WebApplication application)
     {
         application.MapGet("/api/mfd/actions", ActionApiAsync);
+        application.MapGet("/api/mfd/action-library", ActionApiAsync);
         application.MapPost("/api/mfd/actions/trigger", ActionApiAsync);
     }
 
@@ -37,7 +38,7 @@ public sealed partial class MfdServer
             await ProfileError(context, 401, "not_approved", "Pair this display with a code shown on the PC.");
             return;
         }
-        if (actions is null)
+        if (actions is null && context.Request.Path != "/api/mfd/action-library")
         {
             await ProfileError(context, 503, "actions_unavailable", "Game controls are unavailable.");
             return;
@@ -48,7 +49,18 @@ public sealed partial class MfdServer
         {
             if (HttpMethods.IsGet(context.Request.Method))
             {
-                var result = await actions.ListAsync(deadline.Token);
+                if (context.Request.Path == "/api/mfd/action-library")
+                {
+                    await context.Response.WriteAsJsonAsync(actionLibrary.List(snapshot), WireJson.Options, deadline.Token);
+                    return;
+                }
+                var result = await actions!.ListAsync(deadline.Token);
+                try { actionLibrary.Remember(result); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    logger?.LogWarning(ex, "Failed to update MFD action library; live controls remain available");
+                    context.Response.Headers["X-Mfd-Action-Library-Error"] = "unavailable";
+                }
                 await context.Response.WriteAsJsonAsync(result, WireJson.Options, deadline.Token);
                 return;
             }
@@ -81,7 +93,7 @@ public sealed partial class MfdServer
                     return true;
                 }
             }
-            var response = await actions.TriggerAsync(request.ActionName, request.HoldMs, DispatchIfAuthorized, deadline.Token);
+            var response = await actions!.TriggerAsync(request.ActionName, request.HoldMs, DispatchIfAuthorized, deadline.Token);
             await context.Response.WriteAsJsonAsync(new { status = response.Status.ToString(), response.Message },
                 WireJson.Options, deadline.Token);
         }
@@ -109,7 +121,12 @@ public sealed partial class MfdServer
         catch (InvalidDataException ex)
         {
             logger?.LogWarning(ex, "Invalid game action catalog");
-            await ProfileError(context, 503, "invalid_catalog", "The game returned an invalid action catalog.");
+            await ProfileError(context, 503, "invalid_catalog", "The game or stored action catalog is invalid.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger?.LogWarning(ex, "Failed to access MFD action library");
+            await ProfileError(context, 503, "action_library_error", "The action library could not be read or saved.");
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {

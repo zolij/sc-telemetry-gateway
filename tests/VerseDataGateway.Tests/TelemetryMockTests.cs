@@ -138,7 +138,7 @@ public sealed class TelemetryMockTests
         Trigger("v_master_mode_set_nav");
         Trigger("v_power_set_shields_off");
         var ship = state.Frame().Vehicle.State;
-        Assert.Equal(VehicleComponentDeploymentState.Deployed, ship.Flight.State.Gear);
+        Assert.Equal(VehicleComponentDeploymentState.Deploying, ship.Flight.State.Gear);
         Assert.Equal(VehicleComponentDeploymentState.Deployed, ship.Flight.State.Vtol);
         Assert.Equal(VehicleComponentDeploymentState.Deployed, ship.Flight.State.Transformation);
         Assert.False(ship.Flight.Settings.IfcsGSafe.Active);
@@ -147,6 +147,67 @@ public sealed class TelemetryMockTests
         Assert.All(ship.Shields.Faces, face => Assert.Equal(0, face));
         Trigger("v_power_set_shields_on");
         Assert.True(state.Frame().Vehicle.State.Power.ShieldEmitters);
+    }
+
+    [Fact]
+    public void CompositeCardStatesCanBeExercisedIndependently()
+    {
+        var clock = new ManualTimeProvider();
+        var state = new MockState(clock);
+        void Trigger(string name) =>
+            Assert.Equal(TriggerGameActionStatus.Ok, state.Trigger(new() { ActionName = name }).Status);
+
+        Trigger("v_toggle_landing_system");
+        Assert.Equal(VehicleComponentDeploymentState.Deploying, state.Frame().Vehicle.State.Flight.State.Gear);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(VehicleComponentDeploymentState.Deployed, state.Frame().Vehicle.State.Flight.State.Gear);
+        Trigger("v_toggle_landing_system");
+        Assert.Equal(VehicleComponentDeploymentState.Retracting, state.Frame().Vehicle.State.Flight.State.Gear);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(VehicleComponentDeploymentState.Retracted, state.Frame().Vehicle.State.Flight.State.Gear);
+
+        Trigger("v_flight_advanced_hud_toggle");
+        Trigger("v_master_mode_cycle");
+        var settings = state.Frame().Vehicle.State.Flight.Settings;
+        Assert.True(settings.AdvancedHudEnabledScm);
+        Assert.False(settings.AdvancedHudEnabledNav);
+        Trigger("v_flight_advanced_hud_toggle");
+        Trigger("v_master_mode_cycle");
+        Trigger("v_flight_advanced_hud_toggle");
+        settings = state.Frame().Vehicle.State.Flight.Settings;
+        Assert.False(settings.AdvancedHudEnabledScm);
+        Assert.True(settings.AdvancedHudEnabledNav);
+
+        Assert.Contains("mixed", MockConsole.Execute(state, "shields mixed"));
+        var power = state.Frame().Vehicle.State.Power;
+        Assert.True(power.ShieldGenerators);
+        Assert.False(power.ShieldEmitters);
+        Trigger("v_power_toggle_shields");
+        power = state.Frame().Vehicle.State.Power;
+        Assert.True(power.ShieldGenerators);
+        Assert.True(power.ShieldEmitters);
+        Trigger("v_power_toggle_shields");
+        power = state.Frame().Vehicle.State.Power;
+        Assert.False(power.ShieldGenerators);
+        Assert.False(power.ShieldEmitters);
+        Assert.Contains("Invalid", MockConsole.Execute(state, "shields invalid"));
+        Assert.Contains("on", MockConsole.Execute(state, "shields on"));
+        Assert.True(state.Frame().Vehicle.State.Power.ShieldEmitters);
+        Assert.Contains("off", MockConsole.Execute(state, "shields off"));
+        Assert.False(state.Frame().Vehicle.State.Power.ShieldGenerators);
+
+        Trigger("v_ifcs_vector_decoupling_on");
+        Assert.False(state.Frame().Vehicle.State.Flight.Settings.IfcsCoupled.Active);
+        Trigger("v_ifcs_vector_decoupling_off");
+        Assert.True(state.Frame().Vehicle.State.Flight.Settings.IfcsCoupled.Active);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => ticks;
+        public void Advance(TimeSpan duration) => ticks += duration.Ticks;
     }
 
     [Fact]
@@ -169,7 +230,10 @@ public sealed class TelemetryMockTests
         await app.StartAsync(deadline.Token);
         var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
         var port = new Uri(Assert.Single(addresses.Addresses)).Port;
-        var snapshot = new MfdSnapshotStore(["vehicle.state.lights_enabled", "actor.vitals.heart_rate"]);
+        var snapshot = new MfdSnapshotStore(["vehicle.state.lights_enabled", "actor.vitals.heart_rate",
+            "vehicle.state.flight.state.gear", "vehicle.state.power.shield_generators",
+            "vehicle.state.power.shield_emitters", "vehicle.state.flight.settings.advanced_hud_enabled_scm",
+            "vehicle.state.flight.settings.advanced_hud_enabled_nav", "vehicle.state.master_mode.mode"]);
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
         var reader = new GameTelemetryReader(port);
@@ -187,6 +251,23 @@ public sealed class TelemetryMockTests
             while (!snapshot.Current().Fields.TryGetValue("vehicle.state.lights_enabled", out var value) ||
                    value.Value?.GetValue<bool>() != true)
                 await Task.Delay(20, deadline.Token);
+            var state = app.Services.GetRequiredService<MockState>();
+            state.SetShields(true, false);
+            Assert.Equal(TriggerGameActionStatus.Ok, state.Trigger(new() { ActionName = "v_flight_advanced_hud_toggle" }).Status);
+            Assert.Equal(TriggerGameActionStatus.Ok, state.Trigger(new() { ActionName = "v_master_mode_cycle" }).Status);
+            Assert.Equal(TriggerGameActionStatus.Ok, state.Trigger(new() { ActionName = "v_toggle_landing_system" }).Status);
+            while (true)
+            {
+                var fields = snapshot.Current().Fields;
+                if (fields.TryGetValue("vehicle.state.flight.state.gear", out var gear) &&
+                    gear.Value?.GetValue<string>() == "VEHICLE_COMPONENT_DEPLOYMENT_STATE_DEPLOYING" &&
+                    fields["vehicle.state.power.shield_generators"].Value?.GetValue<bool>() == true &&
+                    fields["vehicle.state.power.shield_emitters"].Value?.GetValue<bool>() == false &&
+                    fields["vehicle.state.flight.settings.advanced_hud_enabled_scm"].Value?.GetValue<bool>() == true &&
+                    fields["vehicle.state.flight.settings.advanced_hud_enabled_nav"].Value?.GetValue<bool>() == false &&
+                    fields["vehicle.state.master_mode.mode"].Value?.GetValue<string>() == "VEHICLE_MASTER_MODE_NAVIGATION") break;
+                await Task.Delay(20, deadline.Token);
+            }
         }
         finally
         {

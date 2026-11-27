@@ -158,16 +158,42 @@ handle, arrow keys or the Left/Right buttons. Status indicators map exact raw
 values to your own labels and a fixed color palette. No graphs or arbitrary
 formulas are included; measurement units are not inferred.
 
-The editor lists the game's available controls by category. Each tile either
-displays one telemetry field or triggers one game action. Controls with known
+Use **COMBINE** on a tile to turn it into a combined card, then select that card
+to add more library items, or move existing tiles into it. Each card can contain
+up to 16 independently configured values, status indicators, lists and controls.
+The library also offers editable combined templates for observed relationships.
+Templates do not enable fields; unavailable components remain visible.
+Observations are correlations, not proof that a command caused a state change.
+Combined cards show values and controls together, with shared availability
+warnings and separate feedback for each control. Existing combined profiles
+also use this compact display. The built-in templates use short control labels
+and show Boolean state as On/Off or Active/Inactive in automatic format.
+Templates use a single Toggle control where available. Recognizable older
+built-in templates are converted once when the profile store is loaded.
+Customized cards and profiles that would exceed size limits are left unchanged.
+
+The editor lists known controls by category even when the game is unavailable.
+The library includes a documented PTU snapshot and controls learned from the
+game; it may be outdated and does not authorize actions. Live controls remain
+usable if the saved library cannot be updated; the editor reports the error.
+Individual components either display one telemetry field or trigger one game
+action. Controls with known
 field associations require at least one associated field to be shared in PC MFD
 settings. Vehicle lights on/off were verified against live PTU telemetry;
-other field associations are based on names and marked as not live-verified.
+other field associations are based on names and may not reflect the same state.
 Availability depends on the game,
 active action map and game-side trigger setting; an unavailable saved control
 is retained but disabled. A game response is shown on the tile, including in
 Focus Mode. An accepted request is not proof of a state change. If a response
 is lost, check the game before retrying.
+
+Landing gear Toggle is disabled while received gear telemetry reports deploying
+or retracting. Advanced HUD shows the state for the current SCM or NAV master
+mode; select all three fields in MFD settings. Other, missing or stale modes
+are shown as unavailable. System Power shows weapon, shield and engine states
+with three separate toggles. The shield state combines generator and emitter:
+both on is On, both off is Off, and differing values are Mixed. Both fields
+must be selected and received; stale or last-known data is marked accordingly.
 
 Some actions can be held for a configured 1–5000 ms; the request runs for that
 duration, not until the screen is released. Editing never triggers controls.

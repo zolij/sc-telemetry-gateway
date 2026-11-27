@@ -19,6 +19,171 @@ public sealed class MfdProfileTests : IDisposable
     };
 
     [Fact]
+    public void ActionLibraryIncludesBaselineAndPersistsNewLiveActions()
+    {
+        var snapshot = new MfdSnapshotStore([]);
+        var library = new MfdActionLibrary(root);
+        var baseline = library.List(snapshot);
+        Assert.Equal(112, baseline.Count);
+        Assert.True(baseline.Single(action => action.ActionName == "v_invoke_ping").Holdable);
+        Assert.False(baseline.Single(action => action.ActionName == "v_lights_on").Enabled);
+        library.Remember([MfdActions.Describe("future_control", "future_category", true, snapshot)]);
+        var reopened = new MfdActionLibrary(root).List(snapshot);
+        Assert.Equal(113, reopened.Count);
+        Assert.True(reopened.Single(action => action.ActionName == "future_control").Holdable);
+        library.Remember([]);
+        Assert.Equal(113, new MfdActionLibrary(root).List(snapshot).Count);
+    }
+
+    [Fact]
+    public void ActionLibraryReportsCorruptStorageWithoutReplacingIt()
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "mfd-actions.json");
+        File.WriteAllText(path, "{invalid");
+        var library = new MfdActionLibrary(root);
+        Assert.Throws<InvalidDataException>(() => library.List(new MfdSnapshotStore([])));
+        Assert.Equal("{invalid", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void CombinedTilesRoundTripAndRejectInvalidComponents()
+    {
+        var draft = Draft();
+        var value = draft.Pages[0].Tiles[0];
+        var action = value with { Id = Guid.NewGuid(), Field = "", Widget = "action", Action = "v_lights_on" };
+        var combined = value with { Id = Guid.NewGuid(), Field = "", Label = "Controls", Widget = "combined",
+            Components = [value, action] };
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [combined] }] });
+        var restored = Store.Get(saved.Id)!.Pages[0].Tiles[0];
+        Assert.Equal(2, restored.Components!.Length);
+        Assert.NotEqual(value.Id, restored.Components[0].Id);
+        Assert.NotEqual(action.Id, restored.Components[1].Id);
+        Assert.Equal("v_lights_on", restored.Components[1].Action);
+        foreach (var invalid in new[]
+        {
+            combined with { Components = [] },
+            combined with { Components = [combined] },
+            combined with { Components = [value, value] },
+            combined with { Components = Enumerable.Range(0, 17).Select(_ => value with { Id = Guid.NewGuid() }).ToArray() },
+            combined with { Field = value.Field },
+            value with { Components = [action] }
+        })
+            Assert.Throws<ArgumentException>(() => (draft with { Pages = [draft.Pages[0] with { Tiles = [invalid] }] }).Validate());
+    }
+
+    [Fact]
+    public void EarlierTemplatesMigrateAtomicallyOnceWithRevisionAndLeaveCustomCards()
+    {
+        MfdTile Value(string field, string label) => new() {
+            Id = Guid.NewGuid(), Field = field, Label = label, Widget = "value", Size = "normal"
+        };
+        MfdTile Action(string name) => new() {
+            Id = Guid.NewGuid(), Field = "", Label = string.Join(" ", name[2..].Split('_')
+                .Select(word => char.ToUpperInvariant(word[0]) + word[1..])),
+            Widget = "action", Size = "normal", Action = name
+        };
+        MfdTile Group(string label, string field, params string[] actions) => new() {
+            Id = Guid.NewGuid(), Field = "", Label = label, Widget = "combined", Size = "wide",
+            Components = new[] { Value(field, label) }.Concat(actions.Select(Action)).ToArray()
+        };
+        var old = new[] {
+            Group("Landing gear", "vehicle.state.flight.state.gear", "v_deploy_landing_system", "v_retract_landing_system"),
+            Group("Master mode", "vehicle.state.master_mode.mode", "v_master_mode_cycle", "v_master_mode_set_scm"),
+            Group("SCM advanced HUD", "vehicle.state.flight.settings.advanced_hud_enabled_scm", "v_flight_advanced_hud_toggle"),
+            Group("Weapons power", "vehicle.state.power.weapons", "v_power_toggle_weapons"),
+            Group("Landing gear", "vehicle.state.flight.state.gear", "v_deploy_landing_system", "v_invoke_ping")
+        };
+        var draft = Draft();
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = old }] });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
+        var migrated = Store.Get(saved.Id)!;
+        Assert.Equal(saved.Revision + 1, migrated.Revision);
+        var tiles = migrated.Pages[0].Tiles;
+        Assert.Equal("v_toggle_landing_system", Assert.Single(tiles[0].Components!, component => component.Widget == "action").Action);
+        Assert.Equal("v_master_mode_cycle", Assert.Single(tiles[1].Components!, component => component.Widget == "action").Action);
+        Assert.Equal("Advanced HUD", tiles[2].Label);
+        Assert.Equal(new[] { "vehicle.state.master_mode.mode", "vehicle.state.flight.settings.advanced_hud_enabled_scm",
+            "vehicle.state.flight.settings.advanced_hud_enabled_nav" }, tiles[2].Components!.Where(item => item.Widget == "value").Select(item => item.Field));
+        Assert.Equal("System power", tiles[3].Label);
+        Assert.Equal(4, tiles[3].Components!.Count(item => item.Widget == "value"));
+        Assert.Equal(new[] { "v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters" },
+            tiles[3].Components!.Where(item => item.Widget == "action").Select(item => item.Action));
+        Assert.Contains(tiles[4].Components!, item => item.Action == "v_invoke_ping");
+        var reopened = Store.Get(saved.Id)!;
+        Assert.Equal(migrated.Revision, reopened.Revision);
+        Assert.Equal(JsonSerializer.Serialize(migrated, WireJson.Options), JsonSerializer.Serialize(reopened, WireJson.Options));
+    }
+
+    [Fact]
+    public void MigrationDoesNotRewriteCustomizationsOrNewCardsAfterRestart()
+    {
+        var value = new MfdTile { Id = Guid.NewGuid(), Field = "vehicle.state.lights_enabled",
+            Label = "Vehicle lights", Widget = "value", Size = "normal" };
+        var toggle = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Lights", Widget = "action",
+            Size = "normal", Action = "v_lights" };
+        var old = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Vehicle lights", Widget = "combined",
+            Size = "wide", Components = [value, toggle, toggle with { Id = Guid.NewGuid(), Action = "v_lights_on", Label = "Lights On" },
+                toggle with { Id = Guid.NewGuid(), Action = "v_lights_off", Label = "Lights Off" }] };
+        var custom = old with { Id = Guid.NewGuid(), Components = old.Components.Select(item => item with { Id = Guid.NewGuid() }).ToArray() };
+        custom.Components[0] = custom.Components[0] with { Label = "Custom label" };
+        var draft = Draft();
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [old, custom] }] });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
+        var migrated = Store.Get(saved.Id)!;
+        Assert.Single(migrated.Pages[0].Tiles[0].Components!, item => item.Widget == "action");
+        Assert.Equal("Custom label", migrated.Pages[0].Tiles[1].Components![0].Label);
+        Assert.Equal(4, migrated.Pages[0].Tiles[1].Components!.Length);
+        var updated = Store.Update(migrated.Id, migrated.Revision, migrated with
+        {
+            Pages = [migrated.Pages[0] with { Tiles = [migrated.Pages[0].Tiles[0] with
+            {
+                Components = [.. migrated.Pages[0].Tiles[0].Components!, old.Components![1] with { Id = Guid.NewGuid() }]
+            }] }]
+        });
+        Assert.Equal(3, Store.Get(updated.Id)!.Pages[0].Tiles[0].Components!.Length);
+        Assert.Equal(updated.Revision, Store.Get(updated.Id)!.Revision);
+    }
+
+    [Fact]
+    public void OversizedMigrationKeepsOriginalProfileReadable()
+    {
+        var old = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Weapons power", Widget = "combined", Size = "wide",
+            Components = [
+                new() { Id = Guid.NewGuid(), Field = "vehicle.state.power.weapons", Label = "Weapons power", Widget = "value", Size = "normal" },
+                new() { Id = Guid.NewGuid(), Field = "", Label = "Power Toggle Weapons", Widget = "action", Size = "normal", Action = "v_power_toggle_weapons" }
+            ] };
+        var pages = Enumerable.Range(0, 16).Select(_ => new MfdPage { Id = Guid.NewGuid(), Name = "Page",
+            Tiles = Enumerable.Range(0, 32).Select(_ => old with { Id = Guid.NewGuid(),
+                Components = old.Components!.Select(item => item with { Id = Guid.NewGuid() }).ToArray() }).ToArray() }).ToArray();
+        var saved = Store.Create(Draft() with { Pages = pages });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
+        var reopened = Store.Get(saved.Id)!;
+        Assert.Equal(saved.Revision, reopened.Revision);
+        Assert.Equal("Weapons power", reopened.Pages[0].Tiles[0].Label);
+        Assert.Equal(saved.Revision, Store.Get(saved.Id)!.Revision);
+    }
+
+    [Theory]
+    [InlineData("vehicle.state.lights_enabled", "v_lights_on")]
+    [InlineData("vehicle.state.flight.state.gear", "v_deploy_landing_system")]
+    [InlineData("vehicle.state.flight.settings.ifcs_g_safe.active", "v_ifcs_gsafe_on")]
+    [InlineData("vehicle.state.flight.settings.ifcs_coupled.active", "v_ifcs_vector_decoupling_on")]
+    [InlineData("vehicle.state.master_mode.mode", "v_master_mode_set_scm")]
+    [InlineData("vehicle.state.flight.settings.advanced_hud_enabled_scm", "v_flight_advanced_hud_on")]
+    [InlineData("vehicle.state.flight.settings.flight_light_amplification", "v_light_amplification_on")]
+    [InlineData("vehicle.state.power.weapons", "v_power_set_weapons_on")]
+    public void DocumentedTemplateFieldsAndActionsExist(string field, string action)
+    {
+        Assert.True(FieldCatalog.All.ContainsKey(field));
+        Assert.Contains(field, MfdActions.FieldsForAction(action));
+        Assert.Contains(new MfdActionLibrary(root).List(new MfdSnapshotStore([])), item => item.ActionName == action);
+    }
+
+    [Fact]
     public void ActionTilesPersistAndRejectInvalidBindingsAndHolds()
     {
         var draft = Draft();

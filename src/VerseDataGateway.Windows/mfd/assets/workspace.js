@@ -2,13 +2,67 @@
 
 const MfdWorkspace = (() => {
   const $ = id => document.getElementById(id);
-  const limits = { profiles: 32, pages: 16, tiles: 64, bytes: 512 * 1024 };
+  const limits = { profiles: 32, pages: 16, tiles: 64, components: 16, bytes: 512 * 1024 };
   const colors = ["neutral", "green", "amber", "red", "blue"];
+  const presets = [
+    { label: "Vehicle lights", field: "vehicle.state.lights_enabled", actions: ["v_lights"], legacyActions: ["v_lights_on", "v_lights_off"] },
+    { label: "Landing gear", field: "vehicle.state.flight.state.gear", actions: ["v_toggle_landing_system"], legacyActions: ["v_deploy_landing_system", "v_retract_landing_system"] },
+    { label: "G-safe", field: "vehicle.state.flight.settings.ifcs_g_safe.active", actions: ["v_ifcs_toggle_gforce_safety"], legacyActions: ["v_ifcs_gsafe_on", "v_ifcs_gsafe_off"] },
+    { label: "Coupled flight", field: "vehicle.state.flight.settings.ifcs_coupled.active", actions: ["v_ifcs_vector_decoupling_toggle"], legacyActions: ["v_ifcs_vector_decoupling_on", "v_ifcs_vector_decoupling_off"] },
+    { label: "Master mode", field: "vehicle.state.master_mode.mode", actions: ["v_master_mode_cycle"], legacyActions: ["v_master_mode_set_scm"] },
+    { label: "Advanced HUD", field: "vehicle.state.flight.settings.advanced_hud_enabled_scm", actions: ["v_flight_advanced_hud_toggle"], legacyActions: ["v_flight_advanced_hud_on"], kind: "hud" },
+    { label: "Flight light amplification", field: "vehicle.state.flight.settings.flight_light_amplification", actions: ["v_light_amplification_toggle"], legacyActions: ["v_light_amplification_on"] },
+    { label: "System power", field: "vehicle.state.power.weapons", actions: ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"], kind: "power" }
+  ];
+  const presetActionLabels = {
+    v_lights: "Toggle", v_lights_on: "On", v_lights_off: "Off",
+    v_toggle_landing_system: "Toggle", v_deploy_landing_system: "Deploy", v_retract_landing_system: "Retract",
+    v_ifcs_gsafe_on: "On", v_ifcs_gsafe_off: "Off", v_ifcs_toggle_gforce_safety: "Toggle",
+    v_ifcs_vector_decoupling_on: "Decoupling on", v_ifcs_vector_decoupling_off: "Decoupling off",
+    v_ifcs_vector_decoupling_toggle: "Toggle",
+    v_master_mode_cycle: "Cycle", v_master_mode_set_scm: "Set SCM",
+    v_flight_advanced_hud_on: "On", v_flight_advanced_hud_toggle: "Toggle",
+    v_light_amplification_on: "On", v_light_amplification_toggle: "Toggle",
+    v_power_set_weapons_on: "On", v_power_set_weapons_off: "Off", v_power_toggle_weapons: "Toggle",
+    v_power_toggle_shields: "Toggle", v_power_toggle_thrusters: "Toggle"
+  };
+  const presetBooleanLabels = {
+    "Vehicle lights": ["On", "Off"],
+    "G-safe": ["Active", "Inactive"],
+    "Coupled flight": ["Active", "Inactive"],
+    "Advanced HUD": ["On", "Off"],
+    "Flight light amplification": ["On", "Off"],
+    "System power": ["On", "Off"]
+  };
+  const masterField = "vehicle.state.master_mode.mode";
+  const hudScm = "vehicle.state.flight.settings.advanced_hud_enabled_scm";
+  const hudNav = "vehicle.state.flight.settings.advanced_hud_enabled_nav";
+  const powerFields = [
+    ["vehicle.state.power.weapons", "Weapons"],
+    ["vehicle.state.power.shield_generators", "Shield generator"],
+    ["vehicle.state.power.shield_emitters", "Shield emitter"],
+    ["vehicle.state.power.engines", "Engines"]
+  ];
+  function groupKind(tile) {
+    if (tile.widget !== "combined") return null;
+    const fields = tile.components.filter(item => item.widget === "value").map(item => item.field);
+    const controls = tile.components.filter(item => item.widget === "action").map(item => item.action);
+    if (tile.label === "Advanced HUD" && tile.components.length === 4 &&
+        [masterField, hudScm, hudNav].every(field => fields.filter(value => value === field).length === 1) &&
+        controls.length === 1 && controls[0] === "v_flight_advanced_hud_toggle") return "hud";
+    if (tile.label === "System power" && tile.components.length === 7 &&
+        powerFields.every(([field]) => fields.filter(value => value === field).length === 1) &&
+        powerFields.slice(1, 3).every(([field]) =>
+          !tile.components.find(item => item.field === field).format || tile.components.find(item => item.field === field).format === "auto") &&
+        ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"].every(action =>
+          controls.filter(value => value === action).length === 1)) return "power";
+    return null;
+  }
   let getToken, repaint;
-  let catalog = [], actions = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
+  let catalog = [], actions = [], actionLibrary = [], actionError = "", libraryError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
-  let cards = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
-  let tileId = null, preference = null;
+  let cards = new Map(), groups = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
+  let tileId = null, tileParent = null, selectedGroup = null, preference = null;
   let preferenceWarning = "";
   let triggerEvents = [];
   const eventCursor = MfdPageTriggers.createCursor();
@@ -57,7 +111,8 @@ const MfdWorkspace = (() => {
       error.status = response.status;
       throw error;
     }
-    return { data: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag") };
+    return { data: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag"),
+      libraryWarning: response.headers.get("X-Mfd-Action-Library-Error") };
   }
   function controls() {
     const editing = draft !== null;
@@ -80,8 +135,8 @@ const MfdWorkspace = (() => {
     $("page-after").disabled = busy || index < 0 || index >= (draft?.pages.length ?? 0) - 1;
     document.querySelector(".workspace-body").classList.toggle("editing", editing);
     for (const input of document.querySelectorAll("#editor-toolbar input")) input.disabled = busy;
-    for (const button of document.querySelectorAll(".tile-controls button, #field-results button, #page-navigation button"))
-      button.disabled = busy;
+    for (const element of document.querySelectorAll(".tile-controls button, .combined-settings input, .combined-settings select, .combined-settings button, #field-results button, #preset-results button, #page-navigation button"))
+      element.disabled = busy;
     for (const button of document.querySelectorAll("#action-results button"))
       button.disabled = busy || button.dataset.enabled !== "true";
   }
@@ -98,7 +153,7 @@ const MfdWorkspace = (() => {
       notice(error.message, true);
       if (error.status === 412 && draft) $("conflict-actions").hidden = false;
     } finally {
-      busy = false; controls();
+      busy = false; controls(); repaint?.();
       if (focusTile && focusLabel && !$("tile-dialog").open)
         $("custom-cards").querySelector(`[data-tile-id="${CSS.escape(focusTile)}"] [aria-label="${CSS.escape(focusLabel)}"]`)?.focus();
     }
@@ -153,24 +208,108 @@ const MfdWorkspace = (() => {
     renderTriggers();
     $("empty-display").hidden = !!page()?.tiles.length;
     $("empty-display").querySelector("h3").textContent = !current ? "Create your first MFD." : draft ? "Choose your instruments." : "This page is a blank canvas.";
-    $("empty-display").querySelector("p").textContent = !current ? "No presets. Choose the data that matters to you." :
-      draft ? "Add a shared field from the data library." : "Select EDIT to add your own telemetry tiles.";
+    $("empty-display").querySelector("p").textContent = !current ? "Choose the data and controls that matter to you." :
+      draft ? "Add a field, control or combined template from the library." : "Select EDIT to add your own telemetry tiles.";
     cards = new Map();
+    groups = new Map();
     $("custom-cards").replaceChildren();
-    for (const tile of page()?.tiles ?? []) {
-      const card = node("article", "instrument size-" + tile.size);
+    if (!page()?.tiles.some(tile => tile.id === selectedGroup && tile.widget === "combined")) selectedGroup = null;
+    for (const tile of page()?.tiles ?? []) $("custom-cards").append(renderCard(tile));
+    controls();
+    repaint?.();
+  }
+
+  function renderCard(tile, parent = null) {
+      const card = node(parent ? "div" : "article", parent ? "combined-component" : "instrument size-" + tile.size);
       card.dataset.tileId = tile.id;
       card.dataset.widget = tile.widget;
-      const value = node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
+      if (tile.widget === "combined") {
+        card.classList.add("combined-card");
+        card.append(node("span", "instrument-label", tile.label));
+        if (draft) {
+          const settings = node("div", "combined-settings");
+          const name = node("input");
+          name.value = tile.label;
+          name.maxLength = 80;
+          name.setAttribute("aria-label", "Combined card label");
+          name.addEventListener("input", () => { if (!busy) tile.label = name.value; });
+          const size = node("select");
+          size.setAttribute("aria-label", "Combined card size");
+          for (const value of ["normal", "wide", "large"]) size.append(new Option(readable(value), value));
+          size.value = tile.size;
+          size.addEventListener("change", () => { if (!busy) { tile.size = size.value; render(); } });
+          const select = node("button", "", selectedGroup === tile.id ? "ADDING HERE" : "ADD COMPONENTS HERE");
+          select.type = "button";
+          select.setAttribute("aria-pressed", String(selectedGroup === tile.id));
+          select.addEventListener("click", () => run(() => {
+            selectedGroup = selectedGroup === tile.id ? null : tile.id;
+            render(); renderLibrary();
+          }));
+          settings.append(name, size, select);
+          card.append(settings);
+        }
+        const components = node("div", "combined-components");
+        const kind = groupKind(tile);
+        if (kind === "power" && !draft) {
+          components.classList.add("power-components");
+          for (const [title, fields, action] of [
+            ["Weapons", [powerFields[0][0]], "v_power_toggle_weapons"],
+            ["Shields", [powerFields[1][0], powerFields[2][0]], "v_power_toggle_shields"],
+            ["Engines", [powerFields[3][0]], "v_power_toggle_thrusters"]
+          ]) {
+            const row = node("section", "power-row");
+            row.append(node("span", "instrument-label", title));
+            const values = node("div", "power-values");
+            for (const field of fields) {
+              const child = tile.components.find(item => item.field === field);
+              const valueCard = renderCard(child, tile);
+              if (fields.length > 1 || child.label.trim().toLowerCase() === title.toLowerCase())
+                valueCard.classList.add("power-single-value");
+              if (fields.length > 1 && field !== fields[0]) valueCard.hidden = true;
+              values.append(valueCard);
+            }
+            row.append(values, renderCard(tile.components.find(child => child.action === action), tile));
+            components.append(row);
+          }
+        } else {
+          for (const child of tile.components) components.append(renderCard(child, tile));
+        }
+        card.append(components);
+        const summary = node("span", "combined-summary");
+        summary.id = "combined-summary-" + tile.id;
+        summary.setAttribute("role", "status");
+        card.append(summary);
+        groups.set(tile.id, { tile, summary, kind });
+        if (draft) addTileControls(card, tile);
+        return card;
+      }
+      const compactAction = !!parent && tile.widget === "action";
+      const value = compactAction ? null : node(tile.widget === "list" ? "div" : "strong", "instrument-value", "Unknown");
       const meta = node("span", "instrument-meta", "Waiting for telemetry");
-      card.append(node("span", "instrument-label", tile.label), value, meta);
+      if (!compactAction) {
+        if (!parent || draft || tile.label.trim().toLowerCase() !== parent.label.trim().toLowerCase())
+          card.append(node("span", "instrument-label", tile.label));
+        card.append(value, meta);
+      }
       let actionButton = null;
-      let mappingNote = null;
       let feedback = null;
-      if (tile.widget === "action" && tile.action && !draft) {
-        actionButton = node("button", "game-action", "TRIGGER / " + actionLabel(tile.action));
+      if (tile.widget === "action" && tile.action && (!draft || compactAction)) {
+        const preset = parent && presets.find(item => item.label === parent.label &&
+          item.field && parent.components.some(child => child.field === item.field) &&
+          (item.actions.includes(tile.action) || item.legacyActions?.includes(tile.action)));
+        const buttonLabel = preset && tile.label === actionLabel(tile.action)
+          ? presetActionLabels[tile.action] : tile.label;
+        actionButton = node("button", "game-action", compactAction
+          ? buttonLabel + (tile.hold_ms != null ? " / HOLD " + tile.hold_ms + " MS" : "")
+          : "TRIGGER / " + actionLabel(tile.action));
         actionButton.type = "button";
         actionButton.disabled = true;
+        if (compactAction) {
+          meta.id = "combined-reason-" + tile.id;
+          actionButton.setAttribute("aria-label", (buttonLabel === tile.label ? tile.label : buttonLabel + " / " + tile.label) +
+            (tile.hold_ms != null ? ", hold " + tile.hold_ms + " milliseconds" : ""));
+          actionButton.setAttribute("aria-describedby", meta.id + " combined-summary-" + parent.id);
+        }
         feedback = node("span", "game-action-result");
         feedback.setAttribute("role", "status");
         actionButton.addEventListener("click", async () => {
@@ -198,15 +337,14 @@ const MfdWorkspace = (() => {
             }
           }
         });
-        mappingNote = node("span", "game-action-result");
-        card.append(actionButton, mappingNote, feedback);
+        if (compactAction) card.append(actionButton, meta, feedback);
+        else {
+          card.append(actionButton, node("span", "game-action-result"), feedback);
+        }
       }
-      if (draft) addTileControls(card, tile);
-      cards.set(tile.id, { tile, card, value, meta, actionButton, mappingNote, feedback });
-      $("custom-cards").append(card);
-    }
-    controls();
-    repaint?.();
+      if (draft) addTileControls(card, tile, parent);
+      cards.set(tile.id, { tile, card, value, meta, actionButton, feedback, parent });
+      return card;
   }
 
   function renderTriggers() {
@@ -272,23 +410,27 @@ const MfdWorkspace = (() => {
 
   function paint(snapshot, online, elapsed, ageText) {
     const selected = new Set(snapshot?.selected_fields ?? catalog.map(item => item.path));
-    for (const { tile, card, value, meta, actionButton, mappingNote, feedback } of cards.values()) {
+    for (const { tile, card, value, meta, actionButton, feedback, parent } of cards.values()) {
       if (actionButton) {
         const action = actions.find(item => item.action_name === tile.action);
-        actionButton.title = !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
+        const gear = tile.action === "v_toggle_landing_system" && parent?.components.some(item => item.field === "vehicle.state.flight.state.gear")
+          ? snapshot?.fields?.["vehicle.state.flight.state.gear"]?.value : null;
+        const transitioning = gear === "VEHICLE_COMPONENT_DEPLOYMENT_STATE_DEPLOYING" ||
+          gear === "VEHICLE_COMPONENT_DEPLOYMENT_STATE_RETRACTING";
+        actionButton.title = draft ? "Controls cannot be triggered while editing" : !online ? "Game disconnected" : !action ? actionError || "Action unavailable" :
           !action.enabled ? "Enable the matching field on the PC" :
           tile.hold_ms != null && !action.holdable ? "This action no longer supports holding" :
+          transitioning ? "Landing gear is in transition" :
           busy || actionPending.has(tile.id) ? "Control busy" : "";
         actionButton.disabled = !!actionButton.title;
-        mappingNote.textContent = action?.mapping_verified === false
-          ? "FIELD LINK BASED ON NAMES / NOT LIVE-VERIFIED" : "";
-        feedback.textContent = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
+        const message = actionPending.has(tile.id) ? "SENDING" : actionFeedback.get(tile.id) ?? "";
+        if (feedback.textContent !== message) feedback.textContent = message;
       }
       if (tile.widget === "action") {
         const available = actionButton && !actionButton.disabled;
-        value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
-        meta.textContent = draft ? "Configure before saving" : available ? "GAME ACTION" :
-          actionButton?.title || "Action unavailable";
+        if (value) value.textContent = draft ? "CONTROL" : available ? "READY" : "UNAVAILABLE";
+        meta.textContent = parent ? (!draft && online && !available ? actionButton?.title || "Action unavailable" : "") :
+          draft ? "Configure before saving" : available ? "GAME ACTION" : actionButton?.title || "Action unavailable";
         card.dataset.state = draft || available ? "live" : "unavailable";
         continue;
       }
@@ -321,7 +463,14 @@ const MfdWorkspace = (() => {
           value.dataset.signature = signature;
         }
       } else {
-        value.textContent = rule?.label ?? MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type);
+        const preset = parent && presets.find(item => item.label === parent.label &&
+          (item.field === tile.field || item.kind === "hud" && tile.field === hudNav ||
+           item.kind === "power" && powerFields.some(([field]) => field === tile.field)));
+        const booleanLabels = preset && presetBooleanLabels[preset.label];
+        value.textContent = rule?.label ?? (tile.widget === "value" && (!tile.format || tile.format === "auto") &&
+          booleanLabels && typeof field.value === "boolean"
+          ? booleanLabels[field.value ? 0 : 1]
+          : MfdPresentation.format(field.value, tile.decimals, mode, maximumValue, definition?.type));
         delete value.dataset.signature;
       }
       if (rule && online && !field.last_known && age < 2000) card.dataset.color = rule.color;
@@ -335,6 +484,59 @@ const MfdWorkspace = (() => {
           " / Enable and receive matching " + (definition?.maximum_field ?? "maximum field");
       card.dataset.state = !online ? "offline" : field.last_known ? "last-known" :
         field.value === null || needsMaximum && !rule ? "unavailable" : !history && (!Number.isFinite(age) || age >= 2000) ? "stale" : "live";
+    }
+    for (const { tile, summary, kind } of groups.values()) {
+      if (kind === "power" && !draft) {
+        const [generator, emitter] = powerFields.slice(1, 3).map(([field]) => snapshot?.fields?.[field]);
+        const shield = cards.get(tile.components.find(component => component.field === powerFields[1][0]).id);
+        const shieldFieldsSelected = powerFields.slice(1, 3).every(([field]) => selected.has(field));
+        shield.card.dataset.color = "neutral";
+        if (!shieldFieldsSelected || !generator || !emitter) {
+          shield.value.textContent = shieldFieldsSelected ? "Unknown" : "Not selected";
+          shield.meta.textContent = shieldFieldsSelected ? online ? "No value received" : "Waiting / offline" :
+            "Enable both shield power fields in PC settings";
+          shield.card.dataset.state = "unavailable";
+        } else {
+          const age = Number.isFinite(generator.age_ms) && Number.isFinite(emitter.age_ms)
+            ? Math.max(generator.age_ms, emitter.age_ms) + elapsed : NaN;
+          const valid = typeof generator.value === "boolean" && typeof emitter.value === "boolean";
+          shield.value.textContent = !valid ? "Unknown" : generator.value !== emitter.value ? "Mixed" : generator.value ? "On" : "Off";
+          const state = !online ? "OFFLINE / LAST KNOWN" : generator.last_known || emitter.last_known ? "LAST KNOWN" :
+            !valid ? "UNKNOWN" : !Number.isFinite(age) ? "AGE UNKNOWN" : age >= 2000 ? "STALE" : "LIVE";
+          shield.meta.textContent = state + " / " + ageText(age);
+          shield.card.dataset.state = !valid ? "unavailable" : !online ? "offline" : generator.last_known || emitter.last_known ? "last-known" :
+            !Number.isFinite(age) || age >= 2000 ? "stale" : "live";
+          if (shield.value.textContent === "Mixed" && shield.card.dataset.state === "live") shield.card.dataset.color = "amber";
+        }
+      }
+      if (kind === "hud" && !draft) {
+        const mode = snapshot?.fields?.[masterField];
+        const age = Number.isFinite(mode?.age_ms) ? mode.age_ms + elapsed : NaN;
+        const current = online && selected.has(masterField) && mode && !mode.last_known && Number.isFinite(age) && age < 2000
+          ? mode.value === "VEHICLE_MASTER_MODE_SCM" ? hudScm :
+            mode.value === "VEHICLE_MASTER_MODE_NAVIGATION" ? hudNav : null
+          : null;
+        const modeEntry = cards.get(tile.components.find(component => component.field === masterField).id);
+        const scmEntry = cards.get(tile.components.find(component => component.field === hudScm).id);
+        const navEntry = cards.get(tile.components.find(component => component.field === hudNav).id);
+        modeEntry.card.hidden = !!current;
+        scmEntry.card.hidden = current !== hudScm;
+        navEntry.card.hidden = current !== hudNav;
+        if (!current) {
+          modeEntry.value.textContent = "Mode unavailable";
+          modeEntry.meta.textContent = "Select and receive a current SCM or NAV master mode";
+        }
+      }
+      const controls = tile.components.filter(component => component.widget === "action");
+      const warnings = [];
+      const entries = controls.map(component => cards.get(component.id)).filter(Boolean);
+      const reason = entries[0]?.actionButton?.disabled ? entries[0].actionButton.title : "";
+      if (!draft && reason && entries.every(entry => entry.actionButton?.disabled && entry.actionButton.title === reason)) {
+        warnings.push("CONTROLS / " + reason.toUpperCase());
+        for (const entry of entries) entry.meta.textContent = "";
+      }
+      const message = warnings.join(" / ");
+      if (summary.textContent !== message) summary.textContent = message;
     }
   }
 
@@ -402,8 +604,9 @@ const MfdWorkspace = (() => {
     viewVersion++;
     saved = draft = null;
     pageId = null;
-    summaries = catalog = actions = [];
-    actionError = "";
+    selectedGroup = tileParent = null;
+    summaries = catalog = actions = actionLibrary = [];
+    actionError = libraryError = "";
     actionFeedback.clear();
     actionPending.clear();
     triggerEvents = [];
@@ -415,23 +618,33 @@ const MfdWorkspace = (() => {
   }
 
   async function refreshActions() {
+    const previous = JSON.stringify([actions, actionLibrary, actionError, libraryError]);
+    let error = "", warning = "";
     try {
-      const next = (await api("actions")).data;
+      const result = await api("actions");
+      const next = result.data;
       if (!Array.isArray(next)) throw new Error("Invalid game action catalog.");
-      const changed = JSON.stringify(actions) !== JSON.stringify(next) || !!actionError;
       actions = next;
-      actionError = "";
-      if (changed) { renderLibrary(); render(); }
-    } catch (error) {
-      const changed = actions.length > 0 || actionError !== error.message;
+      if (result.libraryWarning) warning = "Live controls could not be saved to the action library.";
+    } catch (failure) {
       actions = [];
-      actionError = error.message;
-      if (changed) { renderLibrary(); render(); }
+      error = failure.message;
     }
+    try {
+      const next = (await api("action-library")).data;
+      if (!Array.isArray(next)) throw new Error("Invalid saved action library.");
+      actionLibrary = next;
+      libraryError = warning;
+    } catch (failure) {
+      actionLibrary = actions;
+      libraryError = failure.message;
+    }
+    actionError = error;
+    if (previous !== JSON.stringify([actions, actionLibrary, actionError, libraryError])) { renderLibrary(); render(); }
   }
 
   // Editor functions are kept separate from the telemetry paint path.
-  function addTileControls(card, tile) {
+  function addTileControls(card, tile, parent = null) {
     const controls = node("div", "tile-controls");
     const handle = node("button", "drag-handle", "MOVE / DRAG OR ARROW KEYS");
     handle.type = "button";
@@ -439,12 +652,12 @@ const MfdWorkspace = (() => {
     handle.addEventListener("keydown", event => {
       if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
         event.preventDefault();
-        run(() => moveTile(tile.id, ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1));
+        run(() => moveTile(tile.id, ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1, parent));
       }
     });
     let drag = null;
     handle.addEventListener("pointerdown", event => {
-      if (busy || event.button !== 0) return;
+      if (parent || busy || event.button !== 0) return;
       drag = { pointer: event.pointerId, x: event.clientX, y: event.clientY, moved: false, target: null };
       handle.setPointerCapture(event.pointerId);
     });
@@ -478,18 +691,40 @@ const MfdWorkspace = (() => {
     };
     handle.addEventListener("pointerup", finish);
     handle.addEventListener("pointercancel", finish);
-    controls.append(handle);
+    if (!parent) controls.append(handle);
     for (const [text, title, action] of [
-      ["SETUP", "Configure " + tile.label, () => openTile(tile)],
-      ["LEFT", "Move " + tile.label + " earlier", () => moveTile(tile.id, -1)],
-      ["RIGHT", "Move " + tile.label + " later", () => moveTile(tile.id, 1)],
+      ...(tile.widget === "combined" ? [] : [["SETUP", "Configure " + tile.label, () => openTile(tile, false, parent?.id)]]),
+      ["LEFT", "Move " + tile.label + " earlier", () => moveTile(tile.id, -1, parent)],
+      ["RIGHT", "Move " + tile.label + " later", () => moveTile(tile.id, 1, parent)],
       ["COPY", "Duplicate " + tile.label, () => {
-        if (page().tiles.length >= limits.tiles) throw new Error("This page has reached the 64 tile limit.");
-        page().tiles.push({ ...clone(tile), id: uuid() }); render();
+        const tiles = parent ? parent.components : page().tiles;
+        if (tiles.length >= (parent ? limits.components : limits.tiles)) throw new Error("This container has reached its tile limit.");
+        const copy = clone(tile); copy.id = uuid();
+        if (copy.components) for (const component of copy.components) component.id = uuid();
+        tiles.push(copy); render();
       }],
       ["REMOVE", "Remove " + tile.label, () => {
-        if (window.confirm("Remove this tile?")) { page().tiles = page().tiles.filter(item => item.id !== tile.id); render(); }
-      }]
+        if (parent && parent.components.length === 1) throw new Error("A combined card must contain at least one component. Remove the card instead.");
+        if (window.confirm("Remove this tile?")) {
+          if (parent) parent.components = parent.components.filter(item => item.id !== tile.id);
+          else page().tiles = page().tiles.filter(item => item.id !== tile.id);
+          render();
+        }
+      }],
+      ...(!parent && tile.widget !== "combined" ? [["COMBINE", "Create combined card with " + tile.label, () => {
+        const index = page().tiles.findIndex(item => item.id === tile.id);
+        const group = { id: uuid(), field: "", label: "Combined", widget: "combined", size: "wide", decimals: 2, format: "auto", rules: [], components: [tile] };
+        page().tiles[index] = group;
+        selectedGroup = group.id;
+        render(); renderLibrary();
+      }]] : []),
+      ...(!parent && tile.widget !== "combined" && selectedGroup ? [["ADD TO GROUP", "Move " + tile.label + " to selected combined card", () => {
+        const group = page().tiles.find(item => item.id === selectedGroup);
+        if (!group || group.components.length >= limits.components) throw new Error("The combined card has reached its component limit.");
+        group.components.push(tile);
+        page().tiles = page().tiles.filter(item => item.id !== tile.id);
+        render();
+      }]] : [])
     ]) {
       const button = node("button", "", text);
       button.type = "button"; button.title = title; button.setAttribute("aria-label", title);
@@ -498,8 +733,8 @@ const MfdWorkspace = (() => {
     }
     card.append(controls);
   }
-  function moveTile(id, delta) {
-    const tiles = page().tiles;
+  function moveTile(id, delta, parent = null) {
+    const tiles = parent ? parent.components : page().tiles;
     const index = tiles.findIndex(item => item.id === id);
     const next = index + delta;
     if (next >= 0 && next < tiles.length) {
@@ -510,6 +745,29 @@ const MfdWorkspace = (() => {
   }
   function renderLibrary() {
     const query = $("field-search").value.toLowerCase().trim();
+    $("preset-results").replaceChildren(node("h3", "", "COMBINED TEMPLATES"));
+    for (const preset of presets) {
+      if (query && !(preset.label + " " + preset.field + " " + preset.actions.join(" ")).toLowerCase().includes(query)) continue;
+      const button = node("button", "field-item");
+      button.type = "button";
+      button.disabled = busy;
+      button.append(node("strong", "", preset.label), node("span", "", "Observed PTU association / verify game state"));
+      button.addEventListener("click", () => {
+        if (busy) return;
+        if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
+        const base = () => ({ id: uuid(), size: "normal", decimals: 2, format: "auto", rules: [] });
+        const fields = preset.kind === "hud" ? [[masterField, "Master mode"], [hudScm, "SCM"], [hudNav, "NAV"]] :
+          preset.kind === "power" ? powerFields : [[preset.field, preset.label]];
+        const group = { ...base(), field: "", label: preset.label, widget: "combined", size: "wide", components: [
+          ...fields.map(([field, name]) => ({ ...base(), field, label: name, widget: "value" })),
+          ...preset.actions.map(action => ({ ...base(), field: "", label: actionLabel(action), widget: "action", action }))
+        ] };
+        page().tiles.push(group);
+        selectedGroup = group.id;
+        render(); renderLibrary();
+      });
+      $("preset-results").append(button);
+    }
     $("field-results").replaceChildren();
     let group = null, section = null;
     for (const field of [...catalog].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -527,7 +785,10 @@ const MfdWorkspace = (() => {
       button.append(node("strong", "", label(field.path)), node("span", "", field.path));
       button.addEventListener("click", () => {
         if (busy) return;
-        if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
+        const targetGroup = page()?.tiles.find(tile => tile.id === selectedGroup);
+        if (targetGroup ? targetGroup.components.length >= limits.components : page().tiles.length >= limits.tiles) {
+          notice(targetGroup ? "This combined card has reached the 16 component limit." : "This page has reached the 64 tile limit.", true); return;
+        }
         openTile({ id: uuid(), field: field.path, label: label(field.path), widget: field.repeated ? "list" : "value", size: "normal", decimals: 2, format: "auto", rules: [] }, true);
       });
       section.append(button);
@@ -535,19 +796,22 @@ const MfdWorkspace = (() => {
     if (!$("field-results").childElementCount)
       $("field-results").append(node("p", "library-note", catalog.length ? "No matching fields." : "Enable shared fields in gateway settings, then restart collection."));
     $("action-results").replaceChildren(node("h3", "", "GAME CONTROLS"));
-    if (actionError) $("action-results").append(node("p", "library-note", "Controls unavailable: " + actionError));
-    for (const action of [...actions].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
+    if (libraryError) $("action-results").append(node("p", "library-note", "Action library: " + libraryError));
+    if (actionError) $("action-results").append(node("p", "library-note", "Live controls unavailable: " + actionError + " / Known controls remain available for editing."));
+    for (const action of [...actionLibrary].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
       if (query && !(action.category + " " + action.action_name + " " + actionLabel(action.action_name)).toLowerCase().includes(query)) continue;
       const button = node("button", "field-item");
       button.type = "button";
-      button.dataset.enabled = String(action.enabled);
-      button.disabled = busy || !action.enabled;
+      button.dataset.enabled = "true";
+      button.disabled = busy;
       button.append(node("strong", "", actionLabel(action.action_name)), node("span", "",
-        readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "") +
-        (action.mapping_verified === false ? " / Field link not live-verified" : "")));
+        readable(action.category) + (!action.enabled ? " / Enable matching field on PC" : "")));
       button.addEventListener("click", () => {
-        if (busy || !action.enabled) return;
-        if (page().tiles.length >= limits.tiles) { notice("This page has reached the 64 tile limit.", true); return; }
+        if (busy) return;
+        const targetGroup = page()?.tiles.find(tile => tile.id === selectedGroup);
+        if (targetGroup ? targetGroup.components.length >= limits.components : page().tiles.length >= limits.tiles) {
+          notice(targetGroup ? "This combined card has reached the 16 component limit." : "This page has reached the 64 tile limit.", true); return;
+        }
         openTile({ id: uuid(), field: "", label: actionLabel(action.action_name).slice(0, 80), widget: "action",
           size: "normal", decimals: 2, format: "auto", rules: [], action: action.action_name }, true);
       });
@@ -557,19 +821,17 @@ const MfdWorkspace = (() => {
   function actionOptions(current) {
     const select = $("tile-action");
     select.replaceChildren(new Option("Choose a control", ""));
-    for (const action of actions) {
-      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category) +
-        (action.mapping_verified === false ? " / Field link not live-verified" : ""), action.action_name);
-      option.disabled = !action.enabled;
+    for (const action of actionLibrary) {
+      const option = new Option(actionLabel(action.action_name) + " / " + readable(action.category), action.action_name);
       select.append(option);
     }
-    if (current && !actions.some(item => item.action_name === current))
+    if (current && !actionLibrary.some(item => item.action_name === current))
       select.append(new Option(current + " (unavailable)", current));
     select.value = current ?? "";
     holdOptions();
   }
   function holdOptions() {
-    const action = actions.find(item => item.action_name === $("tile-action").value);
+    const action = actionLibrary.find(item => item.action_name === $("tile-action").value);
     const show = $("tile-widget").value === "action" && (!!action?.holdable || !!$("tile-hold").value && !action);
     $("tile-hold").hidden = $("hold-label").hidden = !show;
     if (action && !action.holdable) $("tile-hold").value = "";
@@ -583,7 +845,9 @@ const MfdWorkspace = (() => {
     $("tile-action").disabled = !standalone;
     $("tile-action").required = standalone;
     const field = catalog.find(item => item.path === $("tile-field").value);
-    const repeated = field?.repeated ?? page()?.tiles.find(item => item.id === tileId)?.widget === "list";
+    const repeated = field?.repeated ?? (tileParent
+      ? page()?.tiles.find(item => item.id === tileParent)?.components.find(item => item.id === tileId)
+      : page()?.tiles.find(item => item.id === tileId))?.widget === "list";
     for (const option of $("tile-widget").options) option.disabled = standalone ? option.value !== "action" :
       option.value === "action" || (repeated ? option.value !== "list" : option.value === "list");
     if ($("tile-widget").selectedOptions[0].disabled) $("tile-widget").value = repeated ? "list" : "value";
@@ -620,8 +884,9 @@ const MfdWorkspace = (() => {
     remove.type = "button"; remove.addEventListener("click", () => row.remove());
     row.append(select, remove); $("status-rules").append(row);
   }
-  function openTile(tile, adding = false) {
+  function openTile(tile, adding = false, parentId = null) {
     tileId = adding ? null : tile.id;
+    tileParent = adding ? selectedGroup : parentId;
     $("tile-dialog").dataset.newId = tile.id;
     $("tile-field").replaceChildren();
     for (const field of catalog) $("tile-field").append(new Option(label(field.path) + " / " + field.path, field.path));
@@ -652,24 +917,26 @@ const MfdWorkspace = (() => {
           id === "00000000-0000-0000-0000-000000000000" || ids.has(id.toLowerCase())) throw new Error("Page and tile IDs must be unique UUIDs.");
       ids.add(id.toLowerCase());
     };
-    for (const item of value.pages) {
-      if (!keys(item, ["id", "name", "tiles", "trigger_events"]) || !text(item.name, 80) || !Array.isArray(item.tiles) || item.tiles.length > limits.tiles)
-        throw new Error("Invalid page name or tile count.");
-      identity(item.id);
-      for (const tile of item.tiles) {
-        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms"]) ||
-            !(tile.widget === "action" ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
-            !["value", "status", "list", "action"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
+    function validateTile(tile, component = false) {
+        if (!keys(tile, ["id", "field", "label", "widget", "size", "decimals", "format", "rules", "action", "hold_ms", "components"]) ||
+            !(["action", "combined"].includes(tile.widget) ? tile.field === "" : text(tile.field, 1024)) || !text(tile.label, 80) ||
+            !["value", "status", "list", "action", "combined"].includes(tile.widget) || !["normal", "wide", "large"].includes(tile.size) ||
             !["auto", "number", "percent_fraction", "percent", "percent_max"].includes(tile.format === undefined ? "auto" : tile.format) ||
             !Number.isInteger(tile.decimals) || tile.decimals < 0 || tile.decimals > 6 || !Array.isArray(tile.rules) ||
             tile.rules.length > 32 || tile.widget !== "status" && tile.rules.length ||
             tile.action !== undefined && (typeof tile.action !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(tile.action)) ||
             tile.widget === "action" && !tile.action ||
             tile.widget !== "action" && tile.action !== undefined ||
-            tile.widget === "action" && tile.format !== undefined && !["auto", "number"].includes(tile.format) ||
+            ["action", "combined"].includes(tile.widget) && tile.format !== undefined && !["auto", "number"].includes(tile.format) ||
+            tile.widget === "combined" && (component || !Array.isArray(tile.components) || !tile.components.length || tile.components.length > limits.components) ||
+            tile.widget !== "combined" && tile.components !== undefined ||
             tile.hold_ms !== undefined && (!tile.action || !Number.isInteger(tile.hold_ms) || tile.hold_ms < 1 || tile.hold_ms > 5000))
           throw new Error("Invalid tile settings.");
         identity(tile.id);
+        if (tile.widget === "combined") {
+          for (const child of tile.components) validateTile(child, true);
+          return;
+        }
         const field = catalog.find(field => field.path === tile.field);
         if (field && field.repeated !== (tile.widget === "list")) throw new Error("Widget is incompatible with its field.");
         if (field && tile.format && !["auto", "number"].includes(tile.format) && (
@@ -681,7 +948,12 @@ const MfdWorkspace = (() => {
               !colors.includes(rule.color) || values.has(rule.value)) throw new Error("Invalid or duplicate status rule.");
           values.add(rule.value);
         }
-      }
+    }
+    for (const item of value.pages) {
+      if (!keys(item, ["id", "name", "tiles", "trigger_events"]) || !text(item.name, 80) || !Array.isArray(item.tiles) || item.tiles.length > limits.tiles)
+        throw new Error("Invalid page name or tile count.");
+      identity(item.id);
+      for (const tile of item.tiles) validateTile(tile);
     }
     MfdPageTriggers.validate(value.pages, triggerEvents);
     if (new TextEncoder().encode(JSON.stringify(value)).length > limits.bytes) throw new Error("Profiles must not exceed 512 KiB.");
@@ -810,14 +1082,19 @@ const MfdWorkspace = (() => {
         if (tile.widget === "action") {
           tile.action = $("tile-action").value;
           if ($("tile-hold").value) tile.hold_ms = Number($("tile-hold").value);
-          const action = actions.find(item => item.action_name === tile.action);
+          const action = actionLibrary.find(item => item.action_name === tile.action);
           if (action && tile.hold_ms != null && !action.holdable)
             throw new Error("This control does not support a hold duration.");
         }
         const next = clone(draft);
         const target = next.pages.find(item => item.id === pageId);
-        if (tileId) target.tiles[target.tiles.findIndex(item => item.id === tileId)] = tile;
-        else target.tiles.push(tile);
+        const tiles = tileParent ? target.tiles.find(item => item.id === tileParent)?.components : target.tiles;
+        if (!tiles) throw new Error("The selected combined card no longer exists.");
+        if (tileId) {
+          const index = tiles.findIndex(item => item.id === tileId);
+          if (index < 0) throw new Error("The tile being edited no longer exists.");
+          tiles[index] = tile;
+        } else tiles.push(tile);
         validate(next); draft = next;
         $("tile-message").textContent = "";
         $("tile-dialog").close(); render();
@@ -833,7 +1110,8 @@ const MfdWorkspace = (() => {
         if (file.size > limits.bytes) throw new Error("Import must not exceed 512 KiB.");
         const imported = JSON.parse(await file.text());
         validate(imported);
-        const missing = imported.pages.flatMap(item => item.tiles).some(tile => tile.widget !== "action" && !catalog.some(field => field.path === tile.field));
+        const missing = imported.pages.flatMap(item => item.tiles).flatMap(tile => tile.widget === "combined" ? tile.components : [tile])
+          .some(tile => tile.widget !== "action" && !catalog.some(field => field.path === tile.field));
         if (missing && !window.confirm("Some imported fields are not enabled on this PC. They will be unavailable. Continue without enabling them?")) return;
         saved = (await api("profiles", { method: "POST", body: JSON.stringify(imported) })).data;
         draft = null; pageId = saved.pages[0].id;

@@ -244,7 +244,9 @@ The editor requests confirmation before moving an assigned event to another
 page, and cancelling leaves both pages unchanged. Moves are draft changes
 until saved; no game commands or subscription changes are sent.
 
-The browser has no built-in layouts. Named, multi-page profiles are separate
+The browser has no built-in layouts. The editor offers optional combined-card
+templates based on observed PTU correlations, not proof of causation.
+Named, multi-page profiles are separate
 from the telemetry snapshot and the gateway's field allowlist. Profile editing
 does not change subscriptions, enable fields or send game commands.
 
@@ -261,6 +263,7 @@ Responses use `Cache-Control: no-store`.
 | GET | `/api/mfd/fields` | Enabled-field metadata, independent of whether values have arrived |
 | GET | `/api/mfd/events` | Known nonzero game-event names for page triggers, independent of field selection |
 | GET | `/api/mfd/actions` | Game action catalogue and local field eligibility |
+| GET | `/api/mfd/action-library` | Known controls for editing, even when the game is unavailable |
 | POST | `/api/mfd/actions/trigger` | Trigger a currently listed, eligible game action |
 | GET | `/api/mfd/profiles` | Array of `{id, name, revision}` summaries |
 | GET | `/api/mfd/profiles/{id}` | Full profile and revision ETag |
@@ -275,6 +278,17 @@ profile API. Existing and newly paired devices can trigger game actions without
 a separate gateway enable switch. HTTP is unencrypted: a network observer or
 attacker may obtain credentials or alter commands. Use only a trusted LAN.
 Remote telemetry receivers have no game-control channel.
+
+`GET /api/mfd/action-library` returns known controls for editing, not a game
+authorization list. It combines the documented PTU 5.0.202.10025 snapshot
+with controls learned from successful live queries, saved in
+`mfd-actions.json` under the gateway data directory. Entries may be outdated.
+The editor can add them even if the corresponding field is not selected;
+execution still requires the live checks described below. An unreadable or
+unwritable action library is reported as an error rather than discarded.
+Live controls remain available if remembering the catalogue fails: the live
+response includes `X-Mfd-Action-Library-Error: unavailable`, and the editor
+reports the problem. A failed library read falls back to live entries only.
 
 `GET /api/mfd/actions` queries the game over loopback and returns entries
 `{action_name, category, holdable, fields, enabled, mapping_verified}`.
@@ -292,10 +306,23 @@ The explicit field associations cover vehicle lights, landing gear, VTOL,
 transformation, door opening and locking, IFCS G-safe, ESP, proximity assist
 and coupling, master mode, power, shields, advanced HUD and light
 amplification. Apart from light on/off, these are
-based on action and field names, not observed state transitions; they are
-marked accordingly in the MFD. Refer to the current catalogue for each exact
+based on action and field names, not observed state transitions. Refer to the current catalogue for each exact
 action and fields. Related values need not represent the same state: shield
 charge, for example, is not the on/off state of a shield generator.
+
+Recognizable, unmodified built-in combined templates from earlier versions are
+converted once on profile store load and persisted atomically with a new profile
+revision. Customized cards and profiles that would exceed size limits are left
+unchanged. Landing gear Toggle is disabled
+when received gear state is deploying or retracting. Advanced HUD requires
+selected, current master-mode telemetry and displays the selected SCM or NAV
+field; other or stale modes are unavailable. System Power displays weapon,
+shield and engine readings alongside three independent toggles. Its shield
+reading combines the generator and emitter when both use automatic format: both on is On, both off is Off,
+and differing values are Mixed. Both fields must be selected and received;
+stale or last-known input is marked accordingly. An explicit shield format
+displays the components independently. These display rules do not
+change game-side authorization.
 
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",
 "hold_ms":500}`. Omit `hold_ms` for an ordinary press. If supplied, it must be
@@ -373,10 +400,16 @@ page and tile IDs and starts the revision at 1. Names and tile labels contain
 with 0–64 tiles; at most 32 profiles can be stored.
 
 Widgets are `value` or `status` for scalar fields, `list` for repeated fields,
-and `action` for a standalone control. An action tile has an empty `field` and
+`action` for a standalone control, and `combined` for a card containing 1–16
+ordered `components`. A combined card has an empty `field`, no action or rules,
+and components use the same schema as individual non-combined tiles. Nested
+combined cards are not supported. Component IDs are unique within the profile.
+An action tile has an empty `field` and
 one `action` name; telemetry tiles cannot have an action. Optional `hold_ms`
 is bounded as described above. Saved actions that are absent from the current
 game catalogue remain in the profile but cannot be triggered.
+Older gateway versions do not recognize combined cards and cannot open profiles
+containing them; export a backup before downgrading.
 Sizes are `normal` (1×1), `wide` (2×1) or `large` (2×2), with responsive
 width clamping. Decimal precision is 0–6; int64/uint64 wire strings are not
 converted to imprecise JavaScript numbers. A status tile can have at most 32

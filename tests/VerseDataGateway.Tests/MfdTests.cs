@@ -375,7 +375,7 @@ public sealed class MfdTests
             listener.Stop();
             Store = new(fields);
             Server = new(IPAddress.Loopback, Port, Store, Path.GetTempPath(),
-                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot), gamePort);
+                new MfdProfileStore(profileRoot), new MfdDeviceStore(profileRoot), gamePort, new MfdActionLibrary(profileRoot));
             http.DefaultRequestHeaders.Add("Origin", Origin);
         }
 
@@ -419,6 +419,31 @@ public sealed class MfdTests
             deadline.Dispose();
             if (Directory.Exists(profileRoot)) Directory.Delete(profileRoot, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task CorruptActionLibraryDoesNotDisableLiveControls()
+    {
+        await using var game = MockHost.Build(0);
+        await game.StartAsync();
+        var addresses = game.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+        var gamePort = new Uri(Assert.Single(addresses.Addresses)).Port;
+        await using var test = await MfdTestServer.Start(["vehicle.state.lights_enabled"], gamePort);
+        test.Store.StartStream();
+        Directory.CreateDirectory(test.ProfileRoot);
+        var path = Path.Combine(test.ProfileRoot, "mfd-actions.json");
+        await File.WriteAllTextAsync(path, "{invalid", test.Token);
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var catalog = await http.GetAsync("/api/mfd/actions", test.Token);
+        catalog.EnsureSuccessStatusCode();
+        Assert.Equal("unavailable", Assert.Single(catalog.Headers.GetValues("X-Mfd-Action-Library-Error")));
+        using var library = await http.GetAsync("/api/mfd/action-library", test.Token);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, library.StatusCode);
+        using var trigger = await http.PostAsJsonAsync("/api/mfd/actions/trigger", new { action_name = "v_lights_on" }, test.Token);
+        trigger.EnsureSuccessStatusCode();
+        Assert.Equal("{invalid", await File.ReadAllTextAsync(path, test.Token));
     }
 
     [Fact]
@@ -513,6 +538,7 @@ public sealed class MfdTests
                 using var response = JsonDocument.Parse(await result.Content.ReadAsStringAsync(test.Token));
                 Assert.Equal("Ok", response.RootElement.GetProperty("status").GetString());
             }
+
             foreach (var invalid in new object[]
             {
                     new { action_name = "v_invoke_ping", hold_ms = 0 },
@@ -634,6 +660,23 @@ public sealed class MfdTests
             Assert.Equal(3, Volatile.Read(ref gameState.CatalogCalls));
         }
         finally { release.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task ActionLibraryIsAvailableWithoutGameAndRequiresPairing()
+    {
+        await using var test = await MfdTestServer.Start();
+        using var http = new HttpClient { BaseAddress = new Uri(test.Origin) };
+        http.DefaultRequestHeaders.Add("Origin", test.Origin);
+        using var denied = await http.GetAsync("/api/mfd/action-library", test.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        http.DefaultRequestHeaders.Authorization = new("Bearer", await test.Pair());
+        using var response = await http.GetAsync("/api/mfd/action-library", test.Token);
+        response.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(test.Token));
+        Assert.Equal(112, body.RootElement.GetArrayLength());
+        using var live = await http.GetAsync("/api/mfd/actions", test.Token);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, live.StatusCode);
     }
 
     [Theory]
