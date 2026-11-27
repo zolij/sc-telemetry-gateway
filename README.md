@@ -168,14 +168,16 @@ Combined cards show values and controls together, with shared availability
 warnings and separate feedback for each control. Existing combined profiles
 also use this compact display. The built-in templates use short control labels
 and show Boolean state as On/Off or Active/Inactive in automatic format.
-Templates use a single Toggle control where available. Older built-in templates
-are converted when the profile store is loaded. Customized cards with extra
-components are left unchanged.
+Templates use a single Toggle control where available. Recognizable older
+built-in templates are converted once when the profile store is loaded.
+Customized cards and profiles that would exceed size limits are left unchanged.
 
 The editor lists known controls by category even when the game is unavailable.
 The library includes a documented PTU snapshot and controls learned from the
-game; it may be outdated and does not authorize actions. Individual components
-either display one telemetry field or trigger one game action. Controls with known
+game; it may be outdated and does not authorize actions. Live controls remain
+usable if the saved library cannot be updated; the editor reports the error.
+Individual components either display one telemetry field or trigger one game
+action. Controls with known
 field associations require at least one associated field to be shared in PC MFD
 settings. Vehicle lights on/off were verified against live PTU telemetry;
 other field associations are based on names and may not reflect the same state.

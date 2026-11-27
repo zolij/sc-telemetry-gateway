@@ -8,7 +8,8 @@ internal static class MfdPresetMigration
 
     internal static MfdTile Convert(MfdTile tile)
     {
-        if (tile.Widget != "combined" || tile.Components is null) return tile;
+        if (tile.Widget != "combined" || tile.Components is null || tile.Size != "wide" ||
+            tile.Decimals != 2 || tile.Format != "auto" || tile.Rules.Length != 0) return tile;
         var (field, allowed, label, fields, actions) = tile.Label switch
         {
             "Vehicle lights" => ("vehicle.state.lights_enabled", new[] { "v_lights", "v_lights_on", "v_lights_off" },
@@ -29,10 +30,28 @@ internal static class MfdPresetMigration
                 new[] { ("v_power_toggle_weapons", "Power Toggle Weapons"), ("v_power_toggle_shields", "Power Toggle Shields"), ("v_power_toggle_thrusters", "Power Toggle Thrusters") }),
             _ => (null, Array.Empty<string>(), null, Array.Empty<(string, string)>(), Array.Empty<(string, string)>())
         };
-        if (field is null || tile.Components.Count(item => item.Widget == "value" && item.Field == field) != 1 ||
-            tile.Components.Any(item => item.Widget != "value" && (item.Widget != "action" || !allowed.Contains(item.Action, StringComparer.Ordinal))) ||
-            tile.Components.Count(item => item.Widget == "value") != 1 ||
-            !tile.Components.Any(item => item.Widget == "action")) return tile;
+        if (field is null || tile.Components.Length < 2 || tile.Components[0].Widget != "value" ||
+            tile.Components[0].Field != field || tile.Components[0].Label != tile.Label ||
+            tile.Components.Any(item => item.Size != "normal" || item.Decimals != 2 || item.Format != "auto" ||
+                item.HoldMs is not null || item.Rules.Length != 0) ||
+            tile.Components.Skip(1).Any(item => item.Widget != "action" || item.Action is null ||
+                item.Field != "" || !allowed.Contains(item.Action, StringComparer.Ordinal) ||
+                item.Label != ActionLabel(item.Action))) return tile;
+        var oldActions = tile.Components.Skip(1).Select(item => item.Action).ToArray();
+        var validActions = tile.Label switch
+        {
+            "Vehicle lights" => new[] { "v_lights", "v_lights_on", "v_lights_off" },
+            "Landing gear" => new[] { "v_deploy_landing_system", "v_retract_landing_system" },
+            "G-safe" => new[] { "v_ifcs_gsafe_on", "v_ifcs_gsafe_off", "v_ifcs_toggle_gforce_safety" },
+            "Coupled flight" => new[] { "v_ifcs_vector_decoupling_on", "v_ifcs_vector_decoupling_off", "v_ifcs_vector_decoupling_toggle" },
+            "Master mode" => new[] { "v_master_mode_cycle", "v_master_mode_set_scm" },
+            "SCM advanced HUD" => oldActions.Length == 1 ? new[] { "v_flight_advanced_hud_toggle" } :
+                new[] { "v_flight_advanced_hud_on", "v_flight_advanced_hud_toggle" },
+            "Weapons power" => oldActions.Length == 1 ? new[] { "v_power_toggle_weapons" } :
+                new[] { "v_power_set_weapons_on", "v_power_set_weapons_off", "v_power_toggle_weapons" },
+            _ => Array.Empty<string>()
+        };
+        if (!oldActions.SequenceEqual(validActions)) return tile;
 
         var components = fields.Select(item =>
         {
@@ -56,4 +75,8 @@ internal static class MfdPresetMigration
     {
         Id = Guid.NewGuid(), Field = "", Label = label, Widget = "action", Size = "normal", Action = action
     };
+
+    private static string ActionLabel(string action) => string.Join(" ",
+        action["v_".Length..].Split('_').Select(word =>
+            word.Length == 0 ? "" : char.ToUpperInvariant(word[0]) + word[1..]));
 }

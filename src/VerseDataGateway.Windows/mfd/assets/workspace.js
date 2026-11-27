@@ -52,12 +52,14 @@ const MfdWorkspace = (() => {
         controls.length === 1 && controls[0] === "v_flight_advanced_hud_toggle") return "hud";
     if (tile.label === "System power" && tile.components.length === 7 &&
         powerFields.every(([field]) => fields.filter(value => value === field).length === 1) &&
+        powerFields.slice(1, 3).every(([field]) =>
+          !tile.components.find(item => item.field === field).format || tile.components.find(item => item.field === field).format === "auto") &&
         ["v_power_toggle_weapons", "v_power_toggle_shields", "v_power_toggle_thrusters"].every(action =>
           controls.filter(value => value === action).length === 1)) return "power";
     return null;
   }
   let getToken, repaint;
-  let catalog = [], actions = [], actionLibrary = [], actionError = "", summaries = [], saved = null, draft = null, pageId = null;
+  let catalog = [], actions = [], actionLibrary = [], actionError = "", libraryError = "", summaries = [], saved = null, draft = null, pageId = null;
   let actionFeedback = new Map(), actionPending = new Set();
   let cards = new Map(), groups = new Map(), busy = false, polling = false, etag = null, epoch = 0, viewVersion = 0;
   let tileId = null, tileParent = null, selectedGroup = null, preference = null;
@@ -109,7 +111,8 @@ const MfdWorkspace = (() => {
       error.status = response.status;
       throw error;
     }
-    return { data: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag") };
+    return { data: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag"),
+      libraryWarning: response.headers.get("X-Mfd-Action-Library-Error") };
   }
   function controls() {
     const editing = draft !== null;
@@ -132,8 +135,8 @@ const MfdWorkspace = (() => {
     $("page-after").disabled = busy || index < 0 || index >= (draft?.pages.length ?? 0) - 1;
     document.querySelector(".workspace-body").classList.toggle("editing", editing);
     for (const input of document.querySelectorAll("#editor-toolbar input")) input.disabled = busy;
-    for (const button of document.querySelectorAll(".tile-controls button, #field-results button, #preset-results button, #page-navigation button"))
-      button.disabled = busy;
+    for (const element of document.querySelectorAll(".tile-controls button, .combined-settings input, .combined-settings select, .combined-settings button, #field-results button, #preset-results button, #page-navigation button"))
+      element.disabled = busy;
     for (const button of document.querySelectorAll("#action-results button"))
       button.disabled = busy || button.dataset.enabled !== "true";
   }
@@ -229,12 +232,12 @@ const MfdWorkspace = (() => {
           name.value = tile.label;
           name.maxLength = 80;
           name.setAttribute("aria-label", "Combined card label");
-          name.addEventListener("input", () => { tile.label = name.value; });
+          name.addEventListener("input", () => { if (!busy) tile.label = name.value; });
           const size = node("select");
           size.setAttribute("aria-label", "Combined card size");
           for (const value of ["normal", "wide", "large"]) size.append(new Option(readable(value), value));
           size.value = tile.size;
-          size.addEventListener("change", () => { tile.size = size.value; render(); });
+          size.addEventListener("change", () => { if (!busy) { tile.size = size.value; render(); } });
           const select = node("button", "", selectedGroup === tile.id ? "ADDING HERE" : "ADD COMPONENTS HERE");
           select.type = "button";
           select.setAttribute("aria-pressed", String(selectedGroup === tile.id));
@@ -603,7 +606,7 @@ const MfdWorkspace = (() => {
     pageId = null;
     selectedGroup = tileParent = null;
     summaries = catalog = actions = actionLibrary = [];
-    actionError = "";
+    actionError = libraryError = "";
     actionFeedback.clear();
     actionPending.clear();
     triggerEvents = [];
@@ -615,21 +618,29 @@ const MfdWorkspace = (() => {
   }
 
   async function refreshActions() {
-    const previous = JSON.stringify([actions, actionLibrary, actionError]);
-    let error = "";
+    const previous = JSON.stringify([actions, actionLibrary, actionError, libraryError]);
+    let error = "", warning = "";
     try {
-      const next = (await api("actions")).data;
+      const result = await api("actions");
+      const next = result.data;
       if (!Array.isArray(next)) throw new Error("Invalid game action catalog.");
       actions = next;
+      if (result.libraryWarning) warning = "Live controls could not be saved to the action library.";
     } catch (failure) {
       actions = [];
       error = failure.message;
     }
-    const next = (await api("action-library")).data;
-    if (!Array.isArray(next)) throw new Error("Invalid saved action library.");
-    actionLibrary = next;
+    try {
+      const next = (await api("action-library")).data;
+      if (!Array.isArray(next)) throw new Error("Invalid saved action library.");
+      actionLibrary = next;
+      libraryError = warning;
+    } catch (failure) {
+      actionLibrary = actions;
+      libraryError = failure.message;
+    }
     actionError = error;
-    if (previous !== JSON.stringify([actions, actionLibrary, actionError])) { renderLibrary(); render(); }
+    if (previous !== JSON.stringify([actions, actionLibrary, actionError, libraryError])) { renderLibrary(); render(); }
   }
 
   // Editor functions are kept separate from the telemetry paint path.
@@ -785,6 +796,7 @@ const MfdWorkspace = (() => {
     if (!$("field-results").childElementCount)
       $("field-results").append(node("p", "library-note", catalog.length ? "No matching fields." : "Enable shared fields in gateway settings, then restart collection."));
     $("action-results").replaceChildren(node("h3", "", "GAME CONTROLS"));
+    if (libraryError) $("action-results").append(node("p", "library-note", "Action library: " + libraryError));
     if (actionError) $("action-results").append(node("p", "library-note", "Live controls unavailable: " + actionError + " / Known controls remain available for editing."));
     for (const action of [...actionLibrary].sort((a, b) => (a.category + a.action_name).localeCompare(b.category + b.action_name))) {
       if (query && !(action.category + " " + action.action_name + " " + actionLabel(action.action_name)).toLowerCase().includes(query)) continue;

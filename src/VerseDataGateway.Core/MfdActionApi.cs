@@ -55,7 +55,12 @@ public sealed partial class MfdServer
                     return;
                 }
                 var result = await actions!.ListAsync(deadline.Token);
-                actionLibrary.Remember(result);
+                try { actionLibrary.Remember(result); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    logger?.LogWarning(ex, "Failed to update MFD action library; live controls remain available");
+                    context.Response.Headers["X-Mfd-Action-Library-Error"] = "unavailable";
+                }
                 await context.Response.WriteAsJsonAsync(result, WireJson.Options, deadline.Token);
                 return;
             }

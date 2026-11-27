@@ -7,7 +7,7 @@ public sealed class MfdProfileLimitException(string message) : Exception(message
 
 public sealed class MfdProfileStore(string directory)
 {
-    private sealed record Document(int SchemaVersion, MfdProfile[] Profiles);
+    private sealed record Document(int SchemaVersion, MfdProfile[] Profiles, bool PresetMigrationComplete = false);
     private readonly object gate = new();
     private readonly string path = Path.Combine(directory, "mfd-profiles.json");
     private Dictionary<Guid, MfdProfile>? profiles;
@@ -110,8 +110,8 @@ public sealed class MfdProfileStore(string directory)
             try { profile.Validate(); }
             catch (ArgumentException ex) { throw new InvalidDataException("Invalid saved profile.", ex); }
         }
+        if (document.PresetMigrationComplete) return profiles = loaded;
         var migrated = new Dictionary<Guid, MfdProfile>(loaded);
-        var changed = false;
         foreach (var profile in loaded.Values)
         {
             var profileChanged = false;
@@ -124,20 +124,26 @@ public sealed class MfdProfileStore(string directory)
                     return result;
                 }).ToArray()
             }).ToArray();
-            if (!profileChanged) continue;
+            if (!profileChanged || profile.Revision == long.MaxValue) continue;
             var updated = profile with { Pages = pages, Revision = checked(profile.Revision + 1) };
+            if (JsonSerializer.SerializeToUtf8Bytes(updated, WireJson.Options).Length > MfdProfile.MaxRequestBytes)
+                continue;
             updated.Validate();
             migrated[profile.Id] = updated;
-            changed = true;
+            if (Serialize(migrated).Length > MfdProfile.MaxStoreBytes)
+                migrated[profile.Id] = profile;
         }
-        if (changed) Persist(migrated);
+        if (Serialize(migrated).Length <= MfdProfile.MaxStoreBytes) Persist(migrated);
         else profiles = loaded;
         return profiles!;
     }
 
+    private static byte[] Serialize(Dictionary<Guid, MfdProfile> next) =>
+        JsonSerializer.SerializeToUtf8Bytes(new Document(1, next.Values.ToArray(), true), WireJson.Options);
+
     private void Persist(Dictionary<Guid, MfdProfile> next)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new Document(1, next.Values.ToArray()), WireJson.Options);
+        var bytes = Serialize(next);
         if (bytes.Length > MfdProfile.MaxStoreBytes)
             throw new MfdProfileLimitException("Profile store exceeds the 16 MiB size limit.");
         Directory.CreateDirectory(directory);

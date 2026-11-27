@@ -286,6 +286,9 @@ with controls learned from successful live queries, saved in
 The editor can add them even if the corresponding field is not selected;
 execution still requires the live checks described below. An unreadable or
 unwritable action library is reported as an error rather than discarded.
+Live controls remain available if remembering the catalogue fails: the live
+response includes `X-Mfd-Action-Library-Error: unavailable`, and the editor
+reports the problem. A failed library read falls back to live entries only.
 
 `GET /api/mfd/actions` queries the game over loopback and returns entries
 `{action_name, category, holdable, fields, enabled, mapping_verified}`.
@@ -307,16 +310,18 @@ based on action and field names, not observed state transitions. Refer to the cu
 action and fields. Related values need not represent the same state: shield
 charge, for example, is not the on/off state of a shield generator.
 
-Built-in combined templates from earlier versions are converted on profile
-store load and persisted atomically with a new profile revision. Custom cards
-with additional components are not converted. Landing gear Toggle is disabled
+Recognizable, unmodified built-in combined templates from earlier versions are
+converted once on profile store load and persisted atomically with a new profile
+revision. Customized cards and profiles that would exceed size limits are left
+unchanged. Landing gear Toggle is disabled
 when received gear state is deploying or retracting. Advanced HUD requires
 selected, current master-mode telemetry and displays the selected SCM or NAV
 field; other or stale modes are unavailable. System Power displays weapon,
 shield and engine readings alongside three independent toggles. Its shield
-reading combines the generator and emitter: both on is On, both off is Off,
+reading combines the generator and emitter when both use automatic format: both on is On, both off is Off,
 and differing values are Mixed. Both fields must be selected and received;
-stale or last-known input is marked accordingly. These display rules do not
+stale or last-known input is marked accordingly. An explicit shield format
+displays the components independently. These display rules do not
 change game-side authorization.
 
 `POST /api/mfd/actions/trigger` accepts `{"action_name":"v_invoke_ping",

@@ -15,20 +15,22 @@ test("offline catalog matches the documented PTU snapshot", () => {
   const documented = docs.split("## Observed action catalogue (not part of the proto)")[1]
     .split("```text")[1].split("```")[0];
   const baseline = source.split('private const string Baseline = """')[1].split('"""')[0];
-  const expected = new Map();
-  let category;
-  for (const line of documented.split("\n")) {
-    const header = /^(\w+) \(\d+\)$/.exec(line);
-    if (header) category = header[1];
-    else if (/^  \w+$/.test(line)) expected.set(line.trim(), category);
-  }
   const actual = new Map();
   for (const line of baseline.trim().split("\n")) {
     const [group, names] = line.trim().split(": ");
     for (const name of names.split(" ")) actual.set(name, group);
   }
   assert.equal(actual.size, 112);
-  assert.deepEqual([...actual].sort(), [...expected].sort());
+  for (const input of [documented.replace(/\r?\n/g, "\n"), documented.replace(/\r?\n/g, "\r\n")]) {
+    const expected = new Map();
+    let category;
+    for (const line of input.split(/\r?\n/)) {
+      const header = /^(\w+) \(\d+\)$/.exec(line);
+      if (header) category = header[1];
+      else if (/^  \w+$/.test(line)) expected.set(line.trim(), category);
+    }
+    assert.deepEqual([...actual].sort(), [...expected].sort());
+  }
 });
 const profile = revision => ({
   schema_version: 1, id: "ship", name: "Ship", revision,
@@ -38,7 +40,7 @@ const profile = revision => ({
   ]
 });
 
-async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, combined = false, twoActions = false, actionsOnly = false, previousLights = false } = {}) {
+async function fixture({ preference = { profile: "ship", page: "flight" }, startEmpty = false, withAction = false, mappedAction = false, gameUnavailable = false, libraryUnavailable = false, combined = false, twoActions = false, actionsOnly = false, previousLights = false } = {}) {
   const elements = new Map();
   function element() {
     const queries = new Map();
@@ -75,7 +77,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     }
     return elements.get(id);
   };
-  let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, blockedAction = null, profileReads = 0;
+  let remote = startEmpty ? null : profile(1), poll, failedProfile = false, blockedProfile = null, blockedBody = null, blockedAction = null, blockedSave = null, profileReads = 0;
   const actionRequests = [];
   const savedBodies = [];
   const shieldPower = "vehicle.state.power.shield_generators";
@@ -148,7 +150,11 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     json: async () => structuredClone(data)
   });
   const workspace = vm.runInNewContext(source + "\nMfdWorkspace;", {
-    document: { getElementById: getElement, createElement: element, querySelector: getElement, querySelectorAll: () => [] },
+    document: { getElementById: getElement, createElement: element, querySelector: getElement, querySelectorAll: selector => {
+      if (!selector.includes(".combined-settings input")) return [];
+      const groups = getElement("custom-cards").children;
+      return groups.flatMap(group => group.children.filter(child => child.className === "combined-settings").flatMap(child => child.children));
+    } },
     window: { addEventListener() {}, confirm: () => true },
     localStorage: { getItem: () => preference ? JSON.stringify(preference) : null, setItem() {} },
     MfdFocus: { update() {} }, AbortSignal, TextEncoder, crypto: webcrypto,
@@ -159,7 +165,8 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       if (url.endsWith("/events")) return response(200, [enter]);
       if (url.endsWith("/actions")) return gameUnavailable
         ? response(503, { message: "Game unavailable" }) : response(200, actionCatalog);
-      if (url.endsWith("/action-library")) return response(200, actionCatalog);
+      if (url.endsWith("/action-library")) return libraryUnavailable
+        ? response(503, { message: "Action library unreadable" }) : response(200, actionCatalog);
       if (url.endsWith("/actions/trigger")) {
         actionRequests.push(JSON.parse(options.body));
         if (blockedAction) {
@@ -181,6 +188,7 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
       if (options.method === "PUT") {
         const body = JSON.parse(options.body);
         savedBodies.push(body);
+        if (blockedSave) { const blocked = blockedSave; blockedSave = null; blocked.started(); await blocked.wait; }
         remote = { ...body, revision: body.revision + 1 };
         return response(200, remote);
       }
@@ -225,6 +233,13 @@ async function fixture({ preference = { profile: "ship", page: "flight" }, start
     create: () => { remote = profile(1); },
     failNextProfile: () => { failedProfile = true; },
     profileReads: () => profileReads,
+    blockNextSave: () => {
+      let started, release;
+      const waiting = new Promise(resolve => { started = resolve; });
+      const wait = new Promise(resolve => { release = resolve; });
+      blockedSave = { started, wait };
+      return { waiting, release };
+    },
     blockNextProfile: () => {
       let started, release;
       const waiting = new Promise(resolve => { started = resolve; });
@@ -270,6 +285,30 @@ test("available controls are re-enabled after a profile operation without anothe
   const button = view.element("custom-cards").children[0].children[3];
   assert.equal(button.disabled, false);
   assert.equal(button.title, "");
+});
+
+test("live controls and editing remain available if the saved action library fails", async () => {
+  const view = await fixture({ withAction: true, libraryUnavailable: true });
+  assert.equal(view.element("custom-cards").children[0].children[3].disabled, false);
+  await view.element("edit-profile").click();
+  assert.match(view.element("action-results").children[1].textContent, /unreadable/);
+  assert.equal(view.element("action-results").children[2].children[0].textContent, "Invoke Ping");
+});
+
+test("combined settings are disabled while a save is in flight", async () => {
+  const view = await fixture({ mappedAction: true, combined: true });
+  await view.element("edit-profile").click();
+  const settings = view.element("custom-cards").children[0].children[1].children;
+  const blocked = view.blockNextSave();
+  const pending = view.element("save-profile").click();
+  await blocked.waiting;
+  assert.ok(settings.every(item => item.disabled));
+  settings[0].value = "Changed while saving";
+  settings[0].listeners.get("input")();
+  blocked.release();
+  await pending;
+  assert.equal(view.savedBodies[0].pages[0].tiles[0].label, "Shields");
+  assert.equal(view.element("custom-cards").children[0].children[0].textContent, "Shields");
 });
 
 for (const fail of [false, true]) {
@@ -513,6 +552,27 @@ test("system power combines shield states and provides three independent toggles
   assert.equal(weapons.children[2].children[0].disabled, true);
   assert.equal(engines.children[2].children[0].disabled, true);
   assert.equal(group.children[2].textContent, "");
+});
+
+test("system power preserves explicit shield formats", async () => {
+  for (const index of [1, 2]) {
+    const view = await fixture({ mappedAction: true });
+    await view.element("edit-profile").click();
+    view.element("preset-results").children[8].click();
+    const editor = view.element("custom-cards").children[1];
+    const setup = editor.children[2].children[index].children.at(-1).children.find(button => button.textContent === "SETUP");
+    await setup.click();
+    view.element("tile-format").value = "number";
+    view.element("tile-form").listeners.get("submit")({ preventDefault() {} });
+    await view.element("save-profile").click();
+    const components = view.element("custom-cards").children[1].children[1].children;
+    assert.equal(components.length, 7);
+    const fields = ["vehicle.state.power.shield_generators", "vehicle.state.power.shield_emitters"];
+    view.workspace.paint({ selected_fields: fields, fields: Object.fromEntries(fields.map(field =>
+      [field, { value: true, age_ms: 0, last_known: false }])) }, true, 0, () => "");
+    assert.equal(components[index].children[1].textContent, "Yes");
+    assert.equal(components[2].hidden, false);
+  }
 });
 
 test("built-in boolean states remain distinct from unavailable values", async () => {

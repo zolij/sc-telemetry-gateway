@@ -79,7 +79,9 @@ public sealed class MfdProfileTests : IDisposable
             Id = Guid.NewGuid(), Field = field, Label = label, Widget = "value", Size = "normal"
         };
         MfdTile Action(string name) => new() {
-            Id = Guid.NewGuid(), Field = "", Label = name, Widget = "action", Size = "normal", Action = name
+            Id = Guid.NewGuid(), Field = "", Label = string.Join(" ", name[2..].Split('_')
+                .Select(word => char.ToUpperInvariant(word[0]) + word[1..])),
+            Widget = "action", Size = "normal", Action = name
         };
         MfdTile Group(string label, string field, params string[] actions) => new() {
             Id = Guid.NewGuid(), Field = "", Label = label, Widget = "combined", Size = "wide",
@@ -94,6 +96,8 @@ public sealed class MfdProfileTests : IDisposable
         };
         var draft = Draft();
         var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = old }] });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
         var migrated = Store.Get(saved.Id)!;
         Assert.Equal(saved.Revision + 1, migrated.Revision);
         var tiles = migrated.Pages[0].Tiles;
@@ -110,6 +114,57 @@ public sealed class MfdProfileTests : IDisposable
         var reopened = Store.Get(saved.Id)!;
         Assert.Equal(migrated.Revision, reopened.Revision);
         Assert.Equal(JsonSerializer.Serialize(migrated, WireJson.Options), JsonSerializer.Serialize(reopened, WireJson.Options));
+    }
+
+    [Fact]
+    public void MigrationDoesNotRewriteCustomizationsOrNewCardsAfterRestart()
+    {
+        var value = new MfdTile { Id = Guid.NewGuid(), Field = "vehicle.state.lights_enabled",
+            Label = "Vehicle lights", Widget = "value", Size = "normal" };
+        var toggle = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Lights", Widget = "action",
+            Size = "normal", Action = "v_lights" };
+        var old = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Vehicle lights", Widget = "combined",
+            Size = "wide", Components = [value, toggle, toggle with { Id = Guid.NewGuid(), Action = "v_lights_on", Label = "Lights On" },
+                toggle with { Id = Guid.NewGuid(), Action = "v_lights_off", Label = "Lights Off" }] };
+        var custom = old with { Id = Guid.NewGuid(), Components = old.Components.Select(item => item with { Id = Guid.NewGuid() }).ToArray() };
+        custom.Components[0] = custom.Components[0] with { Label = "Custom label" };
+        var draft = Draft();
+        var saved = Store.Create(draft with { Pages = [draft.Pages[0] with { Tiles = [old, custom] }] });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
+        var migrated = Store.Get(saved.Id)!;
+        Assert.Single(migrated.Pages[0].Tiles[0].Components!, item => item.Widget == "action");
+        Assert.Equal("Custom label", migrated.Pages[0].Tiles[1].Components![0].Label);
+        Assert.Equal(4, migrated.Pages[0].Tiles[1].Components!.Length);
+        var updated = Store.Update(migrated.Id, migrated.Revision, migrated with
+        {
+            Pages = [migrated.Pages[0] with { Tiles = [migrated.Pages[0].Tiles[0] with
+            {
+                Components = [.. migrated.Pages[0].Tiles[0].Components!, old.Components![1] with { Id = Guid.NewGuid() }]
+            }] }]
+        });
+        Assert.Equal(3, Store.Get(updated.Id)!.Pages[0].Tiles[0].Components!.Length);
+        Assert.Equal(updated.Revision, Store.Get(updated.Id)!.Revision);
+    }
+
+    [Fact]
+    public void OversizedMigrationKeepsOriginalProfileReadable()
+    {
+        var old = new MfdTile { Id = Guid.NewGuid(), Field = "", Label = "Weapons power", Widget = "combined", Size = "wide",
+            Components = [
+                new() { Id = Guid.NewGuid(), Field = "vehicle.state.power.weapons", Label = "Weapons power", Widget = "value", Size = "normal" },
+                new() { Id = Guid.NewGuid(), Field = "", Label = "Power Toggle Weapons", Widget = "action", Size = "normal", Action = "v_power_toggle_weapons" }
+            ] };
+        var pages = Enumerable.Range(0, 16).Select(_ => new MfdPage { Id = Guid.NewGuid(), Name = "Page",
+            Tiles = Enumerable.Range(0, 32).Select(_ => old with { Id = Guid.NewGuid(),
+                Components = old.Components!.Select(item => item with { Id = Guid.NewGuid() }).ToArray() }).ToArray() }).ToArray();
+        var saved = Store.Create(Draft() with { Pages = pages });
+        File.WriteAllBytes(Path.Combine(root, "mfd-profiles.json"),
+            JsonSerializer.SerializeToUtf8Bytes(new { schema_version = 1, profiles = new[] { saved } }, WireJson.Options));
+        var reopened = Store.Get(saved.Id)!;
+        Assert.Equal(saved.Revision, reopened.Revision);
+        Assert.Equal("Weapons power", reopened.Pages[0].Tiles[0].Label);
+        Assert.Equal(saved.Revision, Store.Get(saved.Id)!.Revision);
     }
 
     [Theory]
@@ -328,7 +383,7 @@ public sealed class MfdProfileTests : IDisposable
         const string empty = "{\"schema_version\":1,\"profiles\":[]}";
         File.WriteAllText(path, empty + new string(' ', MfdProfile.MaxStoreBytes - empty.Length));
         Assert.Empty(Store.List());
-        File.AppendAllText(path, " ");
+        File.WriteAllText(path, empty + new string(' ', MfdProfile.MaxStoreBytes + 1 - empty.Length));
         Assert.Throws<InvalidDataException>(() => Store.List());
         Assert.Equal(MfdProfile.MaxStoreBytes + 1L, new FileInfo(path).Length);
     }
